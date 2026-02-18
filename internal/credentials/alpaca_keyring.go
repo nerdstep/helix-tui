@@ -15,6 +15,11 @@ const (
 	secretField    = "alpaca_api_secret_key"
 )
 
+var (
+	keyringGet = keyring.Get
+	keyringSet = keyring.Set
+)
+
 type KeyringConfig struct {
 	Enabled bool
 	Save    bool
@@ -66,11 +71,11 @@ func ResolveAlpacaCredentials(apiKey, secret string, cfg KeyringConfig) (string,
 }
 
 func LoadAlpacaCredentials(service, user string) (string, string, error) {
-	key, err := keyring.Get(serviceName(service), accountName(userName(user), keyIDField))
+	key, err := keyringGet(serviceName(service), accountName(userName(user), keyIDField))
 	if err != nil {
 		return "", "", err
 	}
-	secret, err := keyring.Get(serviceName(service), accountName(userName(user), secretField))
+	secret, err := keyringGet(serviceName(service), accountName(userName(user), secretField))
 	if err != nil {
 		return "", "", err
 	}
@@ -78,10 +83,10 @@ func LoadAlpacaCredentials(service, user string) (string, string, error) {
 }
 
 func SaveAlpacaCredentials(service, user, apiKey, apiSecret string) error {
-	if err := keyring.Set(serviceName(service), accountName(userName(user), keyIDField), strings.TrimSpace(apiKey)); err != nil {
+	if err := keyringSet(serviceName(service), accountName(userName(user), keyIDField), strings.TrimSpace(apiKey)); err != nil {
 		return err
 	}
-	if err := keyring.Set(serviceName(service), accountName(userName(user), secretField), strings.TrimSpace(apiSecret)); err != nil {
+	if err := keyringSet(serviceName(service), accountName(userName(user), secretField), strings.TrimSpace(apiSecret)); err != nil {
 		return err
 	}
 	return nil

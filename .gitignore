@@ -1,0 +1,7 @@
+.tmp-*
+.gocache/
+.gotmp/
+bin/
+dist/
+*.exe
+*.test

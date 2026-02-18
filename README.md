@@ -36,10 +36,33 @@ go mod tidy
 go run ./cmd/helix
 ```
 
+## Config File (TOML)
+
+The app can load runtime settings from a TOML file using `github.com/pelletier/go-toml/v2`.
+
+- Default path: `config.toml` in the project root (auto-loaded if present)
+- Override path: `-config=path/to/file.toml`
+- Example template: `config.example.toml`
+
+Config precedence is:
+
+- built-in defaults
+- TOML file
+- environment variables (`APCA_API_KEY_ID`, `APCA_API_SECRET_KEY`, `APCA_API_DATA_URL`)
+- CLI flags
+
+Windows (PowerShell) quick start:
+
+```powershell
+Copy-Item config.example.toml config.toml
+go run ./cmd/helix -config=config.toml
+```
+
 Useful flags:
 
 ```bash
 go run ./cmd/helix \
+  -config=config.toml \
   -broker=paper \
   -max-trade=5000 \
   -max-day=20000 \
@@ -51,6 +74,7 @@ Alpaca paper mode:
 
 ```bash
 go run ./cmd/helix \
+  -config=config.toml \
   -broker=alpaca-paper \
   -alpaca-feed=iex \
   -alpaca-key=$APCA_API_KEY_ID \
@@ -62,6 +86,7 @@ Alpaca credentials with keyring (recommended):
 
 ```bash
 go run ./cmd/helix \
+  -config=config.toml \
   -broker=alpaca-paper \
   -alpaca-feed=iex \
   -use-keyring \

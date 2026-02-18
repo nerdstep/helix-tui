@@ -1,0 +1,31 @@
+# Copy this file to config.toml and adjust values for your environment.
+
+broker = "paper"
+mode = "manual" # manual | assist | auto
+allow_symbols = ["AAPL", "MSFT", "TSLA", "NVDA"]
+
+[alpaca]
+# You can leave credentials empty and rely on keyring/env instead.
+api_key = ""
+api_secret = ""
+data_url = ""
+feed = "iex" # iex | sip | delayed_sip | boats | overnight
+
+[keyring]
+use = true
+save = true
+service = "helix-tui"
+user = "alpaca-paper"
+
+[risk]
+max_trade_notional = 5000
+max_day_notional = 20000
+
+[agent]
+watchlist = ["AAPL", "MSFT", "TSLA", "NVDA"]
+interval = "10s"
+qty = 1.0
+move_pct = 0.01
+max_intents = 1
+dry_run = false
+objective = "Generate conservative, risk-aware trade intents."

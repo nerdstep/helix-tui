@@ -21,7 +21,7 @@ This repo is a foundation for the architecture discussed in your shared thread, 
 - `internal/broker/paper`
   - In-memory paper broker with instant fills
 - `internal/broker/alpaca`
-  - Alpaca REST scaffold (quotes + ws not fully wired yet)
+  - Official Alpaca Go SDK adapter (`alpaca-trade-api-go/v3`)
 - `internal/tui`
   - Bubble Tea terminal UI
 
@@ -47,15 +47,58 @@ go run ./cmd/helix \
   -mode=manual
 ```
 
-Alpaca paper mode (scaffold):
+Alpaca paper mode:
 
 ```bash
 go run ./cmd/helix \
   -broker=alpaca-paper \
+  -alpaca-feed=iex \
   -alpaca-key=$APCA_API_KEY_ID \
   -alpaca-secret=$APCA_API_SECRET_KEY \
   -mode=assist
 ```
+
+Alpaca credentials with keyring (recommended):
+
+```bash
+go run ./cmd/helix \
+  -broker=alpaca-paper \
+  -alpaca-feed=iex \
+  -use-keyring \
+  -save-keyring \
+  -keyring-service=helix-tui \
+  -keyring-user=alpaca-paper
+```
+
+Windows (PowerShell) credential setup:
+
+1. Add your Alpaca paper credentials to the current shell:
+
+```powershell
+$env:APCA_API_KEY_ID = "YOUR_KEY_ID"
+$env:APCA_API_SECRET_KEY = "YOUR_SECRET_KEY"
+```
+
+1. Run once with keyring save enabled to store credentials in Windows Credential Manager:
+
+```powershell
+go run ./cmd/helix -broker=alpaca-paper -alpaca-feed=iex -use-keyring -save-keyring -mode=assist
+```
+
+1. Future runs can omit `-alpaca-key` / `-alpaca-secret` and environment variables:
+
+```powershell
+go run ./cmd/helix -broker=alpaca-paper -alpaca-feed=iex -use-keyring -mode=assist
+```
+
+Optional: persist environment variables for new terminals (if you still want env-based auth):
+
+```powershell
+setx APCA_API_KEY_ID "YOUR_KEY_ID"
+setx APCA_API_SECRET_KEY "YOUR_SECRET_KEY"
+```
+
+Open a new terminal after `setx` for changes to take effect.
 
 Headless autonomous loop:
 
@@ -100,6 +143,8 @@ These checks are enforced in `internal/engine/risk.go`.
 ## Notes
 
 - The paper broker fills immediately at the current mock quote.
-- The Alpaca adapter wires account/positions/open orders/place/cancel paths.
-- Alpaca quote and trade update websocket handling are intentionally left as explicit TODOs so the boundaries stay clean.
+- The Alpaca adapter uses the official SDK client for account/positions/orders plus market data latest quote and trade update streaming.
+- Alpaca market data permissions/entitlements still apply to quote availability.
+- Alpaca quote feed defaults to `iex` (override via `-alpaca-feed`).
+- When `-use-keyring` is enabled, missing Alpaca credentials are loaded from OS keyring; provided credentials can be stored with `-save-keyring`.
 - The built-in agent is a conservative heuristic (`internal/agent/heuristic`) that reacts to sampled price moves.

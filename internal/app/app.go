@@ -10,6 +10,7 @@ import (
 	"helix-tui/internal/autonomy"
 	"helix-tui/internal/broker/alpaca"
 	"helix-tui/internal/broker/paper"
+	"helix-tui/internal/credentials"
 	"helix-tui/internal/domain"
 	"helix-tui/internal/engine"
 )
@@ -18,6 +19,12 @@ type Config struct {
 	Broker              string
 	AlpacaAPIKey        string
 	AlpacaAPISecret     string
+	AlpacaDataURL       string
+	AlpacaFeed          string
+	UseKeyring          bool
+	SaveToKeyring       bool
+	KeyringService      string
+	KeyringUser         string
 	MaxNotionalPerTrade float64
 	MaxNotionalPerDay   float64
 	AllowSymbols        []string
@@ -39,6 +46,11 @@ type System struct {
 func DefaultConfig() Config {
 	return Config{
 		Broker:              "paper",
+		AlpacaFeed:          "iex",
+		UseKeyring:          true,
+		SaveToKeyring:       true,
+		KeyringService:      credentials.DefaultService,
+		KeyringUser:         credentials.DefaultUser,
 		MaxNotionalPerTrade: 5000,
 		MaxNotionalPerDay:   20000,
 		AllowSymbols: []string{
@@ -61,14 +73,26 @@ func DefaultConfig() Config {
 
 func NewSystem(cfg Config) (*System, error) {
 	var broker domain.Broker
+	credentialSource := ""
 	switch strings.ToLower(strings.TrimSpace(cfg.Broker)) {
 	case "paper":
 		broker = paper.New(100000)
 	case "alpaca-paper":
-		if cfg.AlpacaAPIKey == "" || cfg.AlpacaAPISecret == "" {
-			return nil, fmt.Errorf("alpaca API key and secret are required for alpaca-paper")
+		apiKey, secret, source, err := credentials.ResolveAlpacaCredentials(
+			cfg.AlpacaAPIKey,
+			cfg.AlpacaAPISecret,
+			credentials.KeyringConfig{
+				Enabled: cfg.UseKeyring,
+				Save:    cfg.SaveToKeyring,
+				Service: cfg.KeyringService,
+				User:    cfg.KeyringUser,
+			},
+		)
+		if err != nil {
+			return nil, err
 		}
-		broker = alpaca.NewPaper(cfg.AlpacaAPIKey, cfg.AlpacaAPISecret)
+		broker = alpaca.NewPaper(apiKey, secret, cfg.AlpacaDataURL, cfg.AlpacaFeed)
+		credentialSource = source
 	default:
 		return nil, fmt.Errorf("unsupported broker: %s", cfg.Broker)
 	}
@@ -96,6 +120,9 @@ func NewSystem(cfg Config) (*System, error) {
 	}
 	if err := e.StartTradeUpdateLoop(context.Background()); err != nil {
 		// Streaming is optional in this scaffold. Sync still works without it.
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.Broker), "alpaca-paper") {
+		e.AddEvent("alpaca_config", fmt.Sprintf("feed=%s credentials=%s", strings.ToLower(strings.TrimSpace(cfg.AlpacaFeed)), credentialSource))
 	}
 
 	mode := normalizeMode(cfg.Mode)

@@ -14,17 +14,22 @@ Use Alpaca paper mode for broker-backed testing without live capital.
 - Pass flags explicitly when needed:
   - `-alpaca-key`
   - `-alpaca-secret`
+- Use keyring for persisted credentials:
+  - `-use-keyring`
+  - `-save-keyring`
+  - optional: `-keyring-service`, `-keyring-user`
 
 ## Start in Paper Mode
 - Use:
   - `-broker=alpaca-paper`
+  - `-alpaca-feed=iex` (default feed)
 - Keep autonomous safety flags enabled during first runs:
   - `-mode=assist` or `-mode=auto -dry-run`
 
 Example:
 
 ```bash
-go run ./cmd/helix -broker=alpaca-paper -mode=assist
+go run ./cmd/helix -broker=alpaca-paper -alpaca-feed=iex -mode=assist
 ```
 
 ## Common Runtime Checks
@@ -33,9 +38,9 @@ go run ./cmd/helix -broker=alpaca-paper -mode=assist
 - Confirm order placement path works from TUI command (`buy` / `sell`) before autonomous auto-execution.
 
 ## Known Scaffold Limits
-- Treat quote retrieval in Alpaca adapter as incomplete unless implemented in code.
-- Treat websocket trade updates in Alpaca adapter as incomplete unless implemented in code.
-- Use paper broker adapter for full autonomous loop testing when quote/ws functions are required.
+- Quote retrieval and trade update streaming are wired through the official Alpaca Go SDK.
+- Market data availability depends on account entitlements/feed availability (`iex` vs `sip`).
+- If quote retrieval fails in paper mode, test with `paper` broker adapter to isolate entitlement vs application issues.
 
 ## Troubleshooting
 - If authentication errors occur:

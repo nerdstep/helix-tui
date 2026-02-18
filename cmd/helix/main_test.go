@@ -1,11 +1,16 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"helix-tui/internal/app"
 	"helix-tui/internal/configfile"
+	"helix-tui/internal/domain"
 )
 
 func TestParseConfigPath(t *testing.T) {
@@ -95,5 +100,78 @@ func TestSplitSymbols(t *testing.T) {
 	want := []string{"AAPL", "MSFT", "TSLA"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("splitSymbols mismatch: got %#v want %#v", got, want)
+	}
+}
+
+func TestRunHeadless_StopsOnCanceledContext(t *testing.T) {
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe failed: %v", err)
+	}
+	os.Stdout = w
+	t.Cleanup(func() {
+		os.Stdout = oldStdout
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runHeadless(ctx, headlessEngineStub{})
+	_ = w.Close()
+
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	out := buf.String()
+	if out == "" {
+		t.Fatalf("expected headless output")
+	}
+}
+
+func TestRun_HeadlessManual(t *testing.T) {
+	oldStdout := os.Stdout
+	_, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe failed: %v", err)
+	}
+	os.Stdout = w
+	t.Cleanup(func() {
+		os.Stdout = oldStdout
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	stderr := &bytes.Buffer{}
+	err = run(ctx, []string{"-headless", "-broker=paper", "-mode=manual"}, stderr)
+	_ = w.Close()
+	if err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+}
+
+func TestRun_Errors(t *testing.T) {
+	stderr := &bytes.Buffer{}
+	ctx := context.Background()
+
+	err := run(ctx, []string{"-does-not-exist"}, stderr)
+	if err == nil {
+		t.Fatalf("expected parse error")
+	}
+
+	err = run(ctx, []string{"-headless", "-broker=unsupported"}, stderr)
+	if err == nil || !strings.Contains(err.Error(), "unsupported broker") {
+		t.Fatalf("expected unsupported broker error, got %v", err)
+	}
+
+	err = run(ctx, []string{"-config=does-not-exist.toml"}, stderr)
+	if err == nil || !strings.Contains(err.Error(), "failed to load config") {
+		t.Fatalf("expected config load error, got %v", err)
+	}
+}
+
+type headlessEngineStub struct{}
+
+func (headlessEngineStub) Snapshot() domain.Snapshot {
+	return domain.Snapshot{
+		Account: domain.Account{Cash: 1, Equity: 1},
 	}
 }

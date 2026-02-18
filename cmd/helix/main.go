@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -19,15 +20,23 @@ import (
 )
 
 func main() {
-	cfg := app.DefaultConfig()
-	configPath, configExplicit, err := parseConfigPath(os.Args[1:])
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "invalid config flag: %v\n", err)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	if err := run(ctx, os.Args[1:], os.Stderr); err != nil {
+		fmt.Fprintf(os.Stderr, "runtime error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func run(ctx context.Context, args []string, stderr io.Writer) error {
+	cfg := app.DefaultConfig()
+	configPath, configExplicit, err := parseConfigPath(args)
+	if err != nil {
+		return fmt.Errorf("invalid config flag: %w", err)
+	}
 	if err := configfile.Load(configPath, &cfg, configExplicit); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to load config: %w", err)
 	}
 	applyEnvOverrides(&cfg)
 
@@ -35,28 +44,35 @@ func main() {
 	var watchlist string
 	var mode string
 	var headless bool
-	flag.StringVar(&configPath, "config", configPath, "path to TOML config file")
-	flag.StringVar(&cfg.Broker, "broker", cfg.Broker, "broker adapter: paper or alpaca-paper")
-	flag.StringVar(&cfg.AlpacaAPIKey, "alpaca-key", cfg.AlpacaAPIKey, "alpaca API key")
-	flag.StringVar(&cfg.AlpacaAPISecret, "alpaca-secret", cfg.AlpacaAPISecret, "alpaca API secret")
-	flag.StringVar(&cfg.AlpacaDataURL, "alpaca-data-url", cfg.AlpacaDataURL, "alpaca market data API base URL")
-	flag.StringVar(&cfg.AlpacaFeed, "alpaca-feed", cfg.AlpacaFeed, "alpaca stock feed for latest quotes (iex|sip|delayed_sip|boats|overnight)")
-	flag.BoolVar(&cfg.UseKeyring, "use-keyring", cfg.UseKeyring, "load Alpaca credentials from OS keyring when flags/env are missing")
-	flag.BoolVar(&cfg.SaveToKeyring, "save-keyring", cfg.SaveToKeyring, "save provided Alpaca credentials into OS keyring")
-	flag.StringVar(&cfg.KeyringService, "keyring-service", cfg.KeyringService, "OS keyring service name")
-	flag.StringVar(&cfg.KeyringUser, "keyring-user", cfg.KeyringUser, "OS keyring account namespace")
-	flag.Float64Var(&cfg.MaxNotionalPerTrade, "max-trade", cfg.MaxNotionalPerTrade, "max notional per trade")
-	flag.Float64Var(&cfg.MaxNotionalPerDay, "max-day", cfg.MaxNotionalPerDay, "max notional per day")
-	flag.StringVar(&allowSymbols, "allow", strings.Join(cfg.AllowSymbols, ","), "comma-separated symbol allowlist")
-	flag.StringVar(&mode, "mode", string(cfg.Mode), "runtime mode: manual | assist | auto")
-	flag.StringVar(&watchlist, "watchlist", strings.Join(cfg.Watchlist, ","), "comma-separated symbols used by the agent")
-	flag.DurationVar(&cfg.AgentInterval, "agent-interval", cfg.AgentInterval, "agent cycle interval")
-	flag.Float64Var(&cfg.AgentOrderQty, "agent-qty", cfg.AgentOrderQty, "agent order quantity per intent")
-	flag.Float64Var(&cfg.AgentMovePct, "agent-move-pct", cfg.AgentMovePct, "agent trigger threshold (0.01 = 1%)")
-	flag.IntVar(&cfg.MaxAgentIntents, "agent-max-intents", cfg.MaxAgentIntents, "max intents executed per cycle")
-	flag.BoolVar(&cfg.AgentDryRun, "dry-run", cfg.AgentDryRun, "run full autonomous flow without submitting orders")
-	flag.BoolVar(&headless, "headless", false, "run without TUI; useful for autonomous mode")
-	flag.Parse()
+	fs := flag.NewFlagSet("helix", flag.ContinueOnError)
+	if stderr == nil {
+		stderr = io.Discard
+	}
+	fs.SetOutput(stderr)
+	fs.StringVar(&configPath, "config", configPath, "path to TOML config file")
+	fs.StringVar(&cfg.Broker, "broker", cfg.Broker, "broker adapter: paper or alpaca-paper")
+	fs.StringVar(&cfg.AlpacaAPIKey, "alpaca-key", cfg.AlpacaAPIKey, "alpaca API key")
+	fs.StringVar(&cfg.AlpacaAPISecret, "alpaca-secret", cfg.AlpacaAPISecret, "alpaca API secret")
+	fs.StringVar(&cfg.AlpacaDataURL, "alpaca-data-url", cfg.AlpacaDataURL, "alpaca market data API base URL")
+	fs.StringVar(&cfg.AlpacaFeed, "alpaca-feed", cfg.AlpacaFeed, "alpaca stock feed for latest quotes (iex|sip|delayed_sip|boats|overnight)")
+	fs.BoolVar(&cfg.UseKeyring, "use-keyring", cfg.UseKeyring, "load Alpaca credentials from OS keyring when flags/env are missing")
+	fs.BoolVar(&cfg.SaveToKeyring, "save-keyring", cfg.SaveToKeyring, "save provided Alpaca credentials into OS keyring")
+	fs.StringVar(&cfg.KeyringService, "keyring-service", cfg.KeyringService, "OS keyring service name")
+	fs.StringVar(&cfg.KeyringUser, "keyring-user", cfg.KeyringUser, "OS keyring account namespace")
+	fs.Float64Var(&cfg.MaxNotionalPerTrade, "max-trade", cfg.MaxNotionalPerTrade, "max notional per trade")
+	fs.Float64Var(&cfg.MaxNotionalPerDay, "max-day", cfg.MaxNotionalPerDay, "max notional per day")
+	fs.StringVar(&allowSymbols, "allow", strings.Join(cfg.AllowSymbols, ","), "comma-separated symbol allowlist")
+	fs.StringVar(&mode, "mode", string(cfg.Mode), "runtime mode: manual | assist | auto")
+	fs.StringVar(&watchlist, "watchlist", strings.Join(cfg.Watchlist, ","), "comma-separated symbols used by the agent")
+	fs.DurationVar(&cfg.AgentInterval, "agent-interval", cfg.AgentInterval, "agent cycle interval")
+	fs.Float64Var(&cfg.AgentOrderQty, "agent-qty", cfg.AgentOrderQty, "agent order quantity per intent")
+	fs.Float64Var(&cfg.AgentMovePct, "agent-move-pct", cfg.AgentMovePct, "agent trigger threshold (0.01 = 1%)")
+	fs.IntVar(&cfg.MaxAgentIntents, "agent-max-intents", cfg.MaxAgentIntents, "max intents executed per cycle")
+	fs.BoolVar(&cfg.AgentDryRun, "dry-run", cfg.AgentDryRun, "run full autonomous flow without submitting orders")
+	fs.BoolVar(&headless, "headless", false, "run without TUI; useful for autonomous mode")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	cfg.Mode = domain.Mode(strings.ToLower(strings.TrimSpace(mode)))
 	if allowSymbols != "" {
@@ -68,12 +84,9 @@ func main() {
 
 	system, err := app.NewSystem(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create system: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to create system: %w", err)
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
 	if system.Runner != nil {
 		go func() {
 			if err := system.Runner.Run(ctx); err != nil && err != context.Canceled {
@@ -84,14 +97,14 @@ func main() {
 
 	if headless {
 		runHeadless(ctx, system.Engine)
-		return
+		return nil
 	}
 
 	program := tea.NewProgram(tui.New(system.Engine), tea.WithAltScreen())
 	if _, err := program.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "runtime error: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("runtime error: %w", err)
 	}
+	return nil
 }
 
 func parseConfigPath(args []string) (string, bool, error) {

@@ -18,6 +18,8 @@ const (
 	PaperAPIBase = "https://paper-api.alpaca.markets"
 	LiveAPIBase  = "https://api.alpaca.markets"
 	DataAPIBase  = "https://data.alpaca.markets"
+	EnvPaper     = "paper"
+	EnvLive      = "live"
 )
 
 type Broker struct {
@@ -64,14 +66,42 @@ func New(cfg Config) *Broker {
 	}
 }
 
-func NewPaper(apiKey, secret, dataBaseURL, feed string) *Broker {
+func NewForEnv(env, apiKey, secret, baseURL, dataBaseURL, feed string) *Broker {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		baseURL = BaseURLForEnv(env)
+	}
 	return New(Config{
-		BaseURL:     PaperAPIBase,
+		BaseURL:     baseURL,
 		DataBaseURL: dataBaseURL,
 		APIKey:      apiKey,
 		APISecret:   secret,
 		Feed:        feed,
 	})
+}
+
+func NewPaper(apiKey, secret, dataBaseURL, feed string) *Broker {
+	return NewForEnv(EnvPaper, apiKey, secret, "", dataBaseURL, feed)
+}
+
+func BaseURLForEnv(env string) string {
+	switch NormalizeEnv(env) {
+	case EnvLive:
+		return LiveAPIBase
+	default:
+		return PaperAPIBase
+	}
+}
+
+func NormalizeEnv(env string) string {
+	switch strings.ToLower(strings.TrimSpace(env)) {
+	case EnvLive:
+		return EnvLive
+	case EnvPaper, "":
+		return EnvPaper
+	default:
+		return EnvPaper
+	}
 }
 
 func (b *Broker) GetAccount(ctx context.Context) (domain.Account, error) {
@@ -234,6 +264,55 @@ func (b *Broker) StreamTradeUpdates(ctx context.Context) (<-chan domain.TradeUpd
 	return out, nil
 }
 
+func (b *Broker) GetWatchlistSymbols(name string) ([]string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, fmt.Errorf("watchlist name is required")
+	}
+	watchlists, err := b.tradeClient.GetWatchlists()
+	if err != nil {
+		return nil, err
+	}
+	for _, wl := range watchlists {
+		if !strings.EqualFold(strings.TrimSpace(wl.Name), name) {
+			continue
+		}
+		full, err := b.tradeClient.GetWatchlist(wl.ID)
+		if err != nil {
+			return nil, err
+		}
+		return normalizeSymbolsFromAssets(full.Assets), nil
+	}
+	return nil, nil
+}
+
+func (b *Broker) UpsertWatchlistSymbols(name string, symbols []string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("watchlist name is required")
+	}
+	symbols = normalizeSymbols(symbols)
+	watchlists, err := b.tradeClient.GetWatchlists()
+	if err != nil {
+		return err
+	}
+	for _, wl := range watchlists {
+		if !strings.EqualFold(strings.TrimSpace(wl.Name), name) {
+			continue
+		}
+		_, err := b.tradeClient.UpdateWatchlist(wl.ID, sdkalpaca.UpdateWatchlistRequest{
+			Name:    name,
+			Symbols: symbols,
+		})
+		return err
+	}
+	_, err = b.tradeClient.CreateWatchlist(sdkalpaca.CreateWatchlistRequest{
+		Name:    name,
+		Symbols: symbols,
+	})
+	return err
+}
+
 func toDomainOrder(o sdkalpaca.Order) domain.Order {
 	return domain.Order{
 		ID:         o.ID,
@@ -361,4 +440,38 @@ func normalizeFeed(raw string) marketdata.Feed {
 	default:
 		return marketdata.IEX
 	}
+}
+
+func normalizeSymbols(raw []string) []string {
+	out := make([]string, 0, len(raw))
+	seen := map[string]struct{}{}
+	for _, symbol := range raw {
+		symbol = strings.ToUpper(strings.TrimSpace(symbol))
+		if symbol == "" {
+			continue
+		}
+		if _, ok := seen[symbol]; ok {
+			continue
+		}
+		seen[symbol] = struct{}{}
+		out = append(out, symbol)
+	}
+	return out
+}
+
+func normalizeSymbolsFromAssets(assets []sdkalpaca.Asset) []string {
+	out := make([]string, 0, len(assets))
+	seen := map[string]struct{}{}
+	for _, asset := range assets {
+		symbol := strings.ToUpper(strings.TrimSpace(asset.Symbol))
+		if symbol == "" {
+			continue
+		}
+		if _, ok := seen[symbol]; ok {
+			continue
+		}
+		seen[symbol] = struct{}{}
+		out = append(out, symbol)
+	}
+	return out
 }

@@ -19,6 +19,8 @@ type Config struct {
 	Broker              string
 	AlpacaAPIKey        string
 	AlpacaAPISecret     string
+	AlpacaEnv           string
+	AlpacaBaseURL       string
 	AlpacaDataURL       string
 	AlpacaFeed          string
 	UseKeyring          bool
@@ -39,13 +41,20 @@ type Config struct {
 }
 
 type System struct {
-	Engine *engine.Engine
-	Runner *autonomy.Runner
+	Engine             *engine.Engine
+	Runner             *autonomy.Runner
+	Watchlist          []string
+	PullWatchlist      func() ([]string, error)
+	SyncWatchlist      func([]string) error
+	DefaultBrokerLabel string
 }
+
+const defaultAlpacaWatchlistName = "helix-tui"
 
 func DefaultConfig() Config {
 	return Config{
 		Broker:              "paper",
+		AlpacaEnv:           alpaca.EnvPaper,
 		AlpacaFeed:          "iex",
 		UseKeyring:          true,
 		SaveToKeyring:       true,
@@ -73,32 +82,58 @@ func DefaultConfig() Config {
 
 func NewSystem(cfg Config) (*System, error) {
 	var broker domain.Broker
+	var watchlistSyncBroker *alpaca.Broker
+	brokerLabel := strings.ToLower(strings.TrimSpace(cfg.Broker))
+	isAlpacaBroker := brokerLabel == "alpaca"
 	credentialSource := ""
-	switch strings.ToLower(strings.TrimSpace(cfg.Broker)) {
-	case "paper":
-		broker = paper.New(100000)
-	case "alpaca-paper":
-		apiKey, secret, source, err := credentials.ResolveAlpacaCredentials(
+	watchlistPullErr := error(nil)
+	watchlist := normalizeSymbols(cfg.Watchlist)
+	keyringCfg := credentials.KeyringConfig{
+		Enabled: cfg.UseKeyring,
+		Save:    cfg.SaveToKeyring,
+		Service: cfg.KeyringService,
+		User:    cfg.KeyringUser,
+	}
+
+	needsAlpacaCreds := isAlpacaBroker
+	alpacaAPIKey := ""
+	alpacaAPISecret := ""
+	if needsAlpacaCreds {
+		key, secret, source, err := credentials.ResolveAlpacaCredentials(
 			cfg.AlpacaAPIKey,
 			cfg.AlpacaAPISecret,
-			credentials.KeyringConfig{
-				Enabled: cfg.UseKeyring,
-				Save:    cfg.SaveToKeyring,
-				Service: cfg.KeyringService,
-				User:    cfg.KeyringUser,
-			},
+			keyringCfg,
 		)
 		if err != nil {
 			return nil, err
+		} else {
+			alpacaAPIKey = key
+			alpacaAPISecret = secret
+			credentialSource = source
 		}
-		broker = alpaca.NewPaper(apiKey, secret, cfg.AlpacaDataURL, cfg.AlpacaFeed)
-		credentialSource = source
+	}
+	switch brokerLabel {
+	case "paper":
+		broker = paper.New(100000)
+	case "alpaca":
+		alpacaBroker := newAlpacaBroker(cfg, alpacaAPIKey, alpacaAPISecret)
+		broker = alpacaBroker
+		watchlistSyncBroker = alpacaBroker
 	default:
 		return nil, fmt.Errorf("unsupported broker: %s", cfg.Broker)
 	}
+	if watchlistSyncBroker != nil {
+		remote, err := watchlistSyncBroker.GetWatchlistSymbols(defaultAlpacaWatchlistName)
+		if err != nil {
+			watchlistPullErr = err
+		} else {
+			// In alpaca mode the remote watchlist is the source of truth.
+			watchlist = remote
+		}
+	}
 
 	allow := make(map[string]struct{}, len(cfg.AllowSymbols))
-	for _, s := range cfg.AllowSymbols {
+	for _, s := range mergeSymbols(cfg.AllowSymbols, watchlist) {
 		s = strings.ToUpper(strings.TrimSpace(s))
 		if s != "" {
 			allow[s] = struct{}{}
@@ -121,28 +156,72 @@ func NewSystem(cfg Config) (*System, error) {
 	if err := e.StartTradeUpdateLoop(context.Background()); err != nil {
 		// Streaming is optional in this scaffold. Sync still works without it.
 	}
-	if strings.EqualFold(strings.TrimSpace(cfg.Broker), "alpaca-paper") {
-		e.AddEvent("alpaca_config", fmt.Sprintf("feed=%s credentials=%s", strings.ToLower(strings.TrimSpace(cfg.AlpacaFeed)), credentialSource))
+	if isAlpacaBroker {
+		env := effectiveAlpacaEnv(cfg)
+		endpoint := strings.TrimSpace(cfg.AlpacaBaseURL)
+		if endpoint == "" {
+			endpoint = alpaca.BaseURLForEnv(env)
+		}
+		e.AddEvent(
+			"alpaca_config",
+			fmt.Sprintf(
+				"env=%s endpoint=%s feed=%s credentials=%s",
+				env,
+				endpoint,
+				strings.ToLower(strings.TrimSpace(cfg.AlpacaFeed)),
+				credentialSource,
+			),
+		)
+	}
+	if watchlistPullErr != nil {
+		e.AddEvent("watchlist_sync_error", fmt.Sprintf("pull: %v", watchlistPullErr))
+	}
+	system := &System{
+		Engine:             e,
+		Watchlist:          watchlist,
+		DefaultBrokerLabel: brokerLabel,
+	}
+	if watchlistSyncBroker != nil {
+		system.PullWatchlist = func() ([]string, error) {
+			return watchlistSyncBroker.GetWatchlistSymbols(defaultAlpacaWatchlistName)
+		}
+		system.SyncWatchlist = func(symbols []string) error {
+			return watchlistSyncBroker.UpsertWatchlistSymbols(defaultAlpacaWatchlistName, symbols)
+		}
 	}
 
 	mode := normalizeMode(cfg.Mode)
-	system := &System{Engine: e}
 	if mode != domain.ModeManual {
 		agent := heuristic.New(broker, cfg.AgentMovePct, cfg.AgentOrderQty)
 		runner := autonomy.NewRunner(
 			e,
 			agent,
 			mode,
-			normalizeSymbols(cfg.Watchlist),
+			watchlist,
 			cfg.AgentInterval,
 			cfg.MaxAgentIntents,
 			cfg.AgentDryRun,
 			cfg.AgentObjective,
 		)
 		system.Runner = runner
-		e.AddEvent("agent_mode", fmt.Sprintf("mode=%s watchlist=%s", mode, strings.Join(normalizeSymbols(cfg.Watchlist), ",")))
+		e.AddEvent("agent_mode", fmt.Sprintf("mode=%s watchlist=%s", mode, strings.Join(watchlist, ",")))
 	}
 	return system, nil
+}
+
+func effectiveAlpacaEnv(cfg Config) string {
+	return alpaca.NormalizeEnv(cfg.AlpacaEnv)
+}
+
+func newAlpacaBroker(cfg Config, apiKey, apiSecret string) *alpaca.Broker {
+	return alpaca.NewForEnv(
+		effectiveAlpacaEnv(cfg),
+		apiKey,
+		apiSecret,
+		cfg.AlpacaBaseURL,
+		cfg.AlpacaDataURL,
+		cfg.AlpacaFeed,
+	)
 }
 
 func NewEngine(cfg Config) (*engine.Engine, error) {
@@ -182,6 +261,25 @@ func normalizeSymbols(raw []string) []string {
 		}
 		seen[s] = struct{}{}
 		out = append(out, s)
+	}
+	return out
+}
+
+func mergeSymbols(lists ...[]string) []string {
+	out := make([]string, 0)
+	seen := map[string]struct{}{}
+	for _, list := range lists {
+		for _, s := range list {
+			s = strings.ToUpper(strings.TrimSpace(s))
+			if s == "" {
+				continue
+			}
+			if _, ok := seen[s]; ok {
+				continue
+			}
+			seen[s] = struct{}{}
+			out = append(out, s)
+		}
 	}
 	return out
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"helix-tui/internal/domain"
@@ -15,10 +16,25 @@ type Runner struct {
 	agent       domain.Agent
 	mode        domain.Mode
 	watchlist   []string
+	mu          sync.RWMutex
 	interval    time.Duration
 	maxPerCycle int
 	dryRun      bool
 	objective   string
+}
+
+func (r *Runner) SetWatchlist(symbols []string) {
+	r.mu.Lock()
+	r.watchlist = normalizeSymbols(symbols)
+	r.mu.Unlock()
+}
+
+func (r *Runner) watchlistSnapshot() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]string, len(r.watchlist))
+	copy(out, r.watchlist)
+	return out
 }
 
 func NewRunner(
@@ -76,21 +92,24 @@ func (r *Runner) Run(ctx context.Context) error {
 func (r *Runner) runCycle(ctx context.Context) error {
 	syncCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if err := r.engine.Sync(syncCtx); err != nil {
+	if err := r.engine.SyncQuiet(syncCtx); err != nil {
 		return fmt.Errorf("sync: %w", err)
 	}
 
 	snapshot := r.engine.Snapshot()
+	watchlist := r.watchlistSnapshot()
 	intents, err := r.agent.ProposeTrades(ctx, domain.AgentInput{
 		Mode:      r.mode,
-		Watchlist: r.watchlist,
+		Watchlist: watchlist,
 		Snapshot:  snapshot,
 		Objective: r.objective,
 	})
 	if err != nil {
 		return fmt.Errorf("propose trades: %w", err)
 	}
+	generated := len(intents)
 	if len(intents) == 0 {
+		r.engine.AddEvent("agent_cycle_complete", "generated=0 attempted=0 executed=0 rejected=0 approvals=0 dry_run=0 skipped=0")
 		return nil
 	}
 
@@ -98,11 +117,44 @@ func (r *Runner) runCycle(ctx context.Context) error {
 		intents = intents[:r.maxPerCycle]
 	}
 
+	executed := 0
+	rejected := 0
+	approvals := 0
+	dryRun := 0
+	skipped := 0
+
 	for _, intent := range intents {
 		if err := r.handleIntent(ctx, intent); err != nil {
+			rejected++
 			r.engine.AddEvent("agent_intent_rejected", fmt.Sprintf("%s: %v", summarizeIntent(intent), err))
+			continue
+		}
+		switch r.mode {
+		case domain.ModeManual:
+			skipped++
+		case domain.ModeAssist:
+			approvals++
+		case domain.ModeAuto:
+			if r.dryRun {
+				dryRun++
+			} else {
+				executed++
+			}
 		}
 	}
+	r.engine.AddEvent(
+		"agent_cycle_complete",
+		fmt.Sprintf(
+			"generated=%d attempted=%d executed=%d rejected=%d approvals=%d dry_run=%d skipped=%d",
+			generated,
+			len(intents),
+			executed,
+			rejected,
+			approvals,
+			dryRun,
+			skipped,
+		),
+	)
 	return nil
 }
 
@@ -159,4 +211,21 @@ func summarizeIntent(i domain.TradeIntent) string {
 		i.Confidence,
 		strings.TrimSpace(i.Rationale),
 	)
+}
+
+func normalizeSymbols(raw []string) []string {
+	out := make([]string, 0, len(raw))
+	seen := map[string]struct{}{}
+	for _, s := range raw {
+		s = strings.ToUpper(strings.TrimSpace(s))
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	return out
 }

@@ -35,6 +35,9 @@ func (g *RiskGate) Evaluate(req domain.OrderRequest, quote domain.Quote) error {
 		return fmt.Errorf("symbol is required")
 	}
 
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
 	if len(g.policy.AllowSymbols) > 0 {
 		if _, ok := g.policy.AllowSymbols[symbol]; !ok {
 			return fmt.Errorf("symbol %s is not allowlisted", symbol)
@@ -61,13 +64,24 @@ func (g *RiskGate) Evaluate(req domain.OrderRequest, quote domain.Quote) error {
 		return fmt.Errorf("trade notional %.2f exceeds max per trade %.2f", notional, g.policy.MaxNotionalPerTrade)
 	}
 
-	g.mu.Lock()
-	defer g.mu.Unlock()
 	if g.policy.MaxNotionalPerDay > 0 && g.dailyNotional+notional > g.policy.MaxNotionalPerDay {
 		return fmt.Errorf("daily notional %.2f exceeds max per day %.2f", g.dailyNotional+notional, g.policy.MaxNotionalPerDay)
 	}
 	g.dailyNotional += notional
 	return nil
+}
+
+func (g *RiskGate) AllowSymbol(symbol string) {
+	symbol = strings.ToUpper(strings.TrimSpace(symbol))
+	if symbol == "" {
+		return
+	}
+	g.mu.Lock()
+	if g.policy.AllowSymbols == nil {
+		g.policy.AllowSymbols = map[string]struct{}{}
+	}
+	g.policy.AllowSymbols[symbol] = struct{}{}
+	g.mu.Unlock()
 }
 
 func (g *RiskGate) ResetDaily() {

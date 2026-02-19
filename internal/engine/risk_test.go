@@ -122,3 +122,29 @@ func TestRiskGateResetDaily(t *testing.T) {
 		t.Fatalf("evaluate failed after reset: %v", err)
 	}
 }
+
+func TestRiskGateAllowSymbol(t *testing.T) {
+	gate := NewRiskGate(Policy{
+		AllowMarketOrders: true,
+		AllowSymbols: map[string]struct{}{
+			"AAPL": {},
+		},
+	})
+	err := gate.Evaluate(domain.OrderRequest{
+		Symbol: "MSFT",
+		Qty:    1,
+		Type:   domain.OrderTypeMarket,
+	}, domain.Quote{Last: 10})
+	if err == nil {
+		t.Fatalf("expected allowlist error before AllowSymbol")
+	}
+
+	gate.AllowSymbol(" msft ")
+	if err := gate.Evaluate(domain.OrderRequest{
+		Symbol: "MSFT",
+		Qty:    1,
+		Type:   domain.OrderTypeMarket,
+	}, domain.Quote{Last: 10}); err != nil {
+		t.Fatalf("expected symbol allowed after AllowSymbol, got %v", err)
+	}
+}

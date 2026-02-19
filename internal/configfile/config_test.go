@@ -40,11 +40,13 @@ func TestLoad_AppliesConfigValues(t *testing.T) {
 	cfg := app.DefaultConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	content := `
-broker = "alpaca-paper"
+broker = "alpaca"
 mode = "AUTO"
 allow_symbols = ["aapl", "AAPL", " msft "]
 
 [alpaca]
+env = " live "
+base_url = " https://api.alpaca.markets "
 api_key = "  key123  "
 api_secret = "  sec123  "
 data_url = " https://data.alpaca.markets "
@@ -77,7 +79,7 @@ objective = "  test objective  "
 		t.Fatalf("Load returned error: %v", err)
 	}
 
-	if cfg.Broker != "alpaca-paper" {
+	if cfg.Broker != "alpaca" {
 		t.Fatalf("unexpected broker: %q", cfg.Broker)
 	}
 	if cfg.Mode != domain.ModeAuto {
@@ -88,6 +90,12 @@ objective = "  test objective  "
 	}
 	if cfg.AlpacaAPIKey != "key123" || cfg.AlpacaAPISecret != "sec123" {
 		t.Fatalf("unexpected alpaca credentials: %q / %q", cfg.AlpacaAPIKey, cfg.AlpacaAPISecret)
+	}
+	if cfg.AlpacaEnv != "live" {
+		t.Fatalf("unexpected alpaca env: %q", cfg.AlpacaEnv)
+	}
+	if cfg.AlpacaBaseURL != "https://api.alpaca.markets" {
+		t.Fatalf("unexpected alpaca base URL: %q", cfg.AlpacaBaseURL)
 	}
 	if cfg.AlpacaDataURL != "https://data.alpaca.markets" || cfg.AlpacaFeed != "sip" {
 		t.Fatalf("unexpected alpaca data config: %q / %q", cfg.AlpacaDataURL, cfg.AlpacaFeed)

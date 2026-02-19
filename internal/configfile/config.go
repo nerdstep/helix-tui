@@ -26,6 +26,8 @@ type fileConfig struct {
 }
 
 type alpacaConfig struct {
+	Env       *string `toml:"env"`
+	BaseURL   *string `toml:"base_url"`
 	APIKey    *string `toml:"api_key"`
 	APISecret *string `toml:"api_secret"`
 	DataURL   *string `toml:"data_url"`
@@ -95,6 +97,12 @@ func applyFileConfig(cfg *app.Config, in fileConfig) error {
 	}
 	if in.Alpaca.APISecret != nil {
 		cfg.AlpacaAPISecret = strings.TrimSpace(*in.Alpaca.APISecret)
+	}
+	if in.Alpaca.Env != nil {
+		cfg.AlpacaEnv = strings.TrimSpace(*in.Alpaca.Env)
+	}
+	if in.Alpaca.BaseURL != nil {
+		cfg.AlpacaBaseURL = strings.TrimSpace(*in.Alpaca.BaseURL)
 	}
 	if in.Alpaca.DataURL != nil {
 		cfg.AlpacaDataURL = strings.TrimSpace(*in.Alpaca.DataURL)

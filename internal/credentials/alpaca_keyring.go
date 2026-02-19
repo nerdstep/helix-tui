@@ -10,7 +10,7 @@ import (
 
 const (
 	DefaultService = "helix-tui"
-	DefaultUser    = "alpaca-paper"
+	DefaultUser    = "alpaca"
 	keyIDField     = "alpaca_api_key_id"
 	secretField    = "alpaca_api_secret_key"
 )

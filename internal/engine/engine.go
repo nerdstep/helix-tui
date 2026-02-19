@@ -11,6 +11,8 @@ import (
 	"helix-tui/internal/domain"
 )
 
+const maxSnapshotEvents = 500
+
 type Engine struct {
 	broker domain.Broker
 	gate   *RiskGate
@@ -33,6 +35,14 @@ func New(broker domain.Broker, gate *RiskGate) *Engine {
 }
 
 func (e *Engine) Sync(ctx context.Context) error {
+	return e.sync(ctx, true)
+}
+
+func (e *Engine) SyncQuiet(ctx context.Context) error {
+	return e.sync(ctx, false)
+}
+
+func (e *Engine) sync(ctx context.Context, emitEvent bool) error {
 	account, err := e.broker.GetAccount(ctx)
 	if err != nil {
 		return fmt.Errorf("get account: %w", err)
@@ -60,7 +70,9 @@ func (e *Engine) Sync(ctx context.Context) error {
 	e.account = account
 	e.positions = posMap
 	e.orders = orderMap
-	e.addEventLocked("sync", "reconciled account, positions, and orders")
+	if emitEvent {
+		e.addEventLocked("sync", "reconciled account, positions, and orders")
+	}
 	e.mu.Unlock()
 	return nil
 }
@@ -87,6 +99,14 @@ func (e *Engine) PlaceOrder(ctx context.Context, req domain.OrderRequest) (domai
 	)
 	e.mu.Unlock()
 	return order, nil
+}
+
+func (e *Engine) GetQuote(ctx context.Context, symbol string) (domain.Quote, error) {
+	symbol = strings.ToUpper(strings.TrimSpace(symbol))
+	if symbol == "" {
+		return domain.Quote{}, fmt.Errorf("symbol is required")
+	}
+	return e.broker.GetQuote(ctx, symbol)
 }
 
 func (e *Engine) CancelOrder(ctx context.Context, orderID string) error {
@@ -170,8 +190,8 @@ func (e *Engine) Snapshot() domain.Snapshot {
 
 	events := make([]domain.Event, len(e.events))
 	copy(events, e.events)
-	if len(events) > 50 {
-		events = events[len(events)-50:]
+	if len(events) > maxSnapshotEvents {
+		events = events[len(events)-maxSnapshotEvents:]
 	}
 
 	return domain.Snapshot{
@@ -186,6 +206,10 @@ func (e *Engine) AddEvent(eventType, details string) {
 	e.mu.Lock()
 	e.addEventLocked(eventType, details)
 	e.mu.Unlock()
+}
+
+func (e *Engine) AllowSymbol(symbol string) {
+	e.gate.AllowSymbol(symbol)
 }
 
 func (e *Engine) applyTradeUpdate(update domain.TradeUpdate) {

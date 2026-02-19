@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,9 +15,12 @@ import (
 )
 
 func TestNewAndInit(t *testing.T) {
-	m := New(newTestEngine())
+	m := New(newTestEngine(), "aapl", "AAPL", " msft ")
 	if m.status == "" {
 		t.Fatalf("expected initial status")
+	}
+	if len(m.watchlist) != 2 || m.watchlist[0] != "AAPL" || m.watchlist[1] != "MSFT" {
+		t.Fatalf("unexpected watchlist normalization: %#v", m.watchlist)
 	}
 	if cmd := m.Init(); cmd == nil {
 		t.Fatalf("expected init command")
@@ -109,7 +113,7 @@ func TestRunCommandCoverage(t *testing.T) {
 		wantErr bool
 		wantSub string
 	}{
-		{name: "help", raw: "help", wantSub: "buy/sell/cancel/flatten/sync"},
+		{name: "help", raw: "help", wantSub: "buy/sell/cancel/flatten/sync/watch"},
 		{name: "unknown", raw: "xyz", wantErr: true, wantSub: "unknown command"},
 		{name: "cancel usage", raw: "cancel", wantErr: true, wantSub: "usage: cancel"},
 		{name: "buy usage", raw: "buy AAPL", wantErr: true, wantSub: "usage: buy"},
@@ -148,7 +152,7 @@ func TestRunCommandCoverage(t *testing.T) {
 
 func TestRefreshCmdAndView(t *testing.T) {
 	e := newTestEngine()
-	m := New(e)
+	m := New(e, "AAPL", "MSFT")
 	msg := m.refreshCmd()()
 	r, ok := msg.(refreshMsg)
 	if !ok {
@@ -159,9 +163,189 @@ func TestRefreshCmdAndView(t *testing.T) {
 	}
 
 	m.snapshot = r.snapshot
+	m.quotes = r.quotes
+	m.quoteErr = r.quoteErr
+	m.snapshot.Positions = []domain.Position{
+		{Symbol: "AAPL", Qty: 1, AvgCost: 90, LastPrice: 100},
+	}
+	m.snapshot.Events = append(m.snapshot.Events, domain.Event{
+		Time:    time.Now().UTC(),
+		Type:    "agent_cycle_complete",
+		Details: "generated=1 attempted=1 executed=1 rejected=0 approvals=0 dry_run=0 skipped=0",
+	})
 	view := m.View()
 	if !strings.Contains(view, "helix-tui") || !strings.Contains(view, "Commands:") {
 		t.Fatalf("unexpected view output: %q", view)
+	}
+	if !strings.Contains(view, "Watchlist") || !strings.Contains(view, "AAPL") {
+		t.Fatalf("expected watchlist panel in view output: %q", view)
+	}
+	if !strings.Contains(view, "System") || !strings.Contains(view, "last_sync=") {
+		t.Fatalf("unexpected view output: %q", view)
+	}
+	if !strings.Contains(view, "Position P&L") || !strings.Contains(view, "Total uPnL") {
+		t.Fatalf("expected pnl panel in view output: %q", view)
+	}
+	if !strings.Contains(view, "last_cycle=") {
+		t.Fatalf("expected agent cycle stats in view output: %q", view)
+	}
+}
+
+func TestNormalizeSymbols(t *testing.T) {
+	got := normalizeSymbols([]string{"aapl", " AAPL ", "msft", ""})
+	if len(got) != 2 || got[0] != "AAPL" || got[1] != "MSFT" {
+		t.Fatalf("unexpected normalize result: %#v", got)
+	}
+}
+
+func TestWatchCommands(t *testing.T) {
+	m := New(newTestEngine(), "AAPL")
+
+	m.input = "watch list"
+	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m1 := model.(Model)
+	if cmd != nil {
+		t.Fatalf("watch list should not schedule refresh")
+	}
+	if !strings.Contains(m1.status, "watchlist: AAPL") {
+		t.Fatalf("unexpected status: %q", m1.status)
+	}
+
+	m1.input = "watch add msft"
+	model, cmd = m1.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2 := model.(Model)
+	if cmd == nil {
+		t.Fatalf("watch add should trigger refresh")
+	}
+	if len(m2.watchlist) != 2 || m2.watchlist[1] != "MSFT" {
+		t.Fatalf("unexpected watchlist after add: %#v", m2.watchlist)
+	}
+
+	m2.input = "watch remove aapl"
+	model, cmd = m2.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m3 := model.(Model)
+	if cmd != nil {
+		t.Fatalf("watch remove should not require refresh")
+	}
+	if len(m3.watchlist) != 1 || m3.watchlist[0] != "MSFT" {
+		t.Fatalf("unexpected watchlist after remove: %#v", m3.watchlist)
+	}
+
+	m3.input = "watch remove aapl"
+	model, _ = m3.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m4 := model.(Model)
+	if !m4.statusError {
+		t.Fatalf("expected error when removing unknown symbol")
+	}
+}
+
+func TestWatchCommandCallbackError(t *testing.T) {
+	m := New(newTestEngine(), "AAPL").WithWatchlistChangeHandler(func([]string) error {
+		return context.DeadlineExceeded
+	})
+	m.input = "watch add MSFT"
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m1 := model.(Model)
+	if !m1.statusError || !strings.Contains(strings.ToLower(m1.status), "sync failed") {
+		t.Fatalf("expected sync failure status, got %q", m1.status)
+	}
+}
+
+func TestWatchSyncCommand(t *testing.T) {
+	m := New(newTestEngine(), "AAPL").WithWatchlistSyncHandler(func(current []string) ([]string, error) {
+		if len(current) != 1 || current[0] != "AAPL" {
+			t.Fatalf("unexpected current watchlist: %#v", current)
+		}
+		return []string{"AAPL", "BYND"}, nil
+	})
+
+	m.input = "watch sync"
+	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m1 := model.(Model)
+	if cmd == nil {
+		t.Fatalf("watch sync should trigger refresh")
+	}
+	if len(m1.watchlist) != 2 || m1.watchlist[1] != "BYND" {
+		t.Fatalf("unexpected watchlist after sync: %#v", m1.watchlist)
+	}
+	if m1.statusError || !strings.Contains(m1.status, "watchlist synced") {
+		t.Fatalf("unexpected sync status: %q", m1.status)
+	}
+}
+
+func TestWatchSyncCommandError(t *testing.T) {
+	m := New(newTestEngine(), "AAPL").WithWatchlistSyncHandler(func([]string) ([]string, error) {
+		return nil, context.DeadlineExceeded
+	})
+
+	m.input = "watch sync"
+	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m1 := model.(Model)
+	if cmd != nil {
+		t.Fatalf("watch sync should not refresh on error")
+	}
+	if !m1.statusError || !strings.Contains(strings.ToLower(m1.status), "sync failed") {
+		t.Fatalf("unexpected sync error status: %q", m1.status)
+	}
+}
+
+func TestEventsCommandScroll(t *testing.T) {
+	m := New(newTestEngine())
+	now := time.Now().UTC()
+	for i := 0; i < 20; i++ {
+		m.snapshot.Events = append(m.snapshot.Events, domain.Event{
+			Time:    now.Add(time.Duration(i) * time.Second),
+			Type:    "evt",
+			Details: strconv.Itoa(i),
+		})
+	}
+
+	m.input = "events top"
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m1 := model.(Model)
+	if m1.eventScroll == 0 {
+		t.Fatalf("expected non-zero scroll at top")
+	}
+	if !strings.Contains(m1.status, "showing") {
+		t.Fatalf("unexpected events status: %q", m1.status)
+	}
+
+	m1.input = "events down 3"
+	model, _ = m1.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2 := model.(Model)
+	if m2.eventScroll != m1.eventScroll-3 {
+		t.Fatalf("expected scroll to move down by 3; got %d want %d", m2.eventScroll, m1.eventScroll-3)
+	}
+
+	m2.input = "events tail"
+	model, _ = m2.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m3 := model.(Model)
+	if m3.eventScroll != 0 {
+		t.Fatalf("expected tail to reset scroll, got %d", m3.eventScroll)
+	}
+}
+
+func TestEventsKeyScroll(t *testing.T) {
+	m := New(newTestEngine())
+	now := time.Now().UTC()
+	for i := 0; i < 20; i++ {
+		m.snapshot.Events = append(m.snapshot.Events, domain.Event{
+			Time:    now.Add(time.Duration(i) * time.Second),
+			Type:    "evt",
+			Details: strconv.Itoa(i),
+		})
+	}
+
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	m1 := model.(Model)
+	if m1.eventScroll == 0 {
+		t.Fatalf("expected page up to increase event scroll")
+	}
+
+	model, _ = m1.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	m2 := model.(Model)
+	if m2.eventScroll != 0 {
+		t.Fatalf("expected end to return to latest events")
 	}
 }
 

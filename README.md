@@ -2,7 +2,7 @@
 
 Go CLI + TUI trading app scaffold with a safety-first architecture:
 
-- Broker adapter boundary (`paper` now, `alpaca-paper` scaffolded)
+- Broker adapter boundary (`paper` simulator and `alpaca` real API mode)
 - Deterministic risk gate between intent and execution
 - State engine with event log and reconciliation
 - Autonomous agent runtime modes (`manual`, `assist`, `auto`)
@@ -11,6 +11,8 @@ Go CLI + TUI trading app scaffold with a safety-first architecture:
 This repo is a foundation for the architecture discussed in your shared thread, not a production bot.
 
 ## Architecture
+
+Diagrams and data flow docs: `docs/architecture.md`
 
 - `cmd/helix`
   - Application entrypoint and CLI flags
@@ -43,6 +45,9 @@ The app can load runtime settings from a TOML file using `github.com/pelletier/g
 - Default path: `config.toml` in the project root (auto-loaded if present)
 - Override path: `-config=path/to/file.toml`
 - Example template: `config.example.toml`
+- Alpaca routing config keys:
+  - `[alpaca].env`
+  - `[alpaca].base_url`
 
 Config precedence is:
 
@@ -70,12 +75,13 @@ go run ./cmd/helix \
   -mode=manual
 ```
 
-Alpaca paper mode:
+Alpaca broker mode (paper or live environment):
 
 ```bash
 go run ./cmd/helix \
   -config=config.toml \
-  -broker=alpaca-paper \
+  -broker=alpaca \
+  -alpaca-env=paper \
   -alpaca-feed=iex \
   -alpaca-key=$APCA_API_KEY_ID \
   -alpaca-secret=$APCA_API_SECRET_KEY \
@@ -87,12 +93,13 @@ Alpaca credentials with keyring (recommended):
 ```bash
 go run ./cmd/helix \
   -config=config.toml \
-  -broker=alpaca-paper \
+  -broker=alpaca \
+  -alpaca-env=paper \
   -alpaca-feed=iex \
   -use-keyring \
   -save-keyring \
   -keyring-service=helix-tui \
-  -keyring-user=alpaca-paper
+  -keyring-user=alpaca
 ```
 
 Windows (PowerShell) credential setup:
@@ -107,13 +114,13 @@ $env:APCA_API_SECRET_KEY = "YOUR_SECRET_KEY"
 1. Run once with keyring save enabled to store credentials in Windows Credential Manager:
 
 ```powershell
-go run ./cmd/helix -broker=alpaca-paper -alpaca-feed=iex -use-keyring -save-keyring -mode=assist
+go run ./cmd/helix -broker=alpaca -alpaca-env=paper -alpaca-feed=iex -use-keyring -save-keyring -mode=assist
 ```
 
 1. Future runs can omit `-alpaca-key` / `-alpaca-secret` and environment variables:
 
 ```powershell
-go run ./cmd/helix -broker=alpaca-paper -alpaca-feed=iex -use-keyring -mode=assist
+go run ./cmd/helix -broker=alpaca -alpaca-env=paper -alpaca-feed=iex -use-keyring -mode=assist
 ```
 
 Optional: persist environment variables for new terminals (if you still want env-based auth):
@@ -146,6 +153,11 @@ go run ./cmd/helix \
 - `cancel <ORDER_ID>`
 - `flatten`
 - `sync`
+- `events up|down|top|tail [N]` (scroll event history)
+- `watch list`
+- `watch add <SYM>`
+- `watch remove <SYM>`
+- `watch sync` (or `watch pull`)
 - `help`
 - `q`
 
@@ -170,6 +182,12 @@ These checks are enforced in `internal/engine/risk.go`.
 - The paper broker fills immediately at the current mock quote.
 - The Alpaca adapter uses the official SDK client for account/positions/orders plus market data latest quote and trade update streaming.
 - Alpaca market data permissions/entitlements still apply to quote availability.
+- Use `-broker=alpaca -alpaca-env=paper|live` to choose trading environment; optional `-alpaca-base-url` overrides endpoint routing.
 - Alpaca quote feed defaults to `iex` (override via `-alpaca-feed`).
 - When `-use-keyring` is enabled, missing Alpaca credentials are loaded from OS keyring; provided credentials can be stored with `-save-keyring`.
+- In `-broker=alpaca`, the app treats Alpaca watchlist `helix-tui` as the watchlist source of truth.
+- In `-broker=paper`, watchlist comes from config/flags only.
+- Watchlist symbols are automatically treated as allowlisted symbols by the risk gate.
 - The built-in agent is a conservative heuristic (`internal/agent/heuristic`) that reacts to sampled price moves.
+- The TUI includes watchlist quote rows, position P&L, and basic agent/system runtime stats.
+- Event history supports keyboard paging (`PgUp`, `PgDn`, `Home`, `End`) and retains a larger recent window for scrollback.

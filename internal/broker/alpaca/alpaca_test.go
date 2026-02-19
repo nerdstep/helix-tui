@@ -59,6 +59,30 @@ func TestNew_DefaultsAndPaper(t *testing.T) {
 	if p.feed != marketdata.SIP {
 		t.Fatalf("expected SIP feed, got %q", p.feed)
 	}
+
+	l := NewForEnv("live", "k", "s", "", "", "iex")
+	if l == nil || l.tradeClient == nil || l.dataClient == nil {
+		t.Fatalf("expected live broker clients")
+	}
+}
+
+func TestNormalizeEnvAndBaseURLForEnv(t *testing.T) {
+	if got := NormalizeEnv(""); got != EnvPaper {
+		t.Fatalf("expected default env paper, got %q", got)
+	}
+	if got := NormalizeEnv("LIVE"); got != EnvLive {
+		t.Fatalf("expected normalized env live, got %q", got)
+	}
+	if got := NormalizeEnv("invalid"); got != EnvPaper {
+		t.Fatalf("expected invalid env to fall back to paper, got %q", got)
+	}
+
+	if got := BaseURLForEnv("paper"); got != PaperAPIBase {
+		t.Fatalf("unexpected paper base URL: %q", got)
+	}
+	if got := BaseURLForEnv("live"); got != LiveAPIBase {
+		t.Fatalf("unexpected live base URL: %q", got)
+	}
 }
 
 func TestContextAndValidationGuards(t *testing.T) {
@@ -247,6 +271,31 @@ func TestDataURLFallbackUsesEnvWithoutPanic(t *testing.T) {
 	})
 	if b == nil {
 		t.Fatalf("expected broker")
+	}
+}
+
+func TestWatchlistValidationAndNormalizers(t *testing.T) {
+	b := &Broker{}
+	if _, err := b.GetWatchlistSymbols(" "); err == nil || !strings.Contains(err.Error(), "watchlist name is required") {
+		t.Fatalf("expected watchlist name validation, got %v", err)
+	}
+	if err := b.UpsertWatchlistSymbols(" ", []string{"AAPL"}); err == nil || !strings.Contains(err.Error(), "watchlist name is required") {
+		t.Fatalf("expected watchlist name validation, got %v", err)
+	}
+
+	got := normalizeSymbols([]string{"aapl", " AAPL ", "msft"})
+	if len(got) != 2 || got[0] != "AAPL" || got[1] != "MSFT" {
+		t.Fatalf("unexpected normalizeSymbols: %#v", got)
+	}
+
+	assets := []sdkalpaca.Asset{
+		{Symbol: "aapl"},
+		{Symbol: " AAPL "},
+		{Symbol: "msft"},
+	}
+	gotAssets := normalizeSymbolsFromAssets(assets)
+	if len(gotAssets) != 2 || gotAssets[0] != "AAPL" || gotAssets[1] != "MSFT" {
+		t.Fatalf("unexpected normalizeSymbolsFromAssets: %#v", gotAssets)
 	}
 }
 

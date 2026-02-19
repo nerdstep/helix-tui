@@ -160,6 +160,9 @@ func TestRunCycle_UsesMaxPerCycleAndPassesAgentInput(t *testing.T) {
 	if broker.placeCalls != 1 {
 		t.Fatalf("expected one placement due to maxPerCycle, got %d", broker.placeCalls)
 	}
+	if !hasEventType(r.engine.Snapshot().Events, "agent_cycle_complete") {
+		t.Fatalf("expected agent_cycle_complete event")
+	}
 }
 
 func TestRunCycle_IntentErrorRecordedAsEvent(t *testing.T) {
@@ -175,6 +178,9 @@ func TestRunCycle_IntentErrorRecordedAsEvent(t *testing.T) {
 	}
 	if !hasEventType(r.engine.Snapshot().Events, "agent_intent_rejected") {
 		t.Fatalf("expected agent_intent_rejected event")
+	}
+	if !hasEventType(r.engine.Snapshot().Events, "agent_cycle_complete") {
+		t.Fatalf("expected agent_cycle_complete event")
 	}
 }
 
@@ -202,6 +208,15 @@ func TestRunCycle_ProposeError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "propose trades:") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSetWatchlist(t *testing.T) {
+	r, _ := newRunnerTestHarness(domain.ModeAuto, false)
+	r.SetWatchlist([]string{"aapl", " AAPL ", "msft"})
+	got := r.watchlistSnapshot()
+	if len(got) != 2 || got[0] != "AAPL" || got[1] != "MSFT" {
+		t.Fatalf("unexpected watchlist snapshot: %#v", got)
 	}
 }
 

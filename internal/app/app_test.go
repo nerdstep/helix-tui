@@ -18,6 +18,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.AlpacaFeed != "iex" {
 		t.Fatalf("unexpected feed default: %q", cfg.AlpacaFeed)
 	}
+	if cfg.AlpacaEnv != "paper" {
+		t.Fatalf("unexpected alpaca env default: %q", cfg.AlpacaEnv)
+	}
 	if !cfg.UseKeyring || !cfg.SaveToKeyring {
 		t.Fatalf("expected keyring defaults enabled")
 	}
@@ -86,7 +89,7 @@ func TestNewSystem_UnsupportedBroker(t *testing.T) {
 
 func TestNewSystem_AlpacaMissingCredentials(t *testing.T) {
 	cfg := DefaultConfig()
-	cfg.Broker = "alpaca-paper"
+	cfg.Broker = "alpaca"
 	cfg.UseKeyring = false
 	cfg.AlpacaAPIKey = ""
 	cfg.AlpacaAPISecret = ""
@@ -97,6 +100,14 @@ func TestNewSystem_AlpacaMissingCredentials(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "required") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestEffectiveAlpacaEnv(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.AlpacaEnv = "live"
+	if got := effectiveAlpacaEnv(cfg); got != "live" {
+		t.Fatalf("expected alpaca broker env to honor config, got %q", got)
 	}
 }
 
@@ -161,8 +172,47 @@ func TestNewSystem_AutoRunnerCanRunOneCycle(t *testing.T) {
 	defer cancel()
 	_ = sys.Runner.Run(ctx)
 
-	if !hasEventType(sys.Engine.Snapshot().Events, "agent_runner_start") {
-		t.Fatalf("expected runner start event")
+	if !hasEventType(sys.Engine.Snapshot().Events, "agent_cycle_complete") {
+		t.Fatalf("expected agent cycle completion event")
+	}
+}
+
+func TestNewSystem_WatchlistSymbolsAreAllowlisted(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Broker = "paper"
+	cfg.Mode = domain.ModeManual
+	cfg.AllowSymbols = []string{"AAPL"}
+	cfg.Watchlist = []string{"MSFT"}
+
+	sys, err := NewSystem(cfg)
+	if err != nil {
+		t.Fatalf("NewSystem failed: %v", err)
+	}
+	_, err = sys.Engine.PlaceOrder(context.Background(), domain.OrderRequest{
+		Symbol: "MSFT",
+		Side:   domain.SideBuy,
+		Qty:    1,
+		Type:   domain.OrderTypeMarket,
+	})
+	if err != nil {
+		t.Fatalf("expected watchlist symbol to be allowlisted, got %v", err)
+	}
+}
+
+func TestNewSystem_PaperHasNoRemoteWatchlistHandlers(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Broker = "paper"
+	cfg.Mode = domain.ModeManual
+
+	sys, err := NewSystem(cfg)
+	if err != nil {
+		t.Fatalf("NewSystem failed: %v", err)
+	}
+	if sys.PullWatchlist != nil {
+		t.Fatalf("expected no pull watchlist handler for paper broker")
+	}
+	if sys.SyncWatchlist != nil {
+		t.Fatalf("expected no sync watchlist handler for paper broker")
 	}
 }
 

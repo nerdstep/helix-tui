@@ -35,6 +35,21 @@ func TestSync_Success(t *testing.T) {
 	}
 }
 
+func TestSyncQuiet_SuccessWithoutSyncEvent(t *testing.T) {
+	b := &engineStubBroker{
+		account: domain.Account{Cash: 1000, BuyingPower: 1000, Equity: 1000},
+	}
+	e := New(b, NewRiskGate(Policy{AllowMarketOrders: true}))
+
+	if err := e.SyncQuiet(context.Background()); err != nil {
+		t.Fatalf("SyncQuiet failed: %v", err)
+	}
+	s := e.Snapshot()
+	if hasEngineEvent(s.Events, "sync") {
+		t.Fatalf("did not expect sync event from SyncQuiet")
+	}
+}
+
 func TestSync_Errors(t *testing.T) {
 	tests := []struct {
 		name string
@@ -309,13 +324,13 @@ func TestSnapshot_TrimsEventsAndSortsPositions(t *testing.T) {
 	now := time.Now()
 	e.orders["1"] = domain.Order{ID: "1", UpdatedAt: now.Add(-time.Minute)}
 	e.orders["2"] = domain.Order{ID: "2", UpdatedAt: now}
-	for i := 0; i < 60; i++ {
+	for i := 0; i < 600; i++ {
 		e.AddEvent("evt", fmt.Sprintf("%d", i))
 	}
 
 	s := e.Snapshot()
-	if len(s.Events) != 50 {
-		t.Fatalf("expected 50 events, got %d", len(s.Events))
+	if len(s.Events) != maxSnapshotEvents {
+		t.Fatalf("expected %d events, got %d", maxSnapshotEvents, len(s.Events))
 	}
 	if len(s.Positions) != 2 || s.Positions[0].Symbol != "AAPL" {
 		t.Fatalf("expected sorted positions, got %#v", s.Positions)

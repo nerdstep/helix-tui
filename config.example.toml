@@ -1,10 +1,12 @@
 # Copy this file to config.toml and adjust values for your environment.
 
-broker = "paper"
+broker = "paper" # paper | alpaca
 mode = "manual" # manual | assist | auto
 allow_symbols = ["AAPL", "MSFT", "TSLA", "NVDA"]
 
 [alpaca]
+env = "paper" # paper | live
+base_url = "" # optional override; defaults by env
 # You can leave credentials empty and rely on keyring/env instead.
 api_key = ""
 api_secret = ""
@@ -15,13 +17,14 @@ feed = "iex" # iex | sip | delayed_sip | boats | overnight
 use = true
 save = true
 service = "helix-tui"
-user = "alpaca-paper"
+user = "alpaca"
 
 [risk]
 max_trade_notional = 5000
 max_day_notional = 20000
 
 [agent]
+# Used by paper mode. In alpaca mode, watchlist comes from Alpaca watchlist "helix-tui".
 watchlist = ["AAPL", "MSFT", "TSLA", "NVDA"]
 interval = "10s"
 qty = 1.0

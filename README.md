@@ -13,6 +13,7 @@ This repo is a foundation for the architecture discussed in your shared thread, 
 ## Architecture
 
 Diagrams and data flow docs: `docs/architecture.md`
+Implementation backlog and roadmap: `docs/implementation-plan.md`
 
 - `cmd/helix`
   - Application entrypoint and CLI flags
@@ -50,17 +51,21 @@ The app can load runtime settings from a TOML file using `github.com/pelletier/g
   - `[alpaca].base_url`
 - Agent selection/config keys:
   - `[agent].type` (`heuristic` or `llm`)
+  - `[agent].sync_timeout`
+  - `[agent].order_timeout`
   - `[agent.llm].api_key`
   - `[agent.llm].base_url`
   - `[agent.llm].model`
   - `[agent.llm].timeout`
   - `[agent.llm].system_prompt`
+  - `[logging].file` (optional event log path)
+  - `[logging].mode` (`append` or `truncate`)
 
 Config precedence is:
 
 - built-in defaults
 - TOML file
-- environment variables (`APCA_API_KEY_ID`, `APCA_API_SECRET_KEY`, `APCA_API_DATA_URL`, `OPENAI_API_KEY`, `HELIX_LLM_API_KEY`)
+- environment variables (`APCA_API_KEY_ID`, `APCA_API_SECRET_KEY`, `APCA_API_DATA_URL`, `OPENAI_API_KEY`, `HELIX_LLM_API_KEY`, `HELIX_LOG_FILE`, `HELIX_LOG_MODE`)
 - CLI flags
 
 Windows (PowerShell) quick start:
@@ -79,6 +84,10 @@ go run ./cmd/helix \
   -max-trade=5000 \
   -max-day=20000 \
   -allow=AAPL,MSFT,TSLA,NVDA \
+  -sync-timeout=15s \
+  -order-timeout=15s \
+  -log-file=logs/helix.log \
+  -log-mode=append \
   -mode=manual \
   -agent-type=heuristic
 ```
@@ -213,12 +222,15 @@ These checks are enforced in `internal/engine/risk.go`.
 - Use `-broker=alpaca -alpaca-env=paper|live` to choose trading environment; optional `-alpaca-base-url` overrides endpoint routing.
 - Alpaca quote feed defaults to `iex` (override via `-alpaca-feed`).
 - When `-use-keyring` is enabled, missing Alpaca credentials are loaded from OS keyring; provided credentials can be stored with `-save-keyring`.
+- When `-use-keyring` is enabled, missing LLM credentials are also loaded from OS keyring; provided `-llm-key` values can be stored with `-save-keyring`.
 - In `-broker=alpaca`, the app treats Alpaca watchlist `helix-tui` as the watchlist source of truth.
 - In `-broker=paper`, watchlist comes from config/flags only.
 - Watchlist symbols are automatically treated as allowlisted symbols by the risk gate.
 - The built-in agent is a conservative heuristic (`internal/agent/heuristic`) that reacts to sampled price moves.
 - LLM agent can be enabled with `-agent-type=llm` (or `[agent].type = "llm"`).
-- LLM credentials can be supplied via `OPENAI_API_KEY` / `HELIX_LLM_API_KEY`, config, or `-llm-key`.
+- LLM credentials can be supplied via `OPENAI_API_KEY` / `HELIX_LLM_API_KEY`, config, `-llm-key`, or keyring.
 - LLM output only proposes intents; all execution still goes through `Runner -> Engine -> RiskGate`.
+- Set `-log-file=...` (or `[logging].file`) to persist event logs for later debugging.
+- Use `-log-mode=truncate` (or `[logging].mode = "truncate"`) to reset the log file each app start.
 - The TUI includes watchlist quote rows, position P&L, and basic agent/system runtime stats.
 - Event history supports keyboard paging (`PgUp`, `PgDn`, `Home`, `End`) and retains a larger recent window for scrollback.

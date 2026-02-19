@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"helix-tui/internal/app"
 	"helix-tui/internal/configfile"
@@ -84,6 +85,8 @@ func TestApplyEnvOverrides(t *testing.T) {
 	t.Setenv("APCA_API_SECRET_KEY", "env-secret")
 	t.Setenv("APCA_API_DATA_URL", "env-url")
 	t.Setenv("OPENAI_API_KEY", "env-llm-key")
+	t.Setenv("HELIX_LOG_FILE", "logs/from-env.log")
+	t.Setenv("HELIX_LOG_MODE", "truncate")
 
 	ApplyEnvOverrides(&cfg)
 	if cfg.AlpacaAPIKey != "env-key" {
@@ -97,6 +100,12 @@ func TestApplyEnvOverrides(t *testing.T) {
 	}
 	if cfg.LLMAPIKey != "env-llm-key" {
 		t.Fatalf("unexpected llm key: %q", cfg.LLMAPIKey)
+	}
+	if cfg.LogFile != "logs/from-env.log" {
+		t.Fatalf("unexpected log file: %q", cfg.LogFile)
+	}
+	if cfg.LogMode != "truncate" {
+		t.Fatalf("unexpected log mode: %q", cfg.LogMode)
 	}
 }
 
@@ -117,6 +126,10 @@ func TestParseRunOptions(t *testing.T) {
 			"-mode=ASSIST",
 			"-headless",
 			"-agent-type=llm",
+			"-sync-timeout=12s",
+			"-order-timeout=14s",
+			"-log-file=logs/helix.log",
+			"-log-mode=truncate",
 			"-llm-model=gpt-4.1-mini",
 			"-llm-key=test-key",
 		},
@@ -139,6 +152,15 @@ func TestParseRunOptions(t *testing.T) {
 	if opts.cfg.LLMModel != "gpt-4.1-mini" || opts.cfg.LLMAPIKey != "test-key" {
 		t.Fatalf("unexpected llm config: model=%q key=%q", opts.cfg.LLMModel, opts.cfg.LLMAPIKey)
 	}
+	if opts.cfg.SyncTimeout != 12*time.Second || opts.cfg.OrderTimeout != 14*time.Second {
+		t.Fatalf("unexpected timeout config: sync=%s order=%s", opts.cfg.SyncTimeout, opts.cfg.OrderTimeout)
+	}
+	if opts.cfg.LogFile != "logs/helix.log" {
+		t.Fatalf("unexpected log file: %q", opts.cfg.LogFile)
+	}
+	if opts.cfg.LogMode != "truncate" {
+		t.Fatalf("unexpected log mode: %q", opts.cfg.LogMode)
+	}
 	wantAllow := []string{"AAPL", "MSFT"}
 	if !reflect.DeepEqual(opts.cfg.AllowSymbols, wantAllow) {
 		t.Fatalf("allow symbols mismatch: got %#v want %#v", opts.cfg.AllowSymbols, wantAllow)
@@ -153,6 +175,17 @@ func TestParseRunOptions_DefaultStderr(t *testing.T) {
 	cfg := app.DefaultConfig()
 	if _, err := parseRunOptions([]string{"-mode=auto"}, cfg, configfile.DefaultPath, nil); err != nil {
 		t.Fatalf("parseRunOptions with nil stderr failed: %v", err)
+	}
+}
+
+func TestParseRunOptions_InvalidLogMode(t *testing.T) {
+	cfg := app.DefaultConfig()
+	_, err := parseRunOptions([]string{"-log-mode=rotate"}, cfg, configfile.DefaultPath, &bytes.Buffer{})
+	if err == nil {
+		t.Fatalf("expected invalid log mode error")
+	}
+	if !strings.Contains(err.Error(), "invalid log mode") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -215,9 +216,8 @@ type intentOutput struct {
 }
 
 func parseIntents(raw string, watchlist []string) ([]domain.TradeIntent, error) {
-	jsonBody := extractJSONObject(raw)
-	var out llmOutput
-	if err := json.Unmarshal([]byte(jsonBody), &out); err != nil {
+	out, err := decodeLLMOutput(raw)
+	if err != nil {
 		return nil, fmt.Errorf("parse llm output: %w", err)
 	}
 	if len(out.Intents) == 0 {
@@ -282,17 +282,131 @@ func parseIntents(raw string, watchlist []string) ([]domain.TradeIntent, error) 
 	return intents, nil
 }
 
-func extractJSONObject(raw string) string {
+var jsonFencePattern = regexp.MustCompile("(?s)```(?:json)?\\s*(.*?)\\s*```")
+
+func decodeLLMOutput(raw string) (llmOutput, error) {
+	candidates := collectJSONCandidates(raw)
+	var lastErr error
+	for _, candidate := range candidates {
+		var out llmOutput
+		if err := json.Unmarshal([]byte(candidate), &out); err == nil {
+			return out, nil
+		} else {
+			lastErr = err
+		}
+
+		// Fallback for model responses that emit a raw array of intents.
+		var intents []intentOutput
+		if err := json.Unmarshal([]byte(candidate), &intents); err == nil {
+			return llmOutput{Intents: intents}, nil
+		}
+	}
+	return llmOutput{}, fmt.Errorf("%v (response preview: %q)", lastErr, previewResponse(raw))
+}
+
+func collectJSONCandidates(raw string) []string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return "{}"
+		return []string{"{}"}
 	}
-	start := strings.Index(raw, "{")
-	end := strings.LastIndex(raw, "}")
-	if start == -1 || end == -1 || end < start {
-		return raw
+
+	seen := map[string]struct{}{}
+	out := make([]string, 0, 8)
+	add := func(candidate string) {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			return
+		}
+		if _, ok := seen[candidate]; ok {
+			return
+		}
+		seen[candidate] = struct{}{}
+		out = append(out, candidate)
 	}
-	return raw[start : end+1]
+
+	add(raw)
+	for _, block := range extractFencedBlocks(raw) {
+		add(block)
+		for _, object := range extractBalancedJSONObjects(block) {
+			add(object)
+		}
+	}
+	for _, object := range extractBalancedJSONObjects(raw) {
+		add(object)
+	}
+	return out
+}
+
+func extractFencedBlocks(raw string) []string {
+	matches := jsonFencePattern.FindAllStringSubmatch(raw, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) > 1 {
+			out = append(out, match[1])
+		}
+	}
+	return out
+}
+
+func extractBalancedJSONObjects(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	out := make([]string, 0, 2)
+	b := []byte(raw)
+	for start := 0; start < len(b); start++ {
+		if b[start] != '{' {
+			continue
+		}
+		depth := 0
+		inString := false
+		escaped := false
+		for i := start; i < len(b); i++ {
+			ch := b[i]
+			if inString {
+				if escaped {
+					escaped = false
+					continue
+				}
+				switch ch {
+				case '\\':
+					escaped = true
+				case '"':
+					inString = false
+				}
+				continue
+			}
+			switch ch {
+			case '"':
+				inString = true
+			case '{':
+				depth++
+			case '}':
+				depth--
+				if depth == 0 {
+					out = append(out, raw[start:i+1])
+					start = i
+					i = len(b) // break loop
+				}
+			}
+		}
+	}
+	return out
+}
+
+func previewResponse(raw string) string {
+	preview := strings.Join(strings.Fields(strings.TrimSpace(raw)), " ")
+	if preview == "" {
+		return "(empty)"
+	}
+	const max = 180
+	if len(preview) <= max {
+		return preview
+	}
+	return preview[:max] + "..."
 }
 
 type openAIChatClient struct {
@@ -315,6 +429,9 @@ func newOpenAIChatClient(apiKey, baseURL string) *openAIChatClient {
 func (c *openAIChatClient) Complete(ctx context.Context, model, systemPrompt, userPrompt string) (string, error) {
 	completion, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Model: openai.ChatModel(model),
+		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONObject: &openai.ResponseFormatJSONObjectParam{},
+		},
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(systemPrompt),
 			openai.UserMessage(userPrompt),

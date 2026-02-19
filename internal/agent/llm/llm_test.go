@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -80,6 +81,42 @@ func TestParseIntentsInvalidJSON(t *testing.T) {
 	_, err := parseIntents("not-json", []string{"AAPL"})
 	if err == nil {
 		t.Fatalf("expected parse error")
+	}
+	if got := err.Error(); got == "" || !strings.Contains(got, "response preview") {
+		t.Fatalf("expected response preview in error, got: %v", err)
+	}
+}
+
+func TestParseIntentsFromMarkdownCodeFence(t *testing.T) {
+	raw := "Analysis:\n```json\n{\"intents\":[{\"symbol\":\"AAPL\",\"side\":\"buy\",\"qty\":1,\"order_type\":\"market\"}]}\n```"
+	intents, err := parseIntents(raw, []string{"AAPL"})
+	if err != nil {
+		t.Fatalf("parseIntents failed: %v", err)
+	}
+	if len(intents) != 1 || intents[0].Symbol != "AAPL" {
+		t.Fatalf("unexpected intents: %#v", intents)
+	}
+}
+
+func TestParseIntentsFromMixedText(t *testing.T) {
+	raw := "Action plan follows.\n{\"intents\":[{\"symbol\":\"AAPL\",\"side\":\"sell\",\"qty\":2,\"order_type\":\"market\"}]}\nThank you."
+	intents, err := parseIntents(raw, []string{"AAPL"})
+	if err != nil {
+		t.Fatalf("parseIntents failed: %v", err)
+	}
+	if len(intents) != 1 || intents[0].Side != domain.SideSell || intents[0].Qty != 2 {
+		t.Fatalf("unexpected intents: %#v", intents)
+	}
+}
+
+func TestParseIntentsFromRawArray(t *testing.T) {
+	raw := `[{"symbol":"AAPL","side":"buy","qty":1,"order_type":"market"}]`
+	intents, err := parseIntents(raw, []string{"AAPL"})
+	if err != nil {
+		t.Fatalf("parseIntents failed: %v", err)
+	}
+	if len(intents) != 1 || intents[0].Symbol != "AAPL" {
+		t.Fatalf("unexpected intents: %#v", intents)
 	}
 }
 

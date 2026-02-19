@@ -24,6 +24,7 @@ type fileConfig struct {
 	Risk         riskConfig    `toml:"risk"`
 	Agent        agentConfig   `toml:"agent"`
 	Keyring      keyringConfig `toml:"keyring"`
+	Logging      loggingConfig `toml:"logging"`
 }
 
 type alpacaConfig struct {
@@ -47,16 +48,23 @@ type riskConfig struct {
 	MaxDayNotional   *float64 `toml:"max_day_notional"`
 }
 
+type loggingConfig struct {
+	File *string `toml:"file"`
+	Mode *string `toml:"mode"`
+}
+
 type agentConfig struct {
-	Type       *string        `toml:"type"`
-	Watchlist  []string       `toml:"watchlist"`
-	Interval   *string        `toml:"interval"`
-	Qty        *float64       `toml:"qty"`
-	MovePct    *float64       `toml:"move_pct"`
-	MaxIntents *int           `toml:"max_intents"`
-	DryRun     *bool          `toml:"dry_run"`
-	Objective  *string        `toml:"objective"`
-	LLM        llmAgentConfig `toml:"llm"`
+	Type         *string        `toml:"type"`
+	Watchlist    []string       `toml:"watchlist"`
+	Interval     *string        `toml:"interval"`
+	SyncTimeout  *string        `toml:"sync_timeout"`
+	OrderTimeout *string        `toml:"order_timeout"`
+	Qty          *float64       `toml:"qty"`
+	MovePct      *float64       `toml:"move_pct"`
+	MaxIntents   *int           `toml:"max_intents"`
+	DryRun       *bool          `toml:"dry_run"`
+	Objective    *string        `toml:"objective"`
+	LLM          llmAgentConfig `toml:"llm"`
 }
 
 type llmAgentConfig struct {
@@ -141,6 +149,20 @@ func applyFileConfig(cfg *app.Config, in fileConfig) error {
 	if in.Risk.MaxDayNotional != nil {
 		cfg.MaxNotionalPerDay = *in.Risk.MaxDayNotional
 	}
+	if in.Logging.File != nil {
+		cfg.LogFile = strings.TrimSpace(*in.Logging.File)
+	}
+	if in.Logging.Mode != nil {
+		mode := strings.ToLower(strings.TrimSpace(*in.Logging.Mode))
+		switch mode {
+		case "", "append", "truncate":
+			if mode != "" {
+				cfg.LogMode = mode
+			}
+		default:
+			return fmt.Errorf("logging.mode must be append or truncate")
+		}
+	}
 
 	if in.Agent.Watchlist != nil {
 		cfg.Watchlist = symbols.Normalize(in.Agent.Watchlist)
@@ -154,6 +176,20 @@ func applyFileConfig(cfg *app.Config, in fileConfig) error {
 			return fmt.Errorf("agent.interval must be a valid duration: %w", err)
 		}
 		cfg.AgentInterval = d
+	}
+	if in.Agent.SyncTimeout != nil {
+		d, err := time.ParseDuration(strings.TrimSpace(*in.Agent.SyncTimeout))
+		if err != nil {
+			return fmt.Errorf("agent.sync_timeout must be a valid duration: %w", err)
+		}
+		cfg.SyncTimeout = d
+	}
+	if in.Agent.OrderTimeout != nil {
+		d, err := time.ParseDuration(strings.TrimSpace(*in.Agent.OrderTimeout))
+		if err != nil {
+			return fmt.Errorf("agent.order_timeout must be a valid duration: %w", err)
+		}
+		cfg.OrderTimeout = d
 	}
 	if in.Agent.Qty != nil {
 		cfg.AgentOrderQty = *in.Agent.Qty

@@ -14,6 +14,7 @@ data_url = ""
 feed = "iex" # iex | sip | delayed_sip | boats | overnight
 
 [keyring]
+# Used for both Alpaca and LLM API keys when enabled.
 use = true
 save = true
 service = "helix-tui"
@@ -28,6 +29,8 @@ type = "heuristic" # heuristic | llm
 # Used by paper mode. In alpaca mode, watchlist comes from Alpaca watchlist "helix-tui".
 watchlist = ["AAPL", "MSFT", "TSLA", "NVDA"]
 interval = "10s"
+sync_timeout = "15s" # broker sync timeout used by autonomous cycles
+order_timeout = "15s" # order execution timeout used by autonomous cycles
 qty = 1.0
 move_pct = 0.01
 max_intents = 1
@@ -35,8 +38,12 @@ dry_run = false
 objective = "Generate conservative, risk-aware trade intents."
 
 [agent.llm]
-api_key = "" # optional if OPENAI_API_KEY or HELIX_LLM_API_KEY is set
+api_key = "" # optional if OPENAI_API_KEY / HELIX_LLM_API_KEY is set or keyring has one
 base_url = "https://api.openai.com/v1" # OpenAI-compatible endpoint
 model = "gpt-4.1-mini"
 timeout = "20s"
 system_prompt = ""
+
+[logging]
+file = "" # optional path to append event logs, e.g. "logs/helix.log"
+mode = "append" # append | truncate (truncate resets file each app start)

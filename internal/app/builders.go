@@ -94,7 +94,11 @@ func buildEngine(cfg Config, broker domain.Broker, allowSymbols map[string]struc
 	})
 
 	e := engine.New(broker, risk)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	syncTimeout := cfg.SyncTimeout
+	if syncTimeout <= 0 {
+		syncTimeout = 15 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
 	defer cancel()
 	if err := e.Sync(ctx); err != nil {
 		return nil, err
@@ -152,6 +156,8 @@ func buildRunner(cfg Config, broker domain.Broker, e *engine.Engine, watchlist [
 		mode,
 		watchlist,
 		cfg.AgentInterval,
+		cfg.SyncTimeout,
+		cfg.OrderTimeout,
 		cfg.MaxAgentIntents,
 		cfg.AgentDryRun,
 		cfg.AgentObjective,
@@ -165,8 +171,18 @@ func buildAgent(cfg Config, broker domain.Broker) (domain.Agent, string, error) 
 	case "heuristic":
 		return heuristic.New(broker, cfg.AgentMovePct, cfg.AgentOrderQty), agentType, nil
 	case "llm":
+		keyringCfg := credentials.KeyringConfig{
+			Enabled: cfg.UseKeyring,
+			Save:    cfg.SaveToKeyring,
+			Service: cfg.KeyringService,
+			User:    cfg.KeyringUser,
+		}
+		llmKey, _, err := credentials.ResolveOpenAICredentials(cfg.LLMAPIKey, keyringCfg)
+		if err != nil {
+			return nil, "", err
+		}
 		agent, err := llm.New(broker, llm.Config{
-			APIKey:       cfg.LLMAPIKey,
+			APIKey:       llmKey,
 			BaseURL:      cfg.LLMBaseURL,
 			Model:        cfg.LLMModel,
 			Timeout:      cfg.LLMTimeout,

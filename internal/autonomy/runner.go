@@ -13,15 +13,17 @@ import (
 )
 
 type Runner struct {
-	engine      *engine.Engine
-	agent       domain.Agent
-	mode        domain.Mode
-	watchlist   []string
-	mu          sync.RWMutex
-	interval    time.Duration
-	maxPerCycle int
-	dryRun      bool
-	objective   string
+	engine       *engine.Engine
+	agent        domain.Agent
+	mode         domain.Mode
+	watchlist    []string
+	mu           sync.RWMutex
+	interval     time.Duration
+	syncTimeout  time.Duration
+	orderTimeout time.Duration
+	maxPerCycle  int
+	dryRun       bool
+	objective    string
 }
 
 func (r *Runner) SetWatchlist(nextWatchlist []string) {
@@ -44,6 +46,8 @@ func NewRunner(
 	mode domain.Mode,
 	watchlist []string,
 	interval time.Duration,
+	syncTimeout time.Duration,
+	orderTimeout time.Duration,
 	maxPerCycle int,
 	dryRun bool,
 	objective string,
@@ -51,18 +55,26 @@ func NewRunner(
 	if interval <= 0 {
 		interval = 10 * time.Second
 	}
+	if syncTimeout <= 0 {
+		syncTimeout = 15 * time.Second
+	}
+	if orderTimeout <= 0 {
+		orderTimeout = 15 * time.Second
+	}
 	if maxPerCycle <= 0 {
 		maxPerCycle = 1
 	}
 	return &Runner{
-		engine:      engine,
-		agent:       agent,
-		mode:        mode,
-		watchlist:   watchlist,
-		interval:    interval,
-		maxPerCycle: maxPerCycle,
-		dryRun:      dryRun,
-		objective:   strings.TrimSpace(objective),
+		engine:       engine,
+		agent:        agent,
+		mode:         mode,
+		watchlist:    watchlist,
+		interval:     interval,
+		syncTimeout:  syncTimeout,
+		orderTimeout: orderTimeout,
+		maxPerCycle:  maxPerCycle,
+		dryRun:       dryRun,
+		objective:    strings.TrimSpace(objective),
 	}
 }
 
@@ -91,7 +103,7 @@ func (r *Runner) Run(ctx context.Context) error {
 }
 
 func (r *Runner) runCycle(ctx context.Context) error {
-	syncCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	syncCtx, cancel := context.WithTimeout(ctx, r.syncTimeout)
 	defer cancel()
 	if err := r.engine.SyncQuiet(syncCtx); err != nil {
 		return fmt.Errorf("sync: %w", err)
@@ -183,7 +195,7 @@ func (r *Runner) handleIntent(ctx context.Context, intent domain.TradeIntent) er
 			r.engine.AddEvent("agent_intent_dry_run", summarizeIntent(intent))
 			return nil
 		}
-		execCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		execCtx, cancel := context.WithTimeout(ctx, r.orderTimeout)
 		defer cancel()
 		_, err := r.engine.PlaceOrder(execCtx, domain.OrderRequest{
 			Symbol:     intent.Symbol,

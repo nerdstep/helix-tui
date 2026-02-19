@@ -29,8 +29,8 @@ func parseRunOptions(args []string, cfg app.Config, configPath string, stderr io
 	fs.StringVar(&cfg.AlpacaAPISecret, "alpaca-secret", cfg.AlpacaAPISecret, "alpaca API secret")
 	fs.StringVar(&cfg.AlpacaDataURL, "alpaca-data-url", cfg.AlpacaDataURL, "alpaca market data API base URL")
 	fs.StringVar(&cfg.AlpacaFeed, "alpaca-feed", cfg.AlpacaFeed, "alpaca stock feed for latest quotes (iex|sip|delayed_sip|boats|overnight)")
-	fs.BoolVar(&cfg.UseKeyring, "use-keyring", cfg.UseKeyring, "load Alpaca credentials from OS keyring when flags/env are missing")
-	fs.BoolVar(&cfg.SaveToKeyring, "save-keyring", cfg.SaveToKeyring, "save provided Alpaca credentials into OS keyring")
+	fs.BoolVar(&cfg.UseKeyring, "use-keyring", cfg.UseKeyring, "load broker/LLM credentials from OS keyring when flags/env are missing")
+	fs.BoolVar(&cfg.SaveToKeyring, "save-keyring", cfg.SaveToKeyring, "save provided broker/LLM credentials into OS keyring")
 	fs.StringVar(&cfg.KeyringService, "keyring-service", cfg.KeyringService, "OS keyring service name")
 	fs.StringVar(&cfg.KeyringUser, "keyring-user", cfg.KeyringUser, "OS keyring account namespace")
 	fs.Float64Var(&cfg.MaxNotionalPerTrade, "max-trade", cfg.MaxNotionalPerTrade, "max notional per trade")
@@ -44,6 +44,10 @@ func parseRunOptions(args []string, cfg app.Config, configPath string, stderr io
 	fs.Float64Var(&cfg.AgentMovePct, "agent-move-pct", cfg.AgentMovePct, "agent trigger threshold (0.01 = 1%)")
 	fs.IntVar(&cfg.MaxAgentIntents, "agent-max-intents", cfg.MaxAgentIntents, "max intents executed per cycle")
 	fs.BoolVar(&cfg.AgentDryRun, "dry-run", cfg.AgentDryRun, "run full autonomous flow without submitting orders")
+	fs.DurationVar(&cfg.SyncTimeout, "sync-timeout", cfg.SyncTimeout, "timeout for broker sync calls")
+	fs.DurationVar(&cfg.OrderTimeout, "order-timeout", cfg.OrderTimeout, "timeout for order execution calls")
+	fs.StringVar(&cfg.LogFile, "log-file", cfg.LogFile, "write engine events to this log file path")
+	fs.StringVar(&cfg.LogMode, "log-mode", cfg.LogMode, "log file mode: append | truncate")
 	fs.StringVar(&cfg.LLMAPIKey, "llm-key", cfg.LLMAPIKey, "LLM API key (used when -agent-type=llm)")
 	fs.StringVar(&cfg.LLMBaseURL, "llm-base-url", cfg.LLMBaseURL, "LLM API base URL (OpenAI-compatible)")
 	fs.StringVar(&cfg.LLMModel, "llm-model", cfg.LLMModel, "LLM model name")
@@ -60,6 +64,11 @@ func parseRunOptions(args []string, cfg app.Config, configPath string, stderr io
 	cfg.LLMModel = strings.TrimSpace(cfg.LLMModel)
 	cfg.LLMAPIKey = strings.TrimSpace(cfg.LLMAPIKey)
 	cfg.LLMSystemPrompt = strings.TrimSpace(cfg.LLMSystemPrompt)
+	cfg.LogFile = strings.TrimSpace(cfg.LogFile)
+	cfg.LogMode = normalizedLogMode(cfg.LogMode)
+	if _, err := logFileOpenFlags(cfg.LogMode); err != nil {
+		return runOptions{}, err
+	}
 	if allowSymbols != "" {
 		cfg.AllowSymbols = SplitSymbols(allowSymbols)
 	}

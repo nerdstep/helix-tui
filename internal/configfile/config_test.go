@@ -66,6 +66,8 @@ max_day_notional = 2222
 type = "llm"
 watchlist = ["tsla", "TSLA", " nvda "]
 interval = "15s"
+sync_timeout = "18s"
+order_timeout = "22s"
 qty = 2.5
 move_pct = 0.03
 max_intents = 4
@@ -78,6 +80,10 @@ base_url = " https://api.openai.com/v1 "
 model = " gpt-4.1-mini "
 timeout = "30s"
 system_prompt = "  be conservative  "
+
+[logging]
+file = " logs/helix-debug.log "
+mode = "truncate"
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
@@ -123,6 +129,9 @@ system_prompt = "  be conservative  "
 	if cfg.AgentInterval != 15*time.Second {
 		t.Fatalf("unexpected agent interval: %s", cfg.AgentInterval)
 	}
+	if cfg.SyncTimeout != 18*time.Second || cfg.OrderTimeout != 22*time.Second {
+		t.Fatalf("unexpected runtime timeouts: sync=%s order=%s", cfg.SyncTimeout, cfg.OrderTimeout)
+	}
 	if cfg.AgentOrderQty != 2.5 || cfg.AgentMovePct != 0.03 || cfg.MaxAgentIntents != 4 {
 		t.Fatalf("unexpected agent numeric settings")
 	}
@@ -149,6 +158,12 @@ system_prompt = "  be conservative  "
 	}
 	if cfg.LLMSystemPrompt != "be conservative" {
 		t.Fatalf("unexpected llm system prompt: %q", cfg.LLMSystemPrompt)
+	}
+	if cfg.LogFile != "logs/helix-debug.log" {
+		t.Fatalf("unexpected log file: %q", cfg.LogFile)
+	}
+	if cfg.LogMode != "truncate" {
+		t.Fatalf("unexpected log mode: %q", cfg.LogMode)
 	}
 }
 
@@ -191,6 +206,46 @@ timeout = "not-a-duration"
 		t.Fatalf("expected llm timeout parsing error")
 	}
 	if !strings.Contains(err.Error(), "agent.llm.timeout") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoad_InvalidAgentSyncTimeout(t *testing.T) {
+	cfg := app.DefaultConfig()
+	path := filepath.Join(t.TempDir(), "config.toml")
+	content := `
+[agent]
+sync_timeout = "nope"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	err := Load(path, &cfg, true)
+	if err == nil {
+		t.Fatalf("expected sync timeout parsing error")
+	}
+	if !strings.Contains(err.Error(), "agent.sync_timeout") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoad_InvalidLoggingMode(t *testing.T) {
+	cfg := app.DefaultConfig()
+	path := filepath.Join(t.TempDir(), "config.toml")
+	content := `
+[logging]
+mode = "rotate"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	err := Load(path, &cfg, true)
+	if err == nil {
+		t.Fatalf("expected logging mode validation error")
+	}
+	if !strings.Contains(err.Error(), "logging.mode") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

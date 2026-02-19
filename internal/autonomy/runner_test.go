@@ -13,9 +13,15 @@ import (
 )
 
 func TestNewRunnerDefaults(t *testing.T) {
-	r := NewRunner(nil, nil, domain.ModeAuto, nil, 0, 0, false, "  objective  ")
+	r := NewRunner(nil, nil, domain.ModeAuto, nil, 0, 0, 0, 0, false, "  objective  ")
 	if r.interval != 10*time.Second {
 		t.Fatalf("unexpected default interval: %s", r.interval)
+	}
+	if r.syncTimeout != 15*time.Second {
+		t.Fatalf("unexpected default sync timeout: %s", r.syncTimeout)
+	}
+	if r.orderTimeout != 15*time.Second {
+		t.Fatalf("unexpected default order timeout: %s", r.orderTimeout)
 	}
 	if r.maxPerCycle != 1 {
 		t.Fatalf("unexpected default maxPerCycle: %d", r.maxPerCycle)
@@ -270,6 +276,8 @@ func newRunnerTestHarness(mode domain.Mode, dryRun bool) (*Runner, *fakeBroker) 
 		mode,
 		[]string{"AAPL"},
 		time.Second,
+		2*time.Second,
+		3*time.Second,
 		2,
 		dryRun,
 		"objective",

@@ -36,6 +36,10 @@ type Config struct {
 	MaxAgentIntents     int
 	AgentDryRun         bool
 	AgentObjective      string
+	SyncTimeout         time.Duration
+	OrderTimeout        time.Duration
+	LogFile             string
+	LogMode             string
 	LLMAPIKey           string
 	LLMBaseURL          string
 	LLMModel            string
@@ -81,6 +85,9 @@ func DefaultConfig() Config {
 		AgentMovePct:    0.01,
 		MaxAgentIntents: 1,
 		AgentObjective:  "Generate conservative, risk-aware trade intents.",
+		SyncTimeout:     15 * time.Second,
+		OrderTimeout:    15 * time.Second,
+		LogMode:         "append",
 		LLMBaseURL:      "https://api.openai.com/v1",
 		LLMModel:        "gpt-4.1-mini",
 		LLMTimeout:      20 * time.Second,

@@ -7,20 +7,20 @@ import (
 )
 
 func Run(ctx context.Context, args []string, stderr io.Writer) error {
-	cfg, configPath, err := loadConfig(args)
+	options, err := parseRunOptions(args, stderr)
 	if err != nil {
 		return err
 	}
-	options, err := parseRunOptions(args, cfg, configPath, stderr)
+	cfg, err := loadConfig(options.configPath, options.configExplicit)
 	if err != nil {
 		return err
 	}
 
-	system, err := createSystem(options.cfg)
+	system, err := createSystem(cfg)
 	if err != nil {
 		return err
 	}
-	stopEventLogger, err := startEventFileLogger(ctx, system.Engine, options.cfg.LogFile, options.cfg.LogMode, options.cfg.LogLevel)
+	stopEventLogger, err := startEventFileLogger(ctx, system.Engine, cfg.LogFile, cfg.LogMode, cfg.LogLevel)
 	if err != nil {
 		return err
 	}
@@ -33,7 +33,7 @@ func Run(ctx context.Context, args []string, stderr io.Writer) error {
 		return nil
 	}
 
-	if err := runTUI(system, options.cfg); err != nil {
+	if err := runTUI(system, cfg); err != nil {
 		return fmt.Errorf("runtime error: %w", err)
 	}
 	return nil

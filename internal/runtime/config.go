@@ -7,81 +7,64 @@ import (
 
 	"helix-tui/internal/app"
 	"helix-tui/internal/configfile"
-	"helix-tui/internal/symbols"
+	"helix-tui/internal/domain"
 )
 
-func loadConfig(args []string) (app.Config, string, error) {
-	cfg := app.DefaultConfig()
-	path, explicit, err := ParseConfigPath(args)
-	if err != nil {
-		return cfg, "", fmt.Errorf("invalid config flag: %w", err)
-	}
-	if err := configfile.Load(path, &cfg, explicit); err != nil {
-		return cfg, "", fmt.Errorf("failed to load config: %w", err)
+func loadConfig(path string, required bool) (app.Config, error) {
+	cfg := configfile.Default()
+	if err := configfile.Load(path, &cfg, required); err != nil {
+		return app.Config{}, fmt.Errorf("failed to load config: %w", err)
 	}
 	ApplyEnvOverrides(&cfg)
-	return cfg, path, nil
+	if err := normalizeAndValidateConfig(&cfg); err != nil {
+		return app.Config{}, err
+	}
+	return cfg.ToAppConfig(), nil
 }
 
-func ParseConfigPath(args []string) (string, bool, error) {
-	path := configfile.DefaultPath
-	explicit := false
-
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch {
-		case arg == "-config" || arg == "--config":
-			if i+1 >= len(args) {
-				return "", false, fmt.Errorf("%s requires a path value", arg)
-			}
-			path = strings.TrimSpace(args[i+1])
-			explicit = true
-			i++
-		case strings.HasPrefix(arg, "-config="):
-			path = strings.TrimSpace(strings.TrimPrefix(arg, "-config="))
-			explicit = true
-		case strings.HasPrefix(arg, "--config="):
-			path = strings.TrimSpace(strings.TrimPrefix(arg, "--config="))
-			explicit = true
-		}
-	}
-
-	if path == "" {
-		return "", false, fmt.Errorf("config path cannot be empty")
-	}
-	return path, explicit, nil
-}
-
-func ApplyEnvOverrides(cfg *app.Config) {
+func ApplyEnvOverrides(cfg *configfile.Config) {
 	if v := strings.TrimSpace(os.Getenv("APCA_API_KEY_ID")); v != "" {
-		cfg.AlpacaAPIKey = v
+		cfg.Alpaca.APIKey = v
 	}
 	if v := strings.TrimSpace(os.Getenv("APCA_API_SECRET_KEY")); v != "" {
-		cfg.AlpacaAPISecret = v
+		cfg.Alpaca.APISecret = v
 	}
 	if v := strings.TrimSpace(os.Getenv("APCA_API_DATA_URL")); v != "" {
-		cfg.AlpacaDataURL = v
+		cfg.Alpaca.DataURL = v
 	}
 	if v := strings.TrimSpace(os.Getenv("OPENAI_API_KEY")); v != "" {
-		cfg.LLMAPIKey = v
+		cfg.Agent.LLM.APIKey = v
 	}
 	if v := strings.TrimSpace(os.Getenv("HELIX_LLM_API_KEY")); v != "" {
-		cfg.LLMAPIKey = v
-	}
-	if v := strings.TrimSpace(os.Getenv("HELIX_LOG_FILE")); v != "" {
-		cfg.LogFile = v
-	}
-	if v := strings.TrimSpace(os.Getenv("HELIX_LOG_MODE")); v != "" {
-		cfg.LogMode = strings.ToLower(v)
-	}
-	if v := strings.TrimSpace(os.Getenv("HELIX_LOG_LEVEL")); v != "" {
-		cfg.LogLevel = normalizedLogLevel(v)
-	}
-	if v := strings.TrimSpace(os.Getenv("HELIX_DB_PATH")); v != "" {
-		cfg.DatabasePath = v
+		cfg.Agent.LLM.APIKey = v
 	}
 }
 
-func SplitSymbols(raw string) []string {
-	return symbols.Normalize(strings.Split(raw, ","))
+func normalizeAndValidateConfig(cfg *configfile.Config) error {
+	normalizeConfig(cfg)
+	return validateConfig(*cfg)
+}
+
+func normalizeConfig(cfg *configfile.Config) {
+	cfg.Normalize()
+	cfg.Logging.Mode = normalizedLogMode(cfg.Logging.Mode)
+	cfg.Logging.Level = normalizedLogLevel(cfg.Logging.Level)
+	switch mode := domain.Mode(cfg.Mode); mode {
+	case domain.ModeManual, domain.ModeAssist, domain.ModeAuto:
+	default:
+		cfg.Mode = string(domain.ModeManual)
+	}
+}
+
+func validateConfig(cfg configfile.Config) error {
+	if _, err := logFileOpenFlags(cfg.Logging.Mode); err != nil {
+		return err
+	}
+	if _, err := logLevelFromString(cfg.Logging.Level); err != nil {
+		return err
+	}
+	if cfg.Agent.MinGainPct < 0 {
+		return fmt.Errorf("agent.min_gain_pct must be >= 0")
+	}
+	return nil
 }

@@ -41,7 +41,7 @@ go run ./cmd/helix
 
 ## Config File (TOML)
 
-The app can load runtime settings from a TOML file using `github.com/pelletier/go-toml/v2`.
+The app can load runtime settings from a TOML file.
 
 - Default path: `config.toml` in the project root (auto-loaded if present)
 - Override path: `-config=path/to/file.toml`
@@ -70,8 +70,8 @@ Config precedence is:
 
 - built-in defaults
 - TOML file
-- environment variables (`APCA_API_KEY_ID`, `APCA_API_SECRET_KEY`, `APCA_API_DATA_URL`, `OPENAI_API_KEY`, `HELIX_LLM_API_KEY`, `HELIX_LOG_FILE`, `HELIX_LOG_MODE`, `HELIX_LOG_LEVEL`, `HELIX_DB_PATH`)
-- CLI flags
+- environment variables for credentials (`APCA_API_KEY_ID`, `APCA_API_SECRET_KEY`, `APCA_API_DATA_URL`, `OPENAI_API_KEY`, `HELIX_LLM_API_KEY`)
+- CLI flags (`-config` and `-headless`)
 
 Windows (PowerShell) quick start:
 
@@ -80,50 +80,12 @@ Copy-Item config.example.toml config.toml
 go run ./cmd/helix -config=config.toml
 ```
 
-Useful flags:
+Runtime flags (minimal):
 
 ```bash
 go run ./cmd/helix \
   -config=config.toml \
-  -broker=paper \
-  -max-trade=5000 \
-  -max-day=20000 \
-  -allow=AAPL,MSFT,TSLA,NVDA \
-  -sync-timeout=15s \
-  -order-timeout=15s \
-  -log-file=logs/helix.log \
-  -log-mode=append \
-  -log-level=info \
-  -db-path=logs/helix.db \
-  -mode=manual \
-  -agent-type=heuristic
-```
-
-Alpaca broker mode (paper or live environment):
-
-```bash
-go run ./cmd/helix \
-  -config=config.toml \
-  -broker=alpaca \
-  -alpaca-env=paper \
-  -alpaca-feed=iex \
-  -alpaca-key=$APCA_API_KEY_ID \
-  -alpaca-secret=$APCA_API_SECRET_KEY \
-  -mode=assist
-```
-
-Alpaca credentials with keyring (recommended):
-
-```bash
-go run ./cmd/helix \
-  -config=config.toml \
-  -broker=alpaca \
-  -alpaca-env=paper \
-  -alpaca-feed=iex \
-  -use-keyring \
-  -save-keyring \
-  -keyring-service=helix-tui \
-  -keyring-user=alpaca
+  -headless
 ```
 
 Windows (PowerShell) credential setup:
@@ -135,16 +97,16 @@ $env:APCA_API_KEY_ID = "YOUR_KEY_ID"
 $env:APCA_API_SECRET_KEY = "YOUR_SECRET_KEY"
 ```
 
-1. Run once with keyring save enabled to store credentials in Windows Credential Manager:
+1. Ensure keyring settings in `config.toml` are enabled:
 
 ```powershell
-go run ./cmd/helix -broker=alpaca -alpaca-env=paper -alpaca-feed=iex -use-keyring -save-keyring -mode=assist
+go run ./cmd/helix -config=config.toml
 ```
 
-1. Future runs can omit `-alpaca-key` / `-alpaca-secret` and environment variables:
+1. Future runs can omit explicit credential env vars:
 
 ```powershell
-go run ./cmd/helix -broker=alpaca -alpaca-env=paper -alpaca-feed=iex -use-keyring -mode=assist
+go run ./cmd/helix -config=config.toml
 ```
 
 Optional: persist environment variables for new terminals (if you still want env-based auth):
@@ -160,15 +122,8 @@ Headless autonomous loop:
 
 ```bash
 go run ./cmd/helix \
-  -broker=paper \
-  -mode=auto \
-  -headless \
-  -watchlist=AAPL,MSFT,TSLA \
-  -agent-interval=10s \
-  -agent-qty=1 \
-  -agent-move-pct=0.01 \
-  -agent-min-gain-pct=0 \
-  -agent-max-intents=1
+  -config=config.toml \
+  -headless
 ```
 
 LLM autonomous loop (safe startup):
@@ -177,13 +132,7 @@ LLM autonomous loop (safe startup):
 OPENAI_API_KEY=your_key \
 go run ./cmd/helix \
   -config=config.toml \
-  -broker=alpaca \
-  -alpaca-env=paper \
-  -mode=auto \
-  -agent-type=llm \
-  -dry-run \
-  -llm-model=gpt-4.1-mini \
-  -agent-max-intents=1
+  -headless
 ```
 
 ## TUI Commands
@@ -207,8 +156,8 @@ go run ./cmd/helix \
 - `assist`: agent generates intents but does not execute, and logs `agent_intent_needs_approval` events.
 - `auto`: agent intents are executed automatically through the same risk gate as manual orders.
 
-`-dry-run` works with autonomous modes and logs intents without submitting orders.
-`-agent-min-gain-pct` enforces a minimum expected gain percent per intent (0 disables).
+`[agent].dry_run` works with autonomous modes and logs intents without submitting orders.
+`[agent].min_gain_pct` enforces a minimum expected gain percent per intent (0 disables).
 
 Agent implementations:
 
@@ -217,8 +166,8 @@ Agent implementations:
 
 Agent tuning notes:
 
-- `-agent-qty` / `[agent].qty`: heuristic agent only; fixed quantity used when heuristic emits intents.
-- `-agent-move-pct` / `[agent].move_pct`: heuristic agent only; absolute sampled price-move threshold (`0.01` = `1%`) before signaling.
+- `[agent].qty`: heuristic agent only; fixed quantity used when heuristic emits intents.
+- `[agent].move_pct`: heuristic agent only; absolute sampled price-move threshold (`0.01` = `1%`) before signaling.
 - LLM-specific TOML settings live under `[agent.llm]`.
 - `[agent.llm].system_prompt`: primary instruction channel for LLM behavior and goals.
 
@@ -235,23 +184,23 @@ These checks are enforced in `internal/engine/risk.go`.
 - The paper broker fills immediately at the current mock quote.
 - The Alpaca adapter uses the official SDK client for account/positions/orders plus market data latest quote and trade update streaming.
 - Alpaca market data permissions/entitlements still apply to quote availability.
-- Use `-broker=alpaca -alpaca-env=paper|live` to choose trading environment; optional `-alpaca-base-url` overrides endpoint routing.
-- Alpaca quote feed defaults to `iex` (override via `-alpaca-feed`).
-- When `-use-keyring` is enabled, missing Alpaca credentials are loaded from OS keyring; provided credentials can be stored with `-save-keyring`.
-- When `-use-keyring` is enabled, missing LLM credentials are also loaded from OS keyring; provided `-llm-key` values can be stored with `-save-keyring`.
-- In `-broker=alpaca`, the app treats Alpaca watchlist `helix-tui` as the watchlist source of truth.
-- In `-broker=paper`, watchlist comes from config/flags only.
+- Use `[alpaca].env = "paper|live"` to choose trading environment; optional `[alpaca].base_url` overrides endpoint routing.
+- Alpaca quote feed defaults to `iex` (override via `[alpaca].feed`).
+- When `[keyring].use` is enabled, missing Alpaca credentials are loaded from OS keyring; provided credentials can be stored when `[keyring].save` is true.
+- When `[keyring].use` is enabled, missing LLM credentials are also loaded from OS keyring.
+- In `broker = "alpaca"`, the app treats Alpaca watchlist `helix-tui` as the watchlist source of truth.
+- In `broker = "paper"`, watchlist comes from config.
 - Watchlist symbols are automatically treated as allowlisted symbols by the risk gate.
 - The built-in agent is a conservative heuristic (`internal/agent/heuristic`) that reacts to sampled price moves.
-- LLM agent can be enabled with `-agent-type=llm` (or `[agent].type = "llm"`).
-- LLM credentials can be supplied via `OPENAI_API_KEY` / `HELIX_LLM_API_KEY`, config, `-llm-key`, or keyring.
+- LLM agent can be enabled with `[agent].type = "llm"`.
+- LLM credentials can be supplied via `OPENAI_API_KEY` / `HELIX_LLM_API_KEY`, config, or keyring.
 - LLM output only proposes intents; all execution still goes through `Runner -> Engine -> RiskGate`.
-- Set `-log-file=...` (or `[logging].file`) to persist event logs for later debugging.
-- Use `-log-mode=truncate` (or `[logging].mode = "truncate"`) to reset the log file each app start.
-- Set `-log-level=...` (or `[logging].level`) to tune verbosity; default is `info`.
+- Set `[logging].file` to persist event logs for later debugging.
+- Use `[logging].mode = "truncate"` to reset the log file each app start.
+- Set `[logging].level` to tune verbosity; default is `info`.
 - Event logs are emitted as structured JSON lines (`zerolog`) for easier filtering/analysis.
 - High-frequency loop events (`sync`, `agent_cycle_start`, `agent_proposal`, `agent_cycle_complete`, `agent_heartbeat`) are logged at `debug`.
-- Set `-db-path=...` (or `[database].path`) to persist app state in SQLite; equity history is stored there and rendered as a session-spanning P/L trend chart in the TUI.
+- Set `[database].path` to persist app state in SQLite; equity history is stored there and rendered as a session-spanning P/L trend chart in the TUI.
 - SQLite persistence runs startup migrations from `internal/storage` and tracks applied versions in `schema_migrations`.
 - The TUI includes watchlist quote rows, position P&L, and basic agent/system runtime stats.
 - Equity trend rendering uses `github.com/NimbleMarkets/ntcharts` (sparkline) for higher fidelity terminal charts.

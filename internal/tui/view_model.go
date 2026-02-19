@@ -2,7 +2,10 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
 
 	"helix-tui/internal/domain"
 )
@@ -25,7 +28,7 @@ type viewModel struct {
 func (m Model) buildViewModel() viewModel {
 	return viewModel{
 		header:      titleStyle.Render("helix-tui | CLI + TUI trading cockpit"),
-		account:     fmt.Sprintf("Cash: $%.2f  BuyingPower: $%.2f  Equity: $%.2f", m.snapshot.Account.Cash, m.snapshot.Account.BuyingPower, m.snapshot.Account.Equity),
+		account:     accountStyle.Render(fmt.Sprintf("Cash: $%.2f  BuyingPower: $%.2f  Equity: $%.2f", m.snapshot.Account.Cash, m.snapshot.Account.BuyingPower, m.snapshot.Account.Equity)),
 		positions:   m.buildPositionRows(),
 		orders:      m.buildOrderRows(),
 		watchlist:   m.buildWatchRows(),
@@ -35,12 +38,12 @@ func (m Model) buildViewModel() viewModel {
 		status:      m.status,
 		statusError: m.statusError,
 		input:       m.input,
-		footer:      mutedStyle.Render("Commands: buy/sell/cancel/flatten/sync/watch/events/help/q"),
+		footer:      footerStyle.Render("Commands: buy/sell/cancel/flatten/sync/watch/events/help/q"),
 	}
 }
 
 func (m Model) buildPositionRows() []string {
-	rows := []string{"Positions"}
+	rows := []string{panelTitleStyle.Render("Positions")}
 	if len(m.snapshot.Positions) == 0 {
 		return append(rows, mutedStyle.Render("(none)"))
 	}
@@ -51,7 +54,7 @@ func (m Model) buildPositionRows() []string {
 }
 
 func (m Model) buildOrderRows() []string {
-	rows := []string{"Open Orders"}
+	rows := []string{panelTitleStyle.Render("Open Orders")}
 	if len(m.snapshot.Orders) == 0 {
 		return append(rows, mutedStyle.Render("(none)"))
 	}
@@ -62,28 +65,28 @@ func (m Model) buildOrderRows() []string {
 }
 
 func (m Model) buildWatchRows() []string {
-	rows := []string{"Watchlist"}
+	rows := []string{panelTitleStyle.Render("Watchlist")}
 	if len(m.watchlist) == 0 {
 		return append(rows, mutedStyle.Render("(none configured)"))
 	}
 	for _, symbol := range m.watchlist {
 		if errMsg, ok := m.quoteErr[symbol]; ok {
-			rows = append(rows, fmt.Sprintf("%-6s error=%s", symbol, errMsg))
+			rows = append(rows, fmt.Sprintf("%-6s error=%s", symbol, errStyle.Render(errMsg)))
 			continue
 		}
 		q, ok := m.quotes[symbol]
 		if !ok {
-			rows = append(rows, fmt.Sprintf("%-6s pending...", symbol))
+			rows = append(rows, fmt.Sprintf("%-6s %s", symbol, mutedStyle.Render("pending...")))
 			continue
 		}
 		spread := q.Ask - q.Bid
-		change := "n/a"
+		change := mutedStyle.Render("n/a")
 		if prev, ok := m.prevLast[symbol]; ok && prev > 0 {
-			change = fmt.Sprintf("%+.2f%%", ((q.Last-prev)/prev)*100)
+			change = renderSignedPct(((q.Last - prev) / prev) * 100)
 		}
 		stale := ""
 		if !q.Time.IsZero() && time.Since(q.Time) > 15*time.Second {
-			stale = " stale"
+			stale = " " + warnStyle.Render("stale")
 		}
 		rows = append(rows, fmt.Sprintf("%-6s last=%8.2f bid=%8.2f ask=%8.2f spr=%6.2f chg=%8s%s", symbol, q.Last, q.Bid, q.Ask, spread, change, stale))
 	}
@@ -91,7 +94,7 @@ func (m Model) buildWatchRows() []string {
 }
 
 func (m Model) buildPnlRows() []string {
-	rows := []string{"Position P&L"}
+	rows := []string{panelTitleStyle.Render("Position P&L")}
 	rows = append(rows, m.buildEquityChartRows()...)
 	if len(m.snapshot.Positions) == 0 {
 		return append(rows, mutedStyle.Render("(no open positions)"))
@@ -112,9 +115,9 @@ func (m Model) buildPnlRows() []string {
 		if p.AvgCost > 0 {
 			pct = ((mark - p.AvgCost) / p.AvgCost) * 100
 		}
-		rows = append(rows, fmt.Sprintf("%-6s qty=%8.2f mark=%8.2f uPnL=%+9.2f (%+6.2f%%)", p.Symbol, p.Qty, mark, u, pct))
+		rows = append(rows, fmt.Sprintf("%-6s qty=%8.2f mark=%8.2f uPnL=%9s (%8s)", p.Symbol, p.Qty, mark, renderSignedCurrency(u), renderSignedPct(pct)))
 	}
-	rows = append(rows, fmt.Sprintf("Total uPnL=%+.2f", totalUPNL))
+	rows = append(rows, fmt.Sprintf("Total uPnL=%s", renderSignedCurrency(totalUPNL)))
 	return rows
 }
 
@@ -125,9 +128,9 @@ func (m Model) buildEquityChartRows() []string {
 
 	chartWidth := 56
 	if m.width > 0 {
-		chartWidth = minInt(maxInt(24, m.width/3-6), 72)
+		chartWidth = minInt(maxInt(28, m.width/2-12), 96)
 	}
-	chart := buildEquitySparkline(m.equityHistory, chartWidth)
+	chartHeight := 6
 	first := m.equityHistory[0]
 	last := m.equityHistory[len(m.equityHistory)-1]
 	delta := last.Equity - first.Equity
@@ -135,15 +138,16 @@ func (m Model) buildEquityChartRows() []string {
 	if first.Equity != 0 {
 		pct = (delta / first.Equity) * 100
 	}
+	chart := buildEquitySparkline(m.equityHistory, chartWidth, chartHeight, styleForSigned(delta))
 
-	return []string{
-		fmt.Sprintf("Equity trend (%d pts): %s", len(m.equityHistory), chart),
-		fmt.Sprintf("Start=%.2f Last=%.2f Delta=%+.2f (%+.2f%%)", first.Equity, last.Equity, delta, pct),
-	}
+	rows := []string{fmt.Sprintf("Equity trend (%d pts):", len(m.equityHistory))}
+	rows = append(rows, strings.Split(chart, "\n")...)
+	rows = append(rows, fmt.Sprintf("Start=%.2f Last=%.2f Delta=%s (%s)", first.Equity, last.Equity, renderSignedCurrency(delta), renderSignedPct(pct)))
+	return rows
 }
 
 func (m Model) buildSystemRows() []string {
-	rows := []string{"System"}
+	rows := []string{panelTitleStyle.Render("System")}
 	rows = append(rows, fmt.Sprintf("watchlist=%d events=%d", len(m.watchlist), len(m.snapshot.Events)))
 	if e := latestEventByType(m.snapshot.Events, "sync"); e != nil {
 		rows = append(rows, fmt.Sprintf("last_sync=%s", formatLocalClock(e.Time)))
@@ -177,7 +181,7 @@ func (m Model) buildSystemRows() []string {
 }
 
 func (m Model) buildEventRows() []string {
-	rows := []string{"Recent Events"}
+	rows := []string{panelTitleStyle.Render("Recent Events")}
 	if len(m.snapshot.Events) == 0 {
 		return append(rows, mutedStyle.Render("(none)"))
 	}
@@ -228,4 +232,25 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func styleForSigned(v float64) lipgloss.Style {
+	if v < 0 {
+		return negativeStyle
+	}
+	return positiveStyle
+}
+
+func renderSignedCurrency(v float64) string {
+	if v < 0 {
+		return negativeStyle.Render(fmt.Sprintf("%+.2f", v))
+	}
+	return positiveStyle.Render(fmt.Sprintf("%+.2f", v))
+}
+
+func renderSignedPct(v float64) string {
+	if v < 0 {
+		return negativeStyle.Render(fmt.Sprintf("%+.2f%%", v))
+	}
+	return positiveStyle.Render(fmt.Sprintf("%+.2f%%", v))
 }

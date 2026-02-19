@@ -3,8 +3,10 @@ package tui
 import (
 	"fmt"
 	"math"
-	"strings"
 	"time"
+
+	"github.com/NimbleMarkets/ntcharts/sparkline"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type EquityPoint struct {
@@ -39,46 +41,24 @@ func (m *Model) recordEquityPoint(equity float64, at time.Time) {
 	}
 }
 
-func buildEquitySparkline(points []EquityPoint, width int) string {
+func buildEquitySparkline(points []EquityPoint, width, height int, style lipgloss.Style) string {
 	if len(points) == 0 {
 		return ""
 	}
 	if width < 8 {
 		width = 8
 	}
+	if height < 3 {
+		height = 3
+	}
 	values := sampleEquity(points, width)
 	if len(values) == 0 {
 		return ""
 	}
-
-	minV := values[0]
-	maxV := values[0]
-	for _, v := range values[1:] {
-		if v < minV {
-			minV = v
-		}
-		if v > maxV {
-			maxV = v
-		}
-	}
-	if math.Abs(maxV-minV) < 0.0001 {
-		return strings.Repeat("-", len(values))
-	}
-
-	levels := []byte("._:-=+*#%@")
-	out := make([]byte, len(values))
-	for i, v := range values {
-		norm := (v - minV) / (maxV - minV)
-		idx := int(math.Round(norm * float64(len(levels)-1)))
-		if idx < 0 {
-			idx = 0
-		}
-		if idx >= len(levels) {
-			idx = len(levels) - 1
-		}
-		out[i] = levels[idx]
-	}
-	return string(out)
+	sl := sparkline.New(width, height, sparkline.WithStyle(style))
+	sl.PushAll(values)
+	sl.DrawBraille()
+	return sl.View()
 }
 
 func sampleEquity(points []EquityPoint, width int) []float64 {

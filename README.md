@@ -249,5 +249,6 @@ These checks are enforced in `internal/engine/risk.go`.
 - Set `-db-path=...` (or `[database].path`) to persist app state in SQLite; equity history is stored there and rendered as a session-spanning P/L trend chart in the TUI.
 - SQLite persistence runs startup migrations from `internal/storage` and tracks applied versions in `schema_migrations`.
 - The TUI includes watchlist quote rows, position P&L, and basic agent/system runtime stats.
+- Equity trend rendering uses `github.com/NimbleMarkets/ntcharts` (sparkline) for higher fidelity terminal charts.
 - Event history supports keyboard paging (`PgUp`, `PgDn`, `Home`, `End`) and retains a larger recent window for scrollback.
 - Autonomous mode emits periodic `agent_heartbeat` summary events so idle-but-healthy loops are visible in logs.

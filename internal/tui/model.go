@@ -13,12 +13,36 @@ import (
 )
 
 var (
-	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("63"))
-	okStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	errStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	mutedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-	panelStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
-	inputStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("228"))
+	titleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("230")).
+			Background(lipgloss.Color("24")).
+			Padding(0, 1)
+	accountStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("117")).
+			Background(lipgloss.Color("235")).
+			Padding(0, 1)
+	okStyle = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("119"))
+	errStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("203"))
+	mutedStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("244"))
+	panelStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("33")).
+			Padding(0, 1)
+	panelTitleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("159"))
+	inputStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("229"))
+	positiveStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))
+	negativeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("204"))
+	warnStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
+	footerStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
 )
 
 type tickMsg time.Time

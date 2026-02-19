@@ -84,6 +84,9 @@ system_prompt = "  be conservative  "
 [logging]
 file = " logs/helix-debug.log "
 mode = "truncate"
+
+[database]
+path = " data/helix.db "
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
@@ -164,6 +167,9 @@ mode = "truncate"
 	}
 	if cfg.LogMode != "truncate" {
 		t.Fatalf("unexpected log mode: %q", cfg.LogMode)
+	}
+	if cfg.DatabasePath != "data/helix.db" {
+		t.Fatalf("unexpected database path: %q", cfg.DatabasePath)
 	}
 }
 

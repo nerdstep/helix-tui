@@ -30,7 +30,7 @@ Implementation backlog and roadmap: `docs/implementation-plan.md`
 
 ## Prerequisites
 
-- Go 1.22+
+- Go 1.24+
 
 ## Run
 
@@ -60,12 +60,13 @@ The app can load runtime settings from a TOML file using `github.com/pelletier/g
   - `[agent.llm].system_prompt`
   - `[logging].file` (optional event log path)
   - `[logging].mode` (`append` or `truncate`)
+  - `[database].path` (SQLite database path for persistent state)
 
 Config precedence is:
 
 - built-in defaults
 - TOML file
-- environment variables (`APCA_API_KEY_ID`, `APCA_API_SECRET_KEY`, `APCA_API_DATA_URL`, `OPENAI_API_KEY`, `HELIX_LLM_API_KEY`, `HELIX_LOG_FILE`, `HELIX_LOG_MODE`)
+- environment variables (`APCA_API_KEY_ID`, `APCA_API_SECRET_KEY`, `APCA_API_DATA_URL`, `OPENAI_API_KEY`, `HELIX_LLM_API_KEY`, `HELIX_LOG_FILE`, `HELIX_LOG_MODE`, `HELIX_DB_PATH`)
 - CLI flags
 
 Windows (PowerShell) quick start:
@@ -88,6 +89,7 @@ go run ./cmd/helix \
   -order-timeout=15s \
   -log-file=logs/helix.log \
   -log-mode=append \
+  -db-path=logs/helix.db \
   -mode=manual \
   -agent-type=heuristic
 ```
@@ -232,5 +234,7 @@ These checks are enforced in `internal/engine/risk.go`.
 - LLM output only proposes intents; all execution still goes through `Runner -> Engine -> RiskGate`.
 - Set `-log-file=...` (or `[logging].file`) to persist event logs for later debugging.
 - Use `-log-mode=truncate` (or `[logging].mode = "truncate"`) to reset the log file each app start.
+- Set `-db-path=...` (or `[database].path`) to persist app state in SQLite; equity history is stored there and rendered as a session-spanning P/L trend chart in the TUI.
+- SQLite persistence runs startup migrations from `internal/storage` and tracks applied versions in `schema_migrations`.
 - The TUI includes watchlist quote rows, position P&L, and basic agent/system runtime stats.
 - Event history supports keyboard paging (`PgUp`, `PgDn`, `Home`, `End`) and retains a larger recent window for scrollback.

@@ -87,6 +87,7 @@ func TestApplyEnvOverrides(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "env-llm-key")
 	t.Setenv("HELIX_LOG_FILE", "logs/from-env.log")
 	t.Setenv("HELIX_LOG_MODE", "truncate")
+	t.Setenv("HELIX_DB_PATH", "data/state-from-env.db")
 
 	ApplyEnvOverrides(&cfg)
 	if cfg.AlpacaAPIKey != "env-key" {
@@ -106,6 +107,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 	}
 	if cfg.LogMode != "truncate" {
 		t.Fatalf("unexpected log mode: %q", cfg.LogMode)
+	}
+	if cfg.DatabasePath != "data/state-from-env.db" {
+		t.Fatalf("unexpected database path: %q", cfg.DatabasePath)
 	}
 }
 
@@ -130,6 +134,7 @@ func TestParseRunOptions(t *testing.T) {
 			"-order-timeout=14s",
 			"-log-file=logs/helix.log",
 			"-log-mode=truncate",
+			"-db-path=data/helix.db",
 			"-llm-model=gpt-4.1-mini",
 			"-llm-key=test-key",
 		},
@@ -160,6 +165,9 @@ func TestParseRunOptions(t *testing.T) {
 	}
 	if opts.cfg.LogMode != "truncate" {
 		t.Fatalf("unexpected log mode: %q", opts.cfg.LogMode)
+	}
+	if opts.cfg.DatabasePath != "data/helix.db" {
+		t.Fatalf("unexpected database path: %q", opts.cfg.DatabasePath)
 	}
 	wantAllow := []string{"AAPL", "MSFT"}
 	if !reflect.DeepEqual(opts.cfg.AllowSymbols, wantAllow) {

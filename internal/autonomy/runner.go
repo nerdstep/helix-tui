@@ -103,6 +103,13 @@ func (r *Runner) Run(ctx context.Context) error {
 }
 
 func (r *Runner) runCycle(ctx context.Context) error {
+	cycleStartedAt := time.Now()
+	watchlist := r.watchlistSnapshot()
+	r.engine.AddEvent(
+		"agent_cycle_start",
+		fmt.Sprintf("mode=%s watchlist=%d", r.mode, len(watchlist)),
+	)
+
 	syncCtx, cancel := context.WithTimeout(ctx, r.syncTimeout)
 	defer cancel()
 	if err := r.engine.SyncQuiet(syncCtx); err != nil {
@@ -110,7 +117,6 @@ func (r *Runner) runCycle(ctx context.Context) error {
 	}
 
 	snapshot := r.engine.Snapshot()
-	watchlist := r.watchlistSnapshot()
 	intents, err := r.agent.ProposeTrades(ctx, domain.AgentInput{
 		Mode:      r.mode,
 		Watchlist: watchlist,
@@ -121,6 +127,15 @@ func (r *Runner) runCycle(ctx context.Context) error {
 		return fmt.Errorf("propose trades: %w", err)
 	}
 	generated := len(intents)
+	r.engine.AddEvent(
+		"agent_proposal",
+		fmt.Sprintf(
+			"generated=%d watchlist=%d latency_ms=%d",
+			generated,
+			len(watchlist),
+			time.Since(cycleStartedAt).Milliseconds(),
+		),
+	)
 	if len(intents) == 0 {
 		r.engine.AddEvent("agent_cycle_complete", "generated=0 attempted=0 executed=0 rejected=0 approvals=0 dry_run=0 skipped=0")
 		return nil

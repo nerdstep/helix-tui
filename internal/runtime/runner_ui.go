@@ -9,6 +9,7 @@ import (
 
 	"helix-tui/internal/app"
 	"helix-tui/internal/domain"
+	"helix-tui/internal/storage"
 	"helix-tui/internal/symbols"
 	"helix-tui/internal/tui"
 )
@@ -32,7 +33,7 @@ func startRunner(ctx context.Context, system *app.System) {
 	}()
 }
 
-func runTUI(system *app.System) error {
+func runTUI(system *app.System, cfg app.Config) error {
 	onWatchlistChanged := func(nextWatchlist []string) error {
 		nextWatchlist = symbols.Normalize(nextWatchlist)
 		if system.SyncWatchlist != nil {
@@ -62,11 +63,46 @@ func runTUI(system *app.System) error {
 
 	model := tui.New(system.Engine, system.Watchlist...).
 		WithWatchlistChangeHandler(onWatchlistChanged)
+
+	store, err := storage.Open(storage.Config{Path: cfg.DatabasePath})
+	if err != nil {
+		system.Engine.AddEvent("database_error", err.Error())
+	} else {
+		defer func() {
+			if closeErr := store.Close(); closeErr != nil {
+				system.Engine.AddEvent("database_error", fmt.Sprintf("close: %v", closeErr))
+			}
+		}()
+		dbPoints, loadErr := store.EquityHistory().List()
+		if loadErr != nil {
+			system.Engine.AddEvent("equity_history_error", loadErr.Error())
+		}
+
+		equityHistory := make([]tui.EquityPoint, 0, len(dbPoints))
+		for _, point := range dbPoints {
+			equityHistory = append(equityHistory, tui.EquityPoint{
+				Time:   point.Time,
+				Equity: point.Equity,
+			})
+		}
+		if len(equityHistory) > 0 {
+			system.Engine.AddEvent("equity_history_loaded", fmt.Sprintf("points=%d db=%s", len(equityHistory), store.Path()))
+		}
+
+		appendPoint := func(point tui.EquityPoint) error {
+			return store.EquityHistory().Append(storage.EquityPoint{
+				Time:   point.Time,
+				Equity: point.Equity,
+			})
+		}
+		model = model.WithEquityHistory(equityHistory, appendPoint)
+	}
+
 	if system.PullWatchlist != nil {
 		model = model.WithWatchlistSyncHandler(onWatchlistSync)
 	}
 	program := tea.NewProgram(model, tea.WithAltScreen())
-	_, err := program.Run()
+	_, err = program.Run()
 	return err
 }
 

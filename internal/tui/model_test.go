@@ -187,8 +187,26 @@ func TestRefreshCmdAndView(t *testing.T) {
 	if !strings.Contains(view, "Position P&L") || !strings.Contains(view, "Total uPnL") {
 		t.Fatalf("expected pnl panel in view output: %q", view)
 	}
+	if !strings.Contains(view, "Equity trend") {
+		t.Fatalf("expected equity trend output: %q", view)
+	}
 	if !strings.Contains(view, "last_cycle=") {
 		t.Fatalf("expected agent cycle stats in view output: %q", view)
+	}
+}
+
+func TestWithEquityHistoryAndChart(t *testing.T) {
+	m := New(newTestEngine(), "AAPL").WithEquityHistory([]EquityPoint{
+		{Time: time.Now().UTC().Add(-2 * time.Minute), Equity: 100000},
+		{Time: time.Now().UTC().Add(-time.Minute), Equity: 100050},
+		{Time: time.Now().UTC(), Equity: 100020},
+	}, nil)
+	rows := m.buildEquityChartRows()
+	if len(rows) < 2 {
+		t.Fatalf("expected chart rows, got %#v", rows)
+	}
+	if !strings.Contains(rows[0], "Equity trend") {
+		t.Fatalf("expected chart header row, got %q", rows[0])
 	}
 }
 

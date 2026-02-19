@@ -17,14 +17,15 @@ import (
 const DefaultPath = "config.toml"
 
 type fileConfig struct {
-	Broker       *string       `toml:"broker"`
-	Mode         *string       `toml:"mode"`
-	AllowSymbols []string      `toml:"allow_symbols"`
-	Alpaca       alpacaConfig  `toml:"alpaca"`
-	Risk         riskConfig    `toml:"risk"`
-	Agent        agentConfig   `toml:"agent"`
-	Keyring      keyringConfig `toml:"keyring"`
-	Logging      loggingConfig `toml:"logging"`
+	Broker       *string        `toml:"broker"`
+	Mode         *string        `toml:"mode"`
+	AllowSymbols []string       `toml:"allow_symbols"`
+	Alpaca       alpacaConfig   `toml:"alpaca"`
+	Risk         riskConfig     `toml:"risk"`
+	Agent        agentConfig    `toml:"agent"`
+	Keyring      keyringConfig  `toml:"keyring"`
+	Database     databaseConfig `toml:"database"`
+	Logging      loggingConfig  `toml:"logging"`
 }
 
 type alpacaConfig struct {
@@ -51,6 +52,10 @@ type riskConfig struct {
 type loggingConfig struct {
 	File *string `toml:"file"`
 	Mode *string `toml:"mode"`
+}
+
+type databaseConfig struct {
+	Path *string `toml:"path"`
 }
 
 type agentConfig struct {
@@ -148,6 +153,9 @@ func applyFileConfig(cfg *app.Config, in fileConfig) error {
 	}
 	if in.Risk.MaxDayNotional != nil {
 		cfg.MaxNotionalPerDay = *in.Risk.MaxDayNotional
+	}
+	if in.Database.Path != nil {
+		cfg.DatabasePath = strings.TrimSpace(*in.Database.Path)
 	}
 	if in.Logging.File != nil {
 		cfg.LogFile = strings.TrimSpace(*in.Logging.File)

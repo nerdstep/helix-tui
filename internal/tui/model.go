@@ -38,10 +38,13 @@ type Model struct {
 	watchlist          []string
 	onWatchlistChanged func([]string) error
 	onWatchlistSync    func([]string) ([]string, error)
+	onEquityPoint      func(EquityPoint) error
 	eventScroll        int
 	quotes             map[string]domain.Quote
 	prevLast           map[string]float64
 	quoteErr           map[string]string
+	equityHistory      []EquityPoint
+	equityMaxPoints    int
 	input              string
 	status             string
 	statusError        bool
@@ -51,12 +54,13 @@ type Model struct {
 
 func New(engine *engine.Engine, watchlist ...string) Model {
 	return Model{
-		engine:    engine,
-		watchlist: symbols.Normalize(watchlist),
-		quotes:    map[string]domain.Quote{},
-		prevLast:  map[string]float64{},
-		quoteErr:  map[string]string{},
-		status:    "Type 'help' for commands.",
+		engine:          engine,
+		watchlist:       symbols.Normalize(watchlist),
+		quotes:          map[string]domain.Quote{},
+		prevLast:        map[string]float64{},
+		quoteErr:        map[string]string{},
+		equityMaxPoints: 1000,
+		status:          "Type 'help' for commands.",
 	}
 }
 
@@ -67,6 +71,17 @@ func (m Model) WithWatchlistChangeHandler(fn func([]string) error) Model {
 
 func (m Model) WithWatchlistSyncHandler(fn func([]string) ([]string, error)) Model {
 	m.onWatchlistSync = fn
+	return m
+}
+
+func (m Model) WithEquityHistory(points []EquityPoint, appendFn func(EquityPoint) error) Model {
+	if points != nil {
+		m.equityHistory = append([]EquityPoint{}, points...)
+		if len(m.equityHistory) > m.equityMaxPoints {
+			m.equityHistory = m.equityHistory[len(m.equityHistory)-m.equityMaxPoints:]
+		}
+	}
+	m.onEquityPoint = appendFn
 	return m
 }
 

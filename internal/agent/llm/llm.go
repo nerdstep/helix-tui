@@ -128,8 +128,9 @@ func (a *Agent) ProposeTrades(ctx context.Context, input domain.AgentInput) ([]d
 	return parseIntents(content, watchlist)
 }
 
-const defaultSystemPrompt = "You are a conservative US equities trading research assistant. " +
-	"Use only the provided JSON context. " +
+const defaultSystemPrompt = "You are a conservative US equities trading research assistant. "
+
+const forcedJSONInstruction = "Use only the provided JSON context. " +
 	"Return strict JSON: {\"intents\":[{\"symbol\":\"AAPL\",\"side\":\"buy|sell\",\"qty\":1.0,\"order_type\":\"market|limit\",\"limit_price\":123.45,\"confidence\":0.0,\"rationale\":\"...\"}]}. " +
 	"Only propose watchlist symbols. Keep qty positive. Return {\"intents\":[]} when uncertain."
 
@@ -434,7 +435,8 @@ func (c *openAIChatClient) Complete(ctx context.Context, model, systemPrompt, us
 		},
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(systemPrompt),
-			openai.UserMessage(userPrompt),
+			openai.SystemMessage(forcedJSONInstruction),
+			openai.UserMessage("JSON input:\n" + userPrompt),
 		},
 	})
 	if err != nil {

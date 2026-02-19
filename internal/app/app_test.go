@@ -42,6 +42,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.LogMode != "append" {
 		t.Fatalf("unexpected log mode default: %q", cfg.LogMode)
 	}
+	if cfg.DatabasePath == "" {
+		t.Fatalf("expected default database path")
+	}
 	if cfg.LLMModel == "" || cfg.LLMBaseURL == "" || cfg.LLMTimeout <= 0 {
 		t.Fatalf("unexpected llm defaults: model=%q base=%q timeout=%s", cfg.LLMModel, cfg.LLMBaseURL, cfg.LLMTimeout)
 	}

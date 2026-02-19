@@ -47,3 +47,6 @@ system_prompt = ""
 [logging]
 file = "" # optional path to append event logs, e.g. "logs/helix.log"
 mode = "append" # append | truncate (truncate resets file each app start)
+
+[database]
+path = "logs/helix.db" # SQLite database for persistent app state (equity history and future storage)

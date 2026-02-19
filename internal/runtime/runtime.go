@@ -33,7 +33,7 @@ func Run(ctx context.Context, args []string, stderr io.Writer) error {
 		return nil
 	}
 
-	if err := runTUI(system); err != nil {
+	if err := runTUI(system, options.cfg); err != nil {
 		return fmt.Errorf("runtime error: %w", err)
 	}
 	return nil

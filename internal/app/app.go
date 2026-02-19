@@ -10,6 +10,7 @@ import (
 	"helix-tui/internal/credentials"
 	"helix-tui/internal/domain"
 	"helix-tui/internal/engine"
+	"helix-tui/internal/storage"
 )
 
 type Config struct {
@@ -40,6 +41,7 @@ type Config struct {
 	OrderTimeout        time.Duration
 	LogFile             string
 	LogMode             string
+	DatabasePath        string
 	LLMAPIKey           string
 	LLMBaseURL          string
 	LLMModel            string
@@ -88,6 +90,7 @@ func DefaultConfig() Config {
 		SyncTimeout:     15 * time.Second,
 		OrderTimeout:    15 * time.Second,
 		LogMode:         "append",
+		DatabasePath:    storage.DefaultPath,
 		LLMBaseURL:      "https://api.openai.com/v1",
 		LLMModel:        "gpt-4.1-mini",
 		LLMTimeout:      20 * time.Second,

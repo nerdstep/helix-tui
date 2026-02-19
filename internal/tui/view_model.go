@@ -92,8 +92,9 @@ func (m Model) buildWatchRows() []string {
 
 func (m Model) buildPnlRows() []string {
 	rows := []string{"Position P&L"}
+	rows = append(rows, m.buildEquityChartRows()...)
 	if len(m.snapshot.Positions) == 0 {
-		return append(rows, mutedStyle.Render("(none)"))
+		return append(rows, mutedStyle.Render("(no open positions)"))
 	}
 
 	totalUPNL := 0.0
@@ -117,6 +118,30 @@ func (m Model) buildPnlRows() []string {
 	return rows
 }
 
+func (m Model) buildEquityChartRows() []string {
+	if len(m.equityHistory) < 2 {
+		return []string{mutedStyle.Render("Equity trend: collecting data...")}
+	}
+
+	chartWidth := 56
+	if m.width > 0 {
+		chartWidth = minInt(maxInt(24, m.width/3-6), 72)
+	}
+	chart := buildEquitySparkline(m.equityHistory, chartWidth)
+	first := m.equityHistory[0]
+	last := m.equityHistory[len(m.equityHistory)-1]
+	delta := last.Equity - first.Equity
+	pct := 0.0
+	if first.Equity != 0 {
+		pct = (delta / first.Equity) * 100
+	}
+
+	return []string{
+		fmt.Sprintf("Equity trend (%d pts): %s", len(m.equityHistory), chart),
+		fmt.Sprintf("Start=%.2f Last=%.2f Delta=%+.2f (%+.2f%%)", first.Equity, last.Equity, delta, pct),
+	}
+}
+
 func (m Model) buildSystemRows() []string {
 	rows := []string{"System"}
 	rows = append(rows, fmt.Sprintf("watchlist=%d events=%d", len(m.watchlist), len(m.snapshot.Events)))
@@ -126,12 +151,24 @@ func (m Model) buildSystemRows() []string {
 	if e := latestEventByType(m.snapshot.Events, "agent_mode"); e != nil {
 		rows = append(rows, e.Details)
 	}
+	cycles := countEventsByType(m.snapshot.Events, "agent_cycle_complete")
+	rows = append(rows, fmt.Sprintf("agent cycles=%d", cycles))
+	if e := latestEventByType(m.snapshot.Events, "agent_cycle_start"); e != nil {
+		rows = append(rows, fmt.Sprintf("cycle_start=%s", formatLocalClock(e.Time)))
+	}
+	if e := latestEventByType(m.snapshot.Events, "agent_proposal"); e != nil {
+		rows = append(rows, "last_proposal="+e.Details)
+	}
 	if e := latestEventByType(m.snapshot.Events, "agent_runner_error"); e != nil {
 		rows = append(rows, fmt.Sprintf("runner_error=%s", e.Details))
+	}
+	if e := latestEventByType(m.snapshot.Events, "agent_cycle_error"); e != nil {
+		rows = append(rows, fmt.Sprintf("last_error=%s %s", formatLocalClock(e.Time), e.Details))
 	}
 	rows = append(rows, fmt.Sprintf("agent executed=%d rejected=%d dry_run=%d", countEventsByType(m.snapshot.Events, "agent_intent_executed"), countEventsByType(m.snapshot.Events, "agent_intent_rejected"), countEventsByType(m.snapshot.Events, "agent_intent_dry_run")))
 	if e := latestEventByType(m.snapshot.Events, "agent_cycle_complete"); e != nil {
 		rows = append(rows, fmt.Sprintf("last_cycle=%s %s", formatLocalClock(e.Time), e.Details))
+		rows = append(rows, fmt.Sprintf("last_cycle_age=%s", time.Since(e.Time).Round(time.Second)))
 	}
 	return rows
 }
@@ -174,4 +211,18 @@ func formatLocalClock(t time.Time) string {
 		return "00:00:00"
 	}
 	return t.Local().Format("15:04:05")
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

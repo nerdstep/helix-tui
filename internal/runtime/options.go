@@ -48,6 +48,7 @@ func parseRunOptions(args []string, cfg app.Config, configPath string, stderr io
 	fs.DurationVar(&cfg.OrderTimeout, "order-timeout", cfg.OrderTimeout, "timeout for order execution calls")
 	fs.StringVar(&cfg.LogFile, "log-file", cfg.LogFile, "write engine events to this log file path")
 	fs.StringVar(&cfg.LogMode, "log-mode", cfg.LogMode, "log file mode: append | truncate")
+	fs.StringVar(&cfg.DatabasePath, "db-path", cfg.DatabasePath, "SQLite database path for persistent app state")
 	fs.StringVar(&cfg.LLMAPIKey, "llm-key", cfg.LLMAPIKey, "LLM API key (used when -agent-type=llm)")
 	fs.StringVar(&cfg.LLMBaseURL, "llm-base-url", cfg.LLMBaseURL, "LLM API base URL (OpenAI-compatible)")
 	fs.StringVar(&cfg.LLMModel, "llm-model", cfg.LLMModel, "LLM model name")
@@ -66,6 +67,7 @@ func parseRunOptions(args []string, cfg app.Config, configPath string, stderr io
 	cfg.LLMSystemPrompt = strings.TrimSpace(cfg.LLMSystemPrompt)
 	cfg.LogFile = strings.TrimSpace(cfg.LogFile)
 	cfg.LogMode = normalizedLogMode(cfg.LogMode)
+	cfg.DatabasePath = strings.TrimSpace(cfg.DatabasePath)
 	if _, err := logFileOpenFlags(cfg.LogMode); err != nil {
 		return runOptions{}, err
 	}

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -43,6 +44,7 @@ func (m Model) updateRefresh(msg refreshMsg) (tea.Model, tea.Cmd) {
 	}
 
 	m.snapshot = msg.snapshot
+	m.recordEquityPoint(msg.snapshot.Account.Equity, time.Now().UTC())
 	m.clampEventScroll()
 	for symbol, q := range msg.quotes {
 		if prev, ok := m.quotes[symbol]; ok {

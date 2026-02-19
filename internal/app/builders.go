@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"helix-tui/internal/agent/heuristic"
+	"helix-tui/internal/agent/llm"
 	"helix-tui/internal/autonomy"
 	"helix-tui/internal/broker/alpaca"
 	"helix-tui/internal/broker/paper"
@@ -135,13 +136,16 @@ func buildWatchlistHandlers(watchlistSyncBroker *alpaca.Broker) (func() ([]strin
 	return pull, sync
 }
 
-func buildRunner(cfg Config, broker domain.Broker, e *engine.Engine, watchlist []string) (*autonomy.Runner, domain.Mode) {
+func buildRunner(cfg Config, broker domain.Broker, e *engine.Engine, watchlist []string) (*autonomy.Runner, domain.Mode, string, error) {
 	mode := normalizeMode(cfg.Mode)
 	if mode == domain.ModeManual {
-		return nil, mode
+		return nil, mode, "", nil
 	}
 
-	agent := heuristic.New(broker, cfg.AgentMovePct, cfg.AgentOrderQty)
+	agent, agentType, err := buildAgent(cfg, broker)
+	if err != nil {
+		return nil, mode, "", err
+	}
 	runner := autonomy.NewRunner(
 		e,
 		agent,
@@ -152,5 +156,38 @@ func buildRunner(cfg Config, broker domain.Broker, e *engine.Engine, watchlist [
 		cfg.AgentDryRun,
 		cfg.AgentObjective,
 	)
-	return runner, mode
+	return runner, mode, agentType, nil
+}
+
+func buildAgent(cfg Config, broker domain.Broker) (domain.Agent, string, error) {
+	agentType := normalizeAgentType(cfg.AgentType)
+	switch agentType {
+	case "heuristic":
+		return heuristic.New(broker, cfg.AgentMovePct, cfg.AgentOrderQty), agentType, nil
+	case "llm":
+		agent, err := llm.New(broker, llm.Config{
+			APIKey:       cfg.LLMAPIKey,
+			BaseURL:      cfg.LLMBaseURL,
+			Model:        cfg.LLMModel,
+			Timeout:      cfg.LLMTimeout,
+			SystemPrompt: cfg.LLMSystemPrompt,
+		})
+		if err != nil {
+			return nil, "", err
+		}
+		return agent, agentType, nil
+	default:
+		return nil, "", fmt.Errorf("unsupported agent type: %s", cfg.AgentType)
+	}
+}
+
+func normalizeAgentType(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "heuristic":
+		return "heuristic"
+	case "llm":
+		return "llm"
+	default:
+		return strings.ToLower(strings.TrimSpace(raw))
+	}
 }

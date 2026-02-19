@@ -30,8 +30,14 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Mode != domain.ModeManual {
 		t.Fatalf("unexpected mode default: %q", cfg.Mode)
 	}
+	if cfg.AgentType != "heuristic" {
+		t.Fatalf("unexpected agent type default: %q", cfg.AgentType)
+	}
 	if cfg.AgentInterval <= 0 || cfg.AgentOrderQty <= 0 || cfg.AgentMovePct <= 0 {
 		t.Fatalf("unexpected agent defaults: %#v", cfg)
+	}
+	if cfg.LLMModel == "" || cfg.LLMBaseURL == "" || cfg.LLMTimeout <= 0 {
+		t.Fatalf("unexpected llm defaults: model=%q base=%q timeout=%s", cfg.LLMModel, cfg.LLMBaseURL, cfg.LLMTimeout)
 	}
 }
 
@@ -368,12 +374,18 @@ func TestBuildRunnerManualReturnsNil(t *testing.T) {
 	cfg.Mode = domain.ModeManual
 	e := newTestEngine(t)
 
-	runner, mode := buildRunner(cfg, paper.New(100000), e, []string{"AAPL"})
+	runner, mode, agentType, err := buildRunner(cfg, paper.New(100000), e, []string{"AAPL"})
+	if err != nil {
+		t.Fatalf("buildRunner failed: %v", err)
+	}
 	if runner != nil {
 		t.Fatalf("expected nil runner in manual mode")
 	}
 	if mode != domain.ModeManual {
 		t.Fatalf("unexpected mode: %q", mode)
+	}
+	if agentType != "" {
+		t.Fatalf("expected empty agent type in manual mode")
 	}
 }
 
@@ -383,12 +395,31 @@ func TestBuildRunnerAssistCreatesRunner(t *testing.T) {
 	cfg.AgentInterval = time.Second
 	e := newTestEngine(t)
 
-	runner, mode := buildRunner(cfg, paper.New(100000), e, []string{"AAPL"})
+	runner, mode, agentType, err := buildRunner(cfg, paper.New(100000), e, []string{"AAPL"})
+	if err != nil {
+		t.Fatalf("buildRunner failed: %v", err)
+	}
 	if runner == nil {
 		t.Fatalf("expected runner in assist mode")
 	}
 	if mode != domain.ModeAssist {
 		t.Fatalf("unexpected mode: %q", mode)
+	}
+	if agentType != "heuristic" {
+		t.Fatalf("unexpected agent type: %q", agentType)
+	}
+}
+
+func TestBuildRunnerLLMRequiresAPIKey(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Mode = domain.ModeAssist
+	cfg.AgentType = "llm"
+	cfg.LLMAPIKey = ""
+	e := newTestEngine(t)
+
+	_, _, _, err := buildRunner(cfg, paper.New(100000), e, []string{"AAPL"})
+	if err == nil {
+		t.Fatalf("expected llm api key error")
 	}
 }
 

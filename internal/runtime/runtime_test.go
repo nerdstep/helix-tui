@@ -78,10 +78,12 @@ func TestApplyEnvOverrides(t *testing.T) {
 	cfg.AlpacaAPIKey = "from-config-key"
 	cfg.AlpacaAPISecret = "from-config-secret"
 	cfg.AlpacaDataURL = "from-config-url"
+	cfg.LLMAPIKey = "from-config-llm"
 
 	t.Setenv("APCA_API_KEY_ID", "env-key")
 	t.Setenv("APCA_API_SECRET_KEY", "env-secret")
 	t.Setenv("APCA_API_DATA_URL", "env-url")
+	t.Setenv("OPENAI_API_KEY", "env-llm-key")
 
 	ApplyEnvOverrides(&cfg)
 	if cfg.AlpacaAPIKey != "env-key" {
@@ -92,6 +94,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 	}
 	if cfg.AlpacaDataURL != "env-url" {
 		t.Fatalf("unexpected data url: %q", cfg.AlpacaDataURL)
+	}
+	if cfg.LLMAPIKey != "env-llm-key" {
+		t.Fatalf("unexpected llm key: %q", cfg.LLMAPIKey)
 	}
 }
 
@@ -111,6 +116,9 @@ func TestParseRunOptions(t *testing.T) {
 			"-watchlist=tsla,nvda",
 			"-mode=ASSIST",
 			"-headless",
+			"-agent-type=llm",
+			"-llm-model=gpt-4.1-mini",
+			"-llm-key=test-key",
 		},
 		cfg,
 		configfile.DefaultPath,
@@ -124,6 +132,12 @@ func TestParseRunOptions(t *testing.T) {
 	}
 	if opts.cfg.Mode != domain.ModeAssist {
 		t.Fatalf("unexpected mode: %q", opts.cfg.Mode)
+	}
+	if opts.cfg.AgentType != "llm" {
+		t.Fatalf("unexpected agent type: %q", opts.cfg.AgentType)
+	}
+	if opts.cfg.LLMModel != "gpt-4.1-mini" || opts.cfg.LLMAPIKey != "test-key" {
+		t.Fatalf("unexpected llm config: model=%q key=%q", opts.cfg.LLMModel, opts.cfg.LLMAPIKey)
 	}
 	wantAllow := []string{"AAPL", "MSFT"}
 	if !reflect.DeepEqual(opts.cfg.AllowSymbols, wantAllow) {

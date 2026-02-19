@@ -4,6 +4,6 @@
 .gotmp/
 bin/
 dist/
-*.exe
+*.exe*
 *.test
 config.toml

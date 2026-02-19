@@ -38,17 +38,28 @@ func parseRunOptions(args []string, cfg app.Config, configPath string, stderr io
 	fs.StringVar(&allowSymbols, "allow", strings.Join(cfg.AllowSymbols, ","), "comma-separated symbol allowlist")
 	fs.StringVar(&mode, "mode", string(cfg.Mode), "runtime mode: manual | assist | auto")
 	fs.StringVar(&watchlistArg, "watchlist", strings.Join(cfg.Watchlist, ","), "comma-separated symbols used by the agent")
+	fs.StringVar(&cfg.AgentType, "agent-type", cfg.AgentType, "agent implementation: heuristic | llm")
 	fs.DurationVar(&cfg.AgentInterval, "agent-interval", cfg.AgentInterval, "agent cycle interval")
 	fs.Float64Var(&cfg.AgentOrderQty, "agent-qty", cfg.AgentOrderQty, "agent order quantity per intent")
 	fs.Float64Var(&cfg.AgentMovePct, "agent-move-pct", cfg.AgentMovePct, "agent trigger threshold (0.01 = 1%)")
 	fs.IntVar(&cfg.MaxAgentIntents, "agent-max-intents", cfg.MaxAgentIntents, "max intents executed per cycle")
 	fs.BoolVar(&cfg.AgentDryRun, "dry-run", cfg.AgentDryRun, "run full autonomous flow without submitting orders")
+	fs.StringVar(&cfg.LLMAPIKey, "llm-key", cfg.LLMAPIKey, "LLM API key (used when -agent-type=llm)")
+	fs.StringVar(&cfg.LLMBaseURL, "llm-base-url", cfg.LLMBaseURL, "LLM API base URL (OpenAI-compatible)")
+	fs.StringVar(&cfg.LLMModel, "llm-model", cfg.LLMModel, "LLM model name")
+	fs.DurationVar(&cfg.LLMTimeout, "llm-timeout", cfg.LLMTimeout, "LLM request timeout")
+	fs.StringVar(&cfg.LLMSystemPrompt, "llm-system-prompt", cfg.LLMSystemPrompt, "override system prompt used by the LLM agent")
 	fs.BoolVar(&headless, "headless", false, "run without TUI; useful for autonomous mode")
 	if err := fs.Parse(args); err != nil {
 		return runOptions{}, err
 	}
 
 	cfg.Mode = domain.Mode(strings.ToLower(strings.TrimSpace(mode)))
+	cfg.AgentType = strings.ToLower(strings.TrimSpace(cfg.AgentType))
+	cfg.LLMBaseURL = strings.TrimSpace(cfg.LLMBaseURL)
+	cfg.LLMModel = strings.TrimSpace(cfg.LLMModel)
+	cfg.LLMAPIKey = strings.TrimSpace(cfg.LLMAPIKey)
+	cfg.LLMSystemPrompt = strings.TrimSpace(cfg.LLMSystemPrompt)
 	if allowSymbols != "" {
 		cfg.AllowSymbols = SplitSymbols(allowSymbols)
 	}

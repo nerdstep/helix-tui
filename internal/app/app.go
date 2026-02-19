@@ -29,12 +29,18 @@ type Config struct {
 	AllowSymbols        []string
 	Mode                domain.Mode
 	Watchlist           []string
+	AgentType           string
 	AgentInterval       time.Duration
 	AgentOrderQty       float64
 	AgentMovePct        float64
 	MaxAgentIntents     int
 	AgentDryRun         bool
 	AgentObjective      string
+	LLMAPIKey           string
+	LLMBaseURL          string
+	LLMModel            string
+	LLMTimeout          time.Duration
+	LLMSystemPrompt     string
 }
 
 type System struct {
@@ -69,11 +75,15 @@ func DefaultConfig() Config {
 		},
 		Mode:            domain.ModeManual,
 		Watchlist:       []string{"AAPL", "MSFT", "TSLA", "NVDA"},
+		AgentType:       "heuristic",
 		AgentInterval:   10 * time.Second,
 		AgentOrderQty:   1,
 		AgentMovePct:    0.01,
 		MaxAgentIntents: 1,
 		AgentObjective:  "Generate conservative, risk-aware trade intents.",
+		LLMBaseURL:      "https://api.openai.com/v1",
+		LLMModel:        "gpt-4.1-mini",
+		LLMTimeout:      20 * time.Second,
 	}
 }
 
@@ -102,9 +112,13 @@ func NewSystem(cfg Config) (*System, error) {
 	}
 	system.PullWatchlist, system.SyncWatchlist = buildWatchlistHandlers(brokerSpec.watchlistSyncBroker)
 
-	if runner, mode := buildRunner(cfg, brokerSpec.broker, e, watchlist); runner != nil {
+	runner, mode, agentType, err := buildRunner(cfg, brokerSpec.broker, e, watchlist)
+	if err != nil {
+		return nil, err
+	}
+	if runner != nil {
 		system.Runner = runner
-		e.AddEvent("agent_mode", fmt.Sprintf("mode=%s watchlist=%s", mode, strings.Join(watchlist, ",")))
+		e.AddEvent("agent_mode", fmt.Sprintf("mode=%s agent=%s watchlist=%s", mode, agentType, strings.Join(watchlist, ",")))
 	}
 	return system, nil
 }

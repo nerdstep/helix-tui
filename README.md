@@ -48,12 +48,19 @@ The app can load runtime settings from a TOML file using `github.com/pelletier/g
 - Alpaca routing config keys:
   - `[alpaca].env`
   - `[alpaca].base_url`
+- Agent selection/config keys:
+  - `[agent].type` (`heuristic` or `llm`)
+  - `[agent.llm].api_key`
+  - `[agent.llm].base_url`
+  - `[agent.llm].model`
+  - `[agent.llm].timeout`
+  - `[agent.llm].system_prompt`
 
 Config precedence is:
 
 - built-in defaults
 - TOML file
-- environment variables (`APCA_API_KEY_ID`, `APCA_API_SECRET_KEY`, `APCA_API_DATA_URL`)
+- environment variables (`APCA_API_KEY_ID`, `APCA_API_SECRET_KEY`, `APCA_API_DATA_URL`, `OPENAI_API_KEY`, `HELIX_LLM_API_KEY`)
 - CLI flags
 
 Windows (PowerShell) quick start:
@@ -72,7 +79,8 @@ go run ./cmd/helix \
   -max-trade=5000 \
   -max-day=20000 \
   -allow=AAPL,MSFT,TSLA,NVDA \
-  -mode=manual
+  -mode=manual \
+  -agent-type=heuristic
 ```
 
 Alpaca broker mode (paper or live environment):
@@ -146,6 +154,21 @@ go run ./cmd/helix \
   -agent-max-intents=1
 ```
 
+LLM autonomous loop (safe startup):
+
+```bash
+OPENAI_API_KEY=your_key \
+go run ./cmd/helix \
+  -config=config.toml \
+  -broker=alpaca \
+  -alpaca-env=paper \
+  -mode=auto \
+  -agent-type=llm \
+  -dry-run \
+  -llm-model=gpt-4.1-mini \
+  -agent-max-intents=1
+```
+
 ## TUI Commands
 
 - `buy <SYM> <QTY>`
@@ -169,6 +192,11 @@ go run ./cmd/helix \
 
 `-dry-run` works with autonomous modes and logs intents without submitting orders.
 
+Agent implementations:
+
+- `heuristic`: built-in deterministic price-move strategy.
+- `llm`: LLM proposes trade intents from snapshot/watchlist/quotes/events context (implemented with official `github.com/openai/openai-go`).
+
 ## Safety Defaults
 
 - Symbol allowlist
@@ -189,5 +217,8 @@ These checks are enforced in `internal/engine/risk.go`.
 - In `-broker=paper`, watchlist comes from config/flags only.
 - Watchlist symbols are automatically treated as allowlisted symbols by the risk gate.
 - The built-in agent is a conservative heuristic (`internal/agent/heuristic`) that reacts to sampled price moves.
+- LLM agent can be enabled with `-agent-type=llm` (or `[agent].type = "llm"`).
+- LLM credentials can be supplied via `OPENAI_API_KEY` / `HELIX_LLM_API_KEY`, config, or `-llm-key`.
+- LLM output only proposes intents; all execution still goes through `Runner -> Engine -> RiskGate`.
 - The TUI includes watchlist quote rows, position P&L, and basic agent/system runtime stats.
 - Event history supports keyboard paging (`PgUp`, `PgDn`, `Home`, `End`) and retains a larger recent window for scrollback.

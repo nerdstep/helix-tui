@@ -63,6 +63,7 @@ max_trade_notional = 1111
 max_day_notional = 2222
 
 [agent]
+type = "llm"
 watchlist = ["tsla", "TSLA", " nvda "]
 interval = "15s"
 qty = 2.5
@@ -70,6 +71,13 @@ move_pct = 0.03
 max_intents = 4
 dry_run = true
 objective = "  test objective  "
+
+[agent.llm]
+api_key = "  llm-key  "
+base_url = " https://api.openai.com/v1 "
+model = " gpt-4.1-mini "
+timeout = "30s"
+system_prompt = "  be conservative  "
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
@@ -121,8 +129,26 @@ objective = "  test objective  "
 	if !cfg.AgentDryRun {
 		t.Fatalf("expected dry run to be true")
 	}
+	if cfg.AgentType != "llm" {
+		t.Fatalf("unexpected agent type: %q", cfg.AgentType)
+	}
 	if cfg.AgentObjective != "test objective" {
 		t.Fatalf("unexpected objective: %q", cfg.AgentObjective)
+	}
+	if cfg.LLMAPIKey != "llm-key" {
+		t.Fatalf("unexpected llm api key: %q", cfg.LLMAPIKey)
+	}
+	if cfg.LLMBaseURL != "https://api.openai.com/v1" {
+		t.Fatalf("unexpected llm base url: %q", cfg.LLMBaseURL)
+	}
+	if cfg.LLMModel != "gpt-4.1-mini" {
+		t.Fatalf("unexpected llm model: %q", cfg.LLMModel)
+	}
+	if cfg.LLMTimeout != 30*time.Second {
+		t.Fatalf("unexpected llm timeout: %s", cfg.LLMTimeout)
+	}
+	if cfg.LLMSystemPrompt != "be conservative" {
+		t.Fatalf("unexpected llm system prompt: %q", cfg.LLMSystemPrompt)
 	}
 }
 
@@ -142,6 +168,29 @@ interval = "not-a-duration"
 		t.Fatalf("expected interval parsing error")
 	}
 	if !strings.Contains(err.Error(), "agent.interval") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoad_InvalidAgentLLMTimeout(t *testing.T) {
+	cfg := app.DefaultConfig()
+	path := filepath.Join(t.TempDir(), "config.toml")
+	content := `
+[agent]
+type = "llm"
+
+[agent.llm]
+timeout = "not-a-duration"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	err := Load(path, &cfg, true)
+	if err == nil {
+		t.Fatalf("expected llm timeout parsing error")
+	}
+	if !strings.Contains(err.Error(), "agent.llm.timeout") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

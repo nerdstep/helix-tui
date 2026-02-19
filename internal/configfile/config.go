@@ -48,13 +48,23 @@ type riskConfig struct {
 }
 
 type agentConfig struct {
-	Watchlist  []string `toml:"watchlist"`
-	Interval   *string  `toml:"interval"`
-	Qty        *float64 `toml:"qty"`
-	MovePct    *float64 `toml:"move_pct"`
-	MaxIntents *int     `toml:"max_intents"`
-	DryRun     *bool    `toml:"dry_run"`
-	Objective  *string  `toml:"objective"`
+	Type       *string        `toml:"type"`
+	Watchlist  []string       `toml:"watchlist"`
+	Interval   *string        `toml:"interval"`
+	Qty        *float64       `toml:"qty"`
+	MovePct    *float64       `toml:"move_pct"`
+	MaxIntents *int           `toml:"max_intents"`
+	DryRun     *bool          `toml:"dry_run"`
+	Objective  *string        `toml:"objective"`
+	LLM        llmAgentConfig `toml:"llm"`
+}
+
+type llmAgentConfig struct {
+	APIKey       *string `toml:"api_key"`
+	BaseURL      *string `toml:"base_url"`
+	Model        *string `toml:"model"`
+	Timeout      *string `toml:"timeout"`
+	SystemPrompt *string `toml:"system_prompt"`
 }
 
 func Load(path string, cfg *app.Config, required bool) error {
@@ -135,6 +145,9 @@ func applyFileConfig(cfg *app.Config, in fileConfig) error {
 	if in.Agent.Watchlist != nil {
 		cfg.Watchlist = symbols.Normalize(in.Agent.Watchlist)
 	}
+	if in.Agent.Type != nil {
+		cfg.AgentType = strings.ToLower(strings.TrimSpace(*in.Agent.Type))
+	}
 	if in.Agent.Interval != nil {
 		d, err := time.ParseDuration(strings.TrimSpace(*in.Agent.Interval))
 		if err != nil {
@@ -156,6 +169,25 @@ func applyFileConfig(cfg *app.Config, in fileConfig) error {
 	}
 	if in.Agent.Objective != nil {
 		cfg.AgentObjective = strings.TrimSpace(*in.Agent.Objective)
+	}
+	if in.Agent.LLM.APIKey != nil {
+		cfg.LLMAPIKey = strings.TrimSpace(*in.Agent.LLM.APIKey)
+	}
+	if in.Agent.LLM.BaseURL != nil {
+		cfg.LLMBaseURL = strings.TrimSpace(*in.Agent.LLM.BaseURL)
+	}
+	if in.Agent.LLM.Model != nil {
+		cfg.LLMModel = strings.TrimSpace(*in.Agent.LLM.Model)
+	}
+	if in.Agent.LLM.Timeout != nil {
+		d, err := time.ParseDuration(strings.TrimSpace(*in.Agent.LLM.Timeout))
+		if err != nil {
+			return fmt.Errorf("agent.llm.timeout must be a valid duration: %w", err)
+		}
+		cfg.LLMTimeout = d
+	}
+	if in.Agent.LLM.SystemPrompt != nil {
+		cfg.LLMSystemPrompt = strings.TrimSpace(*in.Agent.LLM.SystemPrompt)
 	}
 	return nil
 }

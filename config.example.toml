@@ -24,6 +24,7 @@ max_trade_notional = 5000
 max_day_notional = 20000
 
 [agent]
+type = "heuristic" # heuristic | llm
 # Used by paper mode. In alpaca mode, watchlist comes from Alpaca watchlist "helix-tui".
 watchlist = ["AAPL", "MSFT", "TSLA", "NVDA"]
 interval = "10s"
@@ -32,3 +33,10 @@ move_pct = 0.01
 max_intents = 1
 dry_run = false
 objective = "Generate conservative, risk-aware trade intents."
+
+[agent.llm]
+api_key = "" # optional if OPENAI_API_KEY or HELIX_LLM_API_KEY is set
+base_url = "https://api.openai.com/v1" # OpenAI-compatible endpoint
+model = "gpt-4.1-mini"
+timeout = "20s"
+system_prompt = ""

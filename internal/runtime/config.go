@@ -62,6 +62,12 @@ func ApplyEnvOverrides(cfg *app.Config) {
 	if v := strings.TrimSpace(os.Getenv("APCA_API_DATA_URL")); v != "" {
 		cfg.AlpacaDataURL = v
 	}
+	if v := strings.TrimSpace(os.Getenv("OPENAI_API_KEY")); v != "" {
+		cfg.LLMAPIKey = v
+	}
+	if v := strings.TrimSpace(os.Getenv("HELIX_LLM_API_KEY")); v != "" {
+		cfg.LLMAPIKey = v
+	}
 }
 
 func SplitSymbols(raw string) []string {

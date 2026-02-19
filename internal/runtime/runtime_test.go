@@ -103,6 +103,45 @@ func TestSplitSymbols(t *testing.T) {
 	}
 }
 
+func TestParseRunOptions(t *testing.T) {
+	cfg := app.DefaultConfig()
+	opts, err := parseRunOptions(
+		[]string{
+			"-allow=aapl,msft",
+			"-watchlist=tsla,nvda",
+			"-mode=ASSIST",
+			"-headless",
+		},
+		cfg,
+		configfile.DefaultPath,
+		&bytes.Buffer{},
+	)
+	if err != nil {
+		t.Fatalf("parseRunOptions failed: %v", err)
+	}
+	if !opts.headless {
+		t.Fatalf("expected headless option")
+	}
+	if opts.cfg.Mode != domain.ModeAssist {
+		t.Fatalf("unexpected mode: %q", opts.cfg.Mode)
+	}
+	wantAllow := []string{"AAPL", "MSFT"}
+	if !reflect.DeepEqual(opts.cfg.AllowSymbols, wantAllow) {
+		t.Fatalf("allow symbols mismatch: got %#v want %#v", opts.cfg.AllowSymbols, wantAllow)
+	}
+	wantWatchlist := []string{"TSLA", "NVDA"}
+	if !reflect.DeepEqual(opts.cfg.Watchlist, wantWatchlist) {
+		t.Fatalf("watchlist mismatch: got %#v want %#v", opts.cfg.Watchlist, wantWatchlist)
+	}
+}
+
+func TestParseRunOptions_DefaultStderr(t *testing.T) {
+	cfg := app.DefaultConfig()
+	if _, err := parseRunOptions([]string{"-mode=auto"}, cfg, configfile.DefaultPath, nil); err != nil {
+		t.Fatalf("parseRunOptions with nil stderr failed: %v", err)
+	}
+}
+
 func TestRunHeadlessStopsOnCanceledContext(t *testing.T) {
 	oldStdout := os.Stdout
 	r, w, err := os.Pipe()

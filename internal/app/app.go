@@ -41,6 +41,7 @@ type Config struct {
 	OrderTimeout        time.Duration
 	LogFile             string
 	LogMode             string
+	LogLevel            string
 	DatabasePath        string
 	LLMAPIKey           string
 	LLMBaseURL          string
@@ -90,6 +91,7 @@ func DefaultConfig() Config {
 		SyncTimeout:     15 * time.Second,
 		OrderTimeout:    15 * time.Second,
 		LogMode:         "append",
+		LogLevel:        "info",
 		DatabasePath:    storage.DefaultPath,
 		LLMBaseURL:      "https://api.openai.com/v1",
 		LLMModel:        "gpt-4.1-mini",

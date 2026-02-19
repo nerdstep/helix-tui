@@ -45,6 +45,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.LogMode != "append" {
 		t.Fatalf("unexpected log mode default: %q", cfg.LogMode)
 	}
+	if cfg.LogLevel != "info" {
+		t.Fatalf("unexpected log level default: %q", cfg.LogLevel)
+	}
 	if cfg.DatabasePath == "" {
 		t.Fatalf("expected default database path")
 	}

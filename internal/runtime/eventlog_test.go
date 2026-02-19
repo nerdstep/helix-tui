@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
+
 	"helix-tui/internal/domain"
 )
 
@@ -72,5 +74,57 @@ func TestLogFileOpenFlags(t *testing.T) {
 	_, err = logFileOpenFlags("rotate")
 	if err == nil {
 		t.Fatalf("expected invalid mode error")
+	}
+}
+
+func TestNormalizedLogLevel(t *testing.T) {
+	if got := normalizedLogLevel("  "); got != "info" {
+		t.Fatalf("expected default info level, got %q", got)
+	}
+	if got := normalizedLogLevel(" WARN "); got != "warn" {
+		t.Fatalf("expected lowercased warn level, got %q", got)
+	}
+}
+
+func TestLogLevelFromString(t *testing.T) {
+	level, err := logLevelFromString("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if level != zerolog.InfoLevel {
+		t.Fatalf("expected info level, got %s", level)
+	}
+
+	level, err = logLevelFromString(" WARN ")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if level != zerolog.WarnLevel {
+		t.Fatalf("expected warn level, got %s", level)
+	}
+
+	_, err = logLevelFromString("verbose")
+	if err == nil {
+		t.Fatalf("expected invalid level error")
+	}
+}
+
+func TestEventLogLevel(t *testing.T) {
+	tests := []struct {
+		eventType string
+		want      zerolog.Level
+	}{
+		{eventType: "sync", want: zerolog.DebugLevel},
+		{eventType: "agent_cycle_complete", want: zerolog.DebugLevel},
+		{eventType: "agent_heartbeat", want: zerolog.DebugLevel},
+		{eventType: "agent_intent_rejected", want: zerolog.WarnLevel},
+		{eventType: "watchlist_sync_error", want: zerolog.WarnLevel},
+		{eventType: "agent_cycle_error", want: zerolog.ErrorLevel},
+		{eventType: "agent_intent_executed", want: zerolog.InfoLevel},
+	}
+	for _, tt := range tests {
+		if got := eventLogLevel(tt.eventType); got != tt.want {
+			t.Fatalf("eventLogLevel(%q) = %s, want %s", tt.eventType, got, tt.want)
+		}
 	}
 }

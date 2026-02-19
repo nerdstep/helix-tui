@@ -3,11 +3,12 @@ package runtime
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/rs/zerolog"
 
 	"helix-tui/internal/domain"
 )
@@ -21,12 +22,16 @@ type eventTailState struct {
 	last        domain.Event
 }
 
-func startEventFileLogger(ctx context.Context, eng snapshotProvider, path, mode string, stderr io.Writer) (func(), error) {
+func startEventFileLogger(ctx context.Context, eng snapshotProvider, path, mode, level string) (func(), error) {
 	path = strings.TrimSpace(path)
 	if path == "" || eng == nil {
 		return func() {}, nil
 	}
 	openFlags, err := logFileOpenFlags(mode)
+	if err != nil {
+		return nil, err
+	}
+	logLevel, err := logLevelFromString(level)
 	if err != nil {
 		return nil, err
 	}
@@ -38,6 +43,12 @@ func startEventFileLogger(ctx context.Context, eng snapshotProvider, path, mode 
 	if err != nil {
 		return nil, fmt.Errorf("open log file %q: %w", path, err)
 	}
+	logger := zerolog.New(file).
+		Level(logLevel).
+		With().
+		Timestamp().
+		Str("component", "eventlog").
+		Logger()
 
 	done := make(chan struct{})
 	stop := make(chan struct{})
@@ -48,10 +59,7 @@ func startEventFileLogger(ctx context.Context, eng snapshotProvider, path, mode 
 
 		state := eventTailState{}
 		initialEvents := eng.Snapshot().Events
-		if err := writeBatch(file, eventsSince(state, initialEvents)); err != nil {
-			writeStderr(stderr, fmt.Sprintf("event logger write failed: %v", err))
-			return
-		}
+		writeBatch(logger, eventsSince(state, initialEvents))
 		state = advanceTail(state, initialEvents)
 
 		for {
@@ -63,10 +71,7 @@ func startEventFileLogger(ctx context.Context, eng snapshotProvider, path, mode 
 			case <-ticker.C:
 				events := eng.Snapshot().Events
 				newEvents := eventsSince(state, events)
-				if err := writeBatch(file, newEvents); err != nil {
-					writeStderr(stderr, fmt.Sprintf("event logger write failed: %v", err))
-					return
-				}
+				writeBatch(logger, newEvents)
 				state = advanceTail(state, events)
 			}
 		}
@@ -88,26 +93,14 @@ func ensureParentDir(path string) error {
 	return os.MkdirAll(dir, 0o755)
 }
 
-func writeBatch(w io.Writer, events []domain.Event) error {
+func writeBatch(logger zerolog.Logger, events []domain.Event) {
 	for _, event := range events {
-		line := fmt.Sprintf(
-			"%s [%s] %s\n",
-			event.Time.Local().Format("2006-01-02 15:04:05.000 MST"),
-			event.Type,
-			event.Details,
-		)
-		if _, err := io.WriteString(w, line); err != nil {
-			return err
-		}
+		logger.
+			WithLevel(eventLogLevel(event.Type)).
+			Str("event_type", event.Type).
+			Time("event_time", event.Time.Local()).
+			Msg(event.Details)
 	}
-	return nil
-}
-
-func writeStderr(w io.Writer, line string) {
-	if w == nil {
-		return
-	}
-	_, _ = fmt.Fprintln(w, line)
 }
 
 func eventsSince(state eventTailState, events []domain.Event) []domain.Event {
@@ -167,4 +160,36 @@ func normalizedLogMode(mode string) string {
 		return "append"
 	}
 	return mode
+}
+
+func logLevelFromString(level string) (zerolog.Level, error) {
+	raw := strings.TrimSpace(level)
+	level = normalizedLogLevel(level)
+	parsed, err := zerolog.ParseLevel(level)
+	if err != nil {
+		return zerolog.InfoLevel, fmt.Errorf("invalid log level %q (expected trace|debug|info|warn|error|fatal|panic|disabled)", raw)
+	}
+	return parsed, nil
+}
+
+func normalizedLogLevel(level string) string {
+	level = strings.ToLower(strings.TrimSpace(level))
+	if level == "" {
+		return "info"
+	}
+	return level
+}
+
+func eventLogLevel(eventType string) zerolog.Level {
+	eventType = strings.ToLower(strings.TrimSpace(eventType))
+	switch eventType {
+	case "agent_intent_rejected", "trade_update_unknown_order", "watchlist_sync_error":
+		return zerolog.WarnLevel
+	case "sync", "trade_update", "agent_cycle_start", "agent_proposal", "agent_cycle_complete", "agent_heartbeat":
+		return zerolog.DebugLevel
+	}
+	if strings.HasSuffix(eventType, "_error") {
+		return zerolog.ErrorLevel
+	}
+	return zerolog.InfoLevel
 }

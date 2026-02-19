@@ -87,6 +87,7 @@ func TestApplyEnvOverrides(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "env-llm-key")
 	t.Setenv("HELIX_LOG_FILE", "logs/from-env.log")
 	t.Setenv("HELIX_LOG_MODE", "truncate")
+	t.Setenv("HELIX_LOG_LEVEL", "DEBUG")
 	t.Setenv("HELIX_DB_PATH", "data/state-from-env.db")
 
 	ApplyEnvOverrides(&cfg)
@@ -107,6 +108,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 	}
 	if cfg.LogMode != "truncate" {
 		t.Fatalf("unexpected log mode: %q", cfg.LogMode)
+	}
+	if cfg.LogLevel != "debug" {
+		t.Fatalf("unexpected log level: %q", cfg.LogLevel)
 	}
 	if cfg.DatabasePath != "data/state-from-env.db" {
 		t.Fatalf("unexpected database path: %q", cfg.DatabasePath)
@@ -134,6 +138,7 @@ func TestParseRunOptions(t *testing.T) {
 			"-order-timeout=14s",
 			"-log-file=logs/helix.log",
 			"-log-mode=truncate",
+			"-log-level=debug",
 			"-db-path=data/helix.db",
 			"-llm-model=gpt-4.1-mini",
 			"-llm-key=test-key",
@@ -166,6 +171,9 @@ func TestParseRunOptions(t *testing.T) {
 	if opts.cfg.LogMode != "truncate" {
 		t.Fatalf("unexpected log mode: %q", opts.cfg.LogMode)
 	}
+	if opts.cfg.LogLevel != "debug" {
+		t.Fatalf("unexpected log level: %q", opts.cfg.LogLevel)
+	}
 	if opts.cfg.DatabasePath != "data/helix.db" {
 		t.Fatalf("unexpected database path: %q", opts.cfg.DatabasePath)
 	}
@@ -193,6 +201,17 @@ func TestParseRunOptions_InvalidLogMode(t *testing.T) {
 		t.Fatalf("expected invalid log mode error")
 	}
 	if !strings.Contains(err.Error(), "invalid log mode") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseRunOptions_InvalidLogLevel(t *testing.T) {
+	cfg := app.DefaultConfig()
+	_, err := parseRunOptions([]string{"-log-level=verbose"}, cfg, configfile.DefaultPath, &bytes.Buffer{})
+	if err == nil {
+		t.Fatalf("expected invalid log level error")
+	}
+	if !strings.Contains(err.Error(), "invalid log level") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

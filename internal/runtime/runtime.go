@@ -20,7 +20,7 @@ func Run(ctx context.Context, args []string, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	stopEventLogger, err := startEventFileLogger(ctx, system.Engine, options.cfg.LogFile, options.cfg.LogMode, stderr)
+	stopEventLogger, err := startEventFileLogger(ctx, system.Engine, options.cfg.LogFile, options.cfg.LogMode, options.cfg.LogLevel)
 	if err != nil {
 		return err
 	}

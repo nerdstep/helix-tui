@@ -74,6 +74,9 @@ func ApplyEnvOverrides(cfg *app.Config) {
 	if v := strings.TrimSpace(os.Getenv("HELIX_LOG_MODE")); v != "" {
 		cfg.LogMode = strings.ToLower(v)
 	}
+	if v := strings.TrimSpace(os.Getenv("HELIX_LOG_LEVEL")); v != "" {
+		cfg.LogLevel = normalizedLogLevel(v)
+	}
 	if v := strings.TrimSpace(os.Getenv("HELIX_DB_PATH")); v != "" {
 		cfg.DatabasePath = v
 	}

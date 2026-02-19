@@ -50,8 +50,9 @@ type riskConfig struct {
 }
 
 type loggingConfig struct {
-	File *string `toml:"file"`
-	Mode *string `toml:"mode"`
+	File  *string `toml:"file"`
+	Mode  *string `toml:"mode"`
+	Level *string `toml:"level"`
 }
 
 type databaseConfig struct {
@@ -169,6 +170,17 @@ func applyFileConfig(cfg *app.Config, in fileConfig) error {
 			}
 		default:
 			return fmt.Errorf("logging.mode must be append or truncate")
+		}
+	}
+	if in.Logging.Level != nil {
+		level := strings.ToLower(strings.TrimSpace(*in.Logging.Level))
+		switch level {
+		case "", "trace", "debug", "info", "warn", "error", "fatal", "panic", "disabled":
+			if level != "" {
+				cfg.LogLevel = level
+			}
+		default:
+			return fmt.Errorf("logging.level must be trace|debug|info|warn|error|fatal|panic|disabled")
 		}
 	}
 

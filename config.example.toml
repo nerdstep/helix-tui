@@ -47,6 +47,7 @@ system_prompt = "You are a US equities execution planner for helix-tui. Use only
 [logging]
 file = "" # optional path to append event logs, e.g. "logs/helix.log"
 mode = "append" # append | truncate (truncate resets file each app start)
+level = "info" # trace | debug | info | warn | error | fatal | panic | disabled
 
 [database]
 path = "logs/helix.db" # SQLite database for persistent app state (equity history and future storage)

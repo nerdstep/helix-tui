@@ -84,6 +84,7 @@ system_prompt = "  be conservative  "
 [logging]
 file = " logs/helix-debug.log "
 mode = "truncate"
+level = "debug"
 
 [database]
 path = " data/helix.db "
@@ -167,6 +168,9 @@ path = " data/helix.db "
 	}
 	if cfg.LogMode != "truncate" {
 		t.Fatalf("unexpected log mode: %q", cfg.LogMode)
+	}
+	if cfg.LogLevel != "debug" {
+		t.Fatalf("unexpected log level: %q", cfg.LogLevel)
 	}
 	if cfg.DatabasePath != "data/helix.db" {
 		t.Fatalf("unexpected database path: %q", cfg.DatabasePath)
@@ -252,6 +256,26 @@ mode = "rotate"
 		t.Fatalf("expected logging mode validation error")
 	}
 	if !strings.Contains(err.Error(), "logging.mode") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoad_InvalidLoggingLevel(t *testing.T) {
+	cfg := app.DefaultConfig()
+	path := filepath.Join(t.TempDir(), "config.toml")
+	content := `
+[logging]
+level = "verbose"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	err := Load(path, &cfg, true)
+	if err == nil {
+		t.Fatalf("expected logging level validation error")
+	}
+	if !strings.Contains(err.Error(), "logging.level") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

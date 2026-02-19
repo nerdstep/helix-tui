@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"helix-tui/internal/broker/paper"
 	"helix-tui/internal/domain"
+	"helix-tui/internal/engine"
 	"helix-tui/internal/symbols"
 )
 
@@ -217,6 +219,179 @@ func TestNewSystem_PaperHasNoRemoteWatchlistHandlers(t *testing.T) {
 	}
 }
 
+func TestBuildBrokerPaper(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Broker = "paper"
+
+	spec, err := buildBroker(cfg)
+	if err != nil {
+		t.Fatalf("buildBroker failed: %v", err)
+	}
+	if spec.label != "paper" {
+		t.Fatalf("unexpected label: %q", spec.label)
+	}
+	if spec.isAlpaca {
+		t.Fatalf("expected non-alpaca broker")
+	}
+	if spec.broker == nil {
+		t.Fatalf("expected broker")
+	}
+	if spec.watchlistSyncBroker != nil {
+		t.Fatalf("paper broker should not expose watchlist sync broker")
+	}
+}
+
+func TestBuildBrokerAlpacaWithDirectCredentials(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Broker = "alpaca"
+	cfg.UseKeyring = false
+	cfg.SaveToKeyring = false
+	cfg.AlpacaAPIKey = "key"
+	cfg.AlpacaAPISecret = "secret"
+
+	spec, err := buildBroker(cfg)
+	if err != nil {
+		t.Fatalf("buildBroker failed: %v", err)
+	}
+	if spec.label != "alpaca" {
+		t.Fatalf("unexpected label: %q", spec.label)
+	}
+	if !spec.isAlpaca {
+		t.Fatalf("expected alpaca broker")
+	}
+	if spec.broker == nil {
+		t.Fatalf("expected broker")
+	}
+	if spec.watchlistSyncBroker == nil {
+		t.Fatalf("expected watchlist sync broker for alpaca")
+	}
+	if spec.credentialSource == "" {
+		t.Fatalf("expected credential source")
+	}
+}
+
+func TestBuildBrokerUnsupported(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Broker = "invalid"
+
+	_, err := buildBroker(cfg)
+	if err == nil {
+		t.Fatalf("expected unsupported broker error")
+	}
+	if !strings.Contains(err.Error(), "unsupported broker") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestResolveWatchlistWithoutSyncBroker(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Watchlist = []string{"aapl", " AAPL ", "msft", ""}
+
+	got, err := resolveWatchlist(cfg, nil)
+	if err != nil {
+		t.Fatalf("resolveWatchlist failed: %v", err)
+	}
+	want := []string{"AAPL", "MSFT"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("watchlist mismatch: got %#v want %#v", got, want)
+	}
+}
+
+func TestBuildAllowSymbolsMergesAndDedupes(t *testing.T) {
+	got := buildAllowSymbols(
+		[]string{"aapl", " msft ", "AAPL"},
+		[]string{"msft", "nvda", " NVDA "},
+	)
+	want := map[string]struct{}{
+		"AAPL": {},
+		"MSFT": {},
+		"NVDA": {},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("allowlist mismatch: got %#v want %#v", got, want)
+	}
+}
+
+func TestBuildWatchlistHandlersWithoutBroker(t *testing.T) {
+	pull, sync := buildWatchlistHandlers(nil)
+	if pull != nil {
+		t.Fatalf("expected nil pull handler")
+	}
+	if sync != nil {
+		t.Fatalf("expected nil sync handler")
+	}
+}
+
+func TestBuildEngineSyncs(t *testing.T) {
+	cfg := DefaultConfig()
+	e, err := buildEngine(cfg, paper.New(100000), map[string]struct{}{"AAPL": {}})
+	if err != nil {
+		t.Fatalf("buildEngine failed: %v", err)
+	}
+	if e == nil {
+		t.Fatalf("expected engine")
+	}
+	if !hasEventType(e.Snapshot().Events, "sync") {
+		t.Fatalf("expected sync event")
+	}
+}
+
+func TestAddAlpacaConfigEvent(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Broker = "alpaca"
+	cfg.AlpacaEnv = "live"
+	cfg.AlpacaBaseURL = "https://example-alpaca.local"
+	cfg.AlpacaFeed = "SIP"
+	e := newTestEngine(t)
+
+	addAlpacaConfigEvent(e, cfg, "flags")
+	events := e.Snapshot().Events
+	if !hasEventType(events, "alpaca_config") {
+		t.Fatalf("expected alpaca_config event")
+	}
+	if !containsEventDetail(events, "alpaca_config", "env=live") {
+		t.Fatalf("expected env detail")
+	}
+	if !containsEventDetail(events, "alpaca_config", "endpoint=https://example-alpaca.local") {
+		t.Fatalf("expected endpoint detail")
+	}
+	if !containsEventDetail(events, "alpaca_config", "feed=sip") {
+		t.Fatalf("expected feed detail")
+	}
+	if !containsEventDetail(events, "alpaca_config", "credentials=flags") {
+		t.Fatalf("expected credential source detail")
+	}
+}
+
+func TestBuildRunnerManualReturnsNil(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Mode = domain.ModeManual
+	e := newTestEngine(t)
+
+	runner, mode := buildRunner(cfg, paper.New(100000), e, []string{"AAPL"})
+	if runner != nil {
+		t.Fatalf("expected nil runner in manual mode")
+	}
+	if mode != domain.ModeManual {
+		t.Fatalf("unexpected mode: %q", mode)
+	}
+}
+
+func TestBuildRunnerAssistCreatesRunner(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Mode = domain.ModeAssist
+	cfg.AgentInterval = time.Second
+	e := newTestEngine(t)
+
+	runner, mode := buildRunner(cfg, paper.New(100000), e, []string{"AAPL"})
+	if runner == nil {
+		t.Fatalf("expected runner in assist mode")
+	}
+	if mode != domain.ModeAssist {
+		t.Fatalf("unexpected mode: %q", mode)
+	}
+}
+
 func hasEventType(events []domain.Event, want string) bool {
 	for _, e := range events {
 		if e.Type == want {
@@ -233,4 +408,17 @@ func containsEventDetail(events []domain.Event, eventType, needle string) bool {
 		}
 	}
 	return false
+}
+
+func newTestEngine(t *testing.T) *engine.Engine {
+	t.Helper()
+	risk := engine.NewRiskGate(engine.Policy{
+		MaxNotionalPerTrade: 5000,
+		MaxNotionalPerDay:   20000,
+		AllowMarketOrders:   true,
+		AllowSymbols: map[string]struct{}{
+			"AAPL": {},
+		},
+	})
+	return engine.New(paper.New(100000), risk)
 }

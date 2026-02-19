@@ -1,0 +1,156 @@
+package app
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"helix-tui/internal/agent/heuristic"
+	"helix-tui/internal/autonomy"
+	"helix-tui/internal/broker/alpaca"
+	"helix-tui/internal/broker/paper"
+	"helix-tui/internal/credentials"
+	"helix-tui/internal/domain"
+	"helix-tui/internal/engine"
+	"helix-tui/internal/symbols"
+)
+
+type brokerSpec struct {
+	label               string
+	isAlpaca            bool
+	broker              domain.Broker
+	watchlistSyncBroker *alpaca.Broker
+	credentialSource    string
+}
+
+func buildBroker(cfg Config) (brokerSpec, error) {
+	spec := brokerSpec{
+		label: strings.ToLower(strings.TrimSpace(cfg.Broker)),
+	}
+
+	switch spec.label {
+	case "paper":
+		spec.broker = paper.New(100000)
+		return spec, nil
+	case "alpaca":
+		spec.isAlpaca = true
+	default:
+		return brokerSpec{}, fmt.Errorf("unsupported broker: %s", cfg.Broker)
+	}
+
+	keyringCfg := credentials.KeyringConfig{
+		Enabled: cfg.UseKeyring,
+		Save:    cfg.SaveToKeyring,
+		Service: cfg.KeyringService,
+		User:    cfg.KeyringUser,
+	}
+	apiKey, apiSecret, source, err := credentials.ResolveAlpacaCredentials(
+		cfg.AlpacaAPIKey,
+		cfg.AlpacaAPISecret,
+		keyringCfg,
+	)
+	if err != nil {
+		return brokerSpec{}, err
+	}
+
+	alpacaBroker := newAlpacaBroker(cfg, apiKey, apiSecret)
+	spec.broker = alpacaBroker
+	spec.watchlistSyncBroker = alpacaBroker
+	spec.credentialSource = source
+	return spec, nil
+}
+
+func resolveWatchlist(cfg Config, watchlistSyncBroker *alpaca.Broker) ([]string, error) {
+	watchlist := symbols.Normalize(cfg.Watchlist)
+	if watchlistSyncBroker == nil {
+		return watchlist, nil
+	}
+
+	// In alpaca mode the remote watchlist is the source of truth.
+	remote, err := watchlistSyncBroker.GetWatchlistSymbols(defaultAlpacaWatchlistName)
+	if err != nil {
+		return watchlist, err
+	}
+	return remote, nil
+}
+
+func buildAllowSymbols(configAllow, watchlist []string) map[string]struct{} {
+	merged := symbols.Merge(configAllow, watchlist)
+	allow := make(map[string]struct{}, len(merged))
+	for _, symbol := range merged {
+		allow[symbol] = struct{}{}
+	}
+	return allow
+}
+
+func buildEngine(cfg Config, broker domain.Broker, allowSymbols map[string]struct{}) (*engine.Engine, error) {
+	risk := engine.NewRiskGate(engine.Policy{
+		MaxNotionalPerTrade: cfg.MaxNotionalPerTrade,
+		MaxNotionalPerDay:   cfg.MaxNotionalPerDay,
+		AllowMarketOrders:   true,
+		AllowSymbols:        allowSymbols,
+	})
+
+	e := engine.New(broker, risk)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := e.Sync(ctx); err != nil {
+		return nil, err
+	}
+	if err := e.StartTradeUpdateLoop(context.Background()); err != nil {
+		// Streaming is optional in this scaffold. Sync still works without it.
+	}
+	return e, nil
+}
+
+func addAlpacaConfigEvent(e *engine.Engine, cfg Config, credentialSource string) {
+	env := effectiveAlpacaEnv(cfg)
+	endpoint := strings.TrimSpace(cfg.AlpacaBaseURL)
+	if endpoint == "" {
+		endpoint = alpaca.BaseURLForEnv(env)
+	}
+	e.AddEvent(
+		"alpaca_config",
+		fmt.Sprintf(
+			"env=%s endpoint=%s feed=%s credentials=%s",
+			env,
+			endpoint,
+			strings.ToLower(strings.TrimSpace(cfg.AlpacaFeed)),
+			credentialSource,
+		),
+	)
+}
+
+func buildWatchlistHandlers(watchlistSyncBroker *alpaca.Broker) (func() ([]string, error), func([]string) error) {
+	if watchlistSyncBroker == nil {
+		return nil, nil
+	}
+	pull := func() ([]string, error) {
+		return watchlistSyncBroker.GetWatchlistSymbols(defaultAlpacaWatchlistName)
+	}
+	sync := func(next []string) error {
+		return watchlistSyncBroker.UpsertWatchlistSymbols(defaultAlpacaWatchlistName, symbols.Normalize(next))
+	}
+	return pull, sync
+}
+
+func buildRunner(cfg Config, broker domain.Broker, e *engine.Engine, watchlist []string) (*autonomy.Runner, domain.Mode) {
+	mode := normalizeMode(cfg.Mode)
+	if mode == domain.ModeManual {
+		return nil, mode
+	}
+
+	agent := heuristic.New(broker, cfg.AgentMovePct, cfg.AgentOrderQty)
+	runner := autonomy.NewRunner(
+		e,
+		agent,
+		mode,
+		watchlist,
+		cfg.AgentInterval,
+		cfg.MaxAgentIntents,
+		cfg.AgentDryRun,
+		cfg.AgentObjective,
+	)
+	return runner, mode
+}

@@ -1,19 +1,15 @@
 package app
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
 
-	"helix-tui/internal/agent/heuristic"
 	"helix-tui/internal/autonomy"
 	"helix-tui/internal/broker/alpaca"
-	"helix-tui/internal/broker/paper"
 	"helix-tui/internal/credentials"
 	"helix-tui/internal/domain"
 	"helix-tui/internal/engine"
-	"helix-tui/internal/symbols"
 )
 
 type Config struct {
@@ -82,128 +78,31 @@ func DefaultConfig() Config {
 }
 
 func NewSystem(cfg Config) (*System, error) {
-	var broker domain.Broker
-	var watchlistSyncBroker *alpaca.Broker
-	brokerLabel := strings.ToLower(strings.TrimSpace(cfg.Broker))
-	isAlpacaBroker := brokerLabel == "alpaca"
-	credentialSource := ""
-	watchlistPullErr := error(nil)
-	watchlist := symbols.Normalize(cfg.Watchlist)
-	keyringCfg := credentials.KeyringConfig{
-		Enabled: cfg.UseKeyring,
-		Save:    cfg.SaveToKeyring,
-		Service: cfg.KeyringService,
-		User:    cfg.KeyringUser,
-	}
-
-	needsAlpacaCreds := isAlpacaBroker
-	alpacaAPIKey := ""
-	alpacaAPISecret := ""
-	if needsAlpacaCreds {
-		key, secret, source, err := credentials.ResolveAlpacaCredentials(
-			cfg.AlpacaAPIKey,
-			cfg.AlpacaAPISecret,
-			keyringCfg,
-		)
-		if err != nil {
-			return nil, err
-		} else {
-			alpacaAPIKey = key
-			alpacaAPISecret = secret
-			credentialSource = source
-		}
-	}
-	switch brokerLabel {
-	case "paper":
-		broker = paper.New(100000)
-	case "alpaca":
-		alpacaBroker := newAlpacaBroker(cfg, alpacaAPIKey, alpacaAPISecret)
-		broker = alpacaBroker
-		watchlistSyncBroker = alpacaBroker
-	default:
-		return nil, fmt.Errorf("unsupported broker: %s", cfg.Broker)
-	}
-	if watchlistSyncBroker != nil {
-		remote, err := watchlistSyncBroker.GetWatchlistSymbols(defaultAlpacaWatchlistName)
-		if err != nil {
-			watchlistPullErr = err
-		} else {
-			// In alpaca mode the remote watchlist is the source of truth.
-			watchlist = remote
-		}
-	}
-
-	allow := make(map[string]struct{}, len(cfg.AllowSymbols))
-	for _, s := range symbols.Merge(cfg.AllowSymbols, watchlist) {
-		s = strings.ToUpper(strings.TrimSpace(s))
-		if s != "" {
-			allow[s] = struct{}{}
-		}
-	}
-
-	risk := engine.NewRiskGate(engine.Policy{
-		MaxNotionalPerTrade: cfg.MaxNotionalPerTrade,
-		MaxNotionalPerDay:   cfg.MaxNotionalPerDay,
-		AllowMarketOrders:   true,
-		AllowSymbols:        allow,
-	})
-
-	e := engine.New(broker, risk)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := e.Sync(ctx); err != nil {
+	brokerSpec, err := buildBroker(cfg)
+	if err != nil {
 		return nil, err
 	}
-	if err := e.StartTradeUpdateLoop(context.Background()); err != nil {
-		// Streaming is optional in this scaffold. Sync still works without it.
+	watchlist, watchlistPullErr := resolveWatchlist(cfg, brokerSpec.watchlistSyncBroker)
+	allowSymbols := buildAllowSymbols(cfg.AllowSymbols, watchlist)
+	e, err := buildEngine(cfg, brokerSpec.broker, allowSymbols)
+	if err != nil {
+		return nil, err
 	}
-	if isAlpacaBroker {
-		env := effectiveAlpacaEnv(cfg)
-		endpoint := strings.TrimSpace(cfg.AlpacaBaseURL)
-		if endpoint == "" {
-			endpoint = alpaca.BaseURLForEnv(env)
-		}
-		e.AddEvent(
-			"alpaca_config",
-			fmt.Sprintf(
-				"env=%s endpoint=%s feed=%s credentials=%s",
-				env,
-				endpoint,
-				strings.ToLower(strings.TrimSpace(cfg.AlpacaFeed)),
-				credentialSource,
-			),
-		)
+	if brokerSpec.isAlpaca {
+		addAlpacaConfigEvent(e, cfg, brokerSpec.credentialSource)
 	}
 	if watchlistPullErr != nil {
 		e.AddEvent("watchlist_sync_error", fmt.Sprintf("pull: %v", watchlistPullErr))
 	}
+
 	system := &System{
 		Engine:             e,
 		Watchlist:          watchlist,
-		DefaultBrokerLabel: brokerLabel,
+		DefaultBrokerLabel: brokerSpec.label,
 	}
-	if watchlistSyncBroker != nil {
-		system.PullWatchlist = func() ([]string, error) {
-			return watchlistSyncBroker.GetWatchlistSymbols(defaultAlpacaWatchlistName)
-		}
-		system.SyncWatchlist = func(symbols []string) error {
-			return watchlistSyncBroker.UpsertWatchlistSymbols(defaultAlpacaWatchlistName, symbols)
-		}
-	}
+	system.PullWatchlist, system.SyncWatchlist = buildWatchlistHandlers(brokerSpec.watchlistSyncBroker)
 
-	mode := normalizeMode(cfg.Mode)
-	if mode != domain.ModeManual {
-		agent := heuristic.New(broker, cfg.AgentMovePct, cfg.AgentOrderQty)
-		runner := autonomy.NewRunner(
-			e,
-			agent,
-			mode,
-			watchlist,
-			cfg.AgentInterval,
-			cfg.MaxAgentIntents,
-			cfg.AgentDryRun,
-			cfg.AgentObjective,
-		)
+	if runner, mode := buildRunner(cfg, brokerSpec.broker, e, watchlist); runner != nil {
 		system.Runner = runner
 		e.AddEvent("agent_mode", fmt.Sprintf("mode=%s watchlist=%s", mode, strings.Join(watchlist, ",")))
 	}

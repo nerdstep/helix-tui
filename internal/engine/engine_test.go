@@ -332,6 +332,12 @@ func TestSnapshot_TrimsEventsAndSortsPositions(t *testing.T) {
 	if len(s.Events) != maxSnapshotEvents {
 		t.Fatalf("expected %d events, got %d", maxSnapshotEvents, len(s.Events))
 	}
+	if s.Events[0].Details != "100" {
+		t.Fatalf("expected oldest retained event to be 100, got %q", s.Events[0].Details)
+	}
+	if s.Events[len(s.Events)-1].Details != "599" {
+		t.Fatalf("expected newest retained event to be 599, got %q", s.Events[len(s.Events)-1].Details)
+	}
 	if len(s.Positions) != 2 || s.Positions[0].Symbol != "AAPL" {
 		t.Fatalf("expected sorted positions, got %#v", s.Positions)
 	}

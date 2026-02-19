@@ -17,11 +17,13 @@ type Engine struct {
 	broker domain.Broker
 	gate   *RiskGate
 
-	mu        sync.RWMutex
-	account   domain.Account
-	positions map[string]domain.Position
-	orders    map[string]domain.Order
-	events    []domain.Event
+	mu         sync.RWMutex
+	account    domain.Account
+	positions  map[string]domain.Position
+	orders     map[string]domain.Order
+	events     []domain.Event
+	eventStart int
+	eventCount int
 }
 
 func New(broker domain.Broker, gate *RiskGate) *Engine {
@@ -30,7 +32,7 @@ func New(broker domain.Broker, gate *RiskGate) *Engine {
 		gate:      gate,
 		positions: map[string]domain.Position{},
 		orders:    map[string]domain.Order{},
-		events:    make([]domain.Event, 0, 256),
+		events:    make([]domain.Event, maxSnapshotEvents),
 	}
 }
 
@@ -188,10 +190,10 @@ func (e *Engine) Snapshot() domain.Snapshot {
 	}
 	sort.Slice(orders, func(i, j int) bool { return orders[i].UpdatedAt.After(orders[j].UpdatedAt) })
 
-	events := make([]domain.Event, len(e.events))
-	copy(events, e.events)
-	if len(events) > maxSnapshotEvents {
-		events = events[len(events)-maxSnapshotEvents:]
+	events := make([]domain.Event, e.eventCount)
+	for i := 0; i < e.eventCount; i++ {
+		idx := (e.eventStart + i) % len(e.events)
+		events[i] = e.events[idx]
 	}
 
 	return domain.Snapshot{
@@ -233,9 +235,19 @@ func (e *Engine) applyTradeUpdate(update domain.TradeUpdate) {
 }
 
 func (e *Engine) addEventLocked(eventType, details string) {
-	e.events = append(e.events, domain.Event{
+	if len(e.events) == 0 {
+		return
+	}
+	idx := (e.eventStart + e.eventCount) % len(e.events)
+	if e.eventCount == len(e.events) {
+		idx = e.eventStart
+		e.eventStart = (e.eventStart + 1) % len(e.events)
+	} else {
+		e.eventCount++
+	}
+	e.events[idx] = domain.Event{
 		Time:    time.Now().UTC(),
 		Type:    eventType,
 		Details: details,
-	})
+	}
 }

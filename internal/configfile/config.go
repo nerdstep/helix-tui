@@ -11,6 +11,7 @@ import (
 
 	"helix-tui/internal/app"
 	"helix-tui/internal/domain"
+	"helix-tui/internal/symbols"
 )
 
 const DefaultPath = "config.toml"
@@ -89,7 +90,7 @@ func applyFileConfig(cfg *app.Config, in fileConfig) error {
 		cfg.Mode = domain.Mode(strings.ToLower(strings.TrimSpace(*in.Mode)))
 	}
 	if in.AllowSymbols != nil {
-		cfg.AllowSymbols = normalizeSymbols(in.AllowSymbols)
+		cfg.AllowSymbols = symbols.Normalize(in.AllowSymbols)
 	}
 
 	if in.Alpaca.APIKey != nil {
@@ -132,7 +133,7 @@ func applyFileConfig(cfg *app.Config, in fileConfig) error {
 	}
 
 	if in.Agent.Watchlist != nil {
-		cfg.Watchlist = normalizeSymbols(in.Agent.Watchlist)
+		cfg.Watchlist = symbols.Normalize(in.Agent.Watchlist)
 	}
 	if in.Agent.Interval != nil {
 		d, err := time.ParseDuration(strings.TrimSpace(*in.Agent.Interval))
@@ -157,21 +158,4 @@ func applyFileConfig(cfg *app.Config, in fileConfig) error {
 		cfg.AgentObjective = strings.TrimSpace(*in.Agent.Objective)
 	}
 	return nil
-}
-
-func normalizeSymbols(raw []string) []string {
-	out := make([]string, 0, len(raw))
-	seen := map[string]struct{}{}
-	for _, s := range raw {
-		s = strings.ToUpper(strings.TrimSpace(s))
-		if s == "" {
-			continue
-		}
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = struct{}{}
-		out = append(out, s)
-	}
-	return out
 }

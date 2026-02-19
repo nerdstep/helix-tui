@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"helix-tui/internal/domain"
+	"helix-tui/internal/symbols"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -141,12 +142,12 @@ func TestNormalizeMode(t *testing.T) {
 }
 
 func TestNormalizeSymbols(t *testing.T) {
-	got := normalizeSymbols([]string{"aapl", " AAPL ", "msft", "", "MSFT"})
+	got := symbols.Normalize([]string{"aapl", " AAPL ", "msft", "", "MSFT"})
 	want := []string{"AAPL", "MSFT"}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("normalizeSymbols mismatch: got %#v want %#v", got, want)
+		t.Fatalf("Normalize mismatch: got %#v want %#v", got, want)
 	}
-	if normalizeSymbols(nil) != nil {
+	if symbols.Normalize(nil) != nil {
 		t.Fatalf("expected nil result for nil input")
 	}
 }

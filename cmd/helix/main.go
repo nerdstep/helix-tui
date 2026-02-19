@@ -16,6 +16,7 @@ import (
 	"helix-tui/internal/app"
 	"helix-tui/internal/configfile"
 	"helix-tui/internal/domain"
+	"helix-tui/internal/symbols"
 	"helix-tui/internal/tui"
 )
 
@@ -102,31 +103,31 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 		return nil
 	}
 
-	onWatchlistChanged := func(symbols []string) error {
-		symbols = mergeSymbols(symbols)
+	onWatchlistChanged := func(nextWatchlist []string) error {
+		nextWatchlist = symbols.Normalize(nextWatchlist)
 		if system.SyncWatchlist != nil {
-			if err := system.SyncWatchlist(symbols); err != nil {
+			if err := system.SyncWatchlist(nextWatchlist); err != nil {
 				return err
 			}
 		}
 		if system.Runner != nil {
-			system.Runner.SetWatchlist(symbols)
+			system.Runner.SetWatchlist(nextWatchlist)
 		}
 		return nil
 	}
-	onWatchlistSync := func(symbols []string) ([]string, error) {
-		symbols = mergeSymbols(symbols)
+	onWatchlistSync := func(nextWatchlist []string) ([]string, error) {
+		nextWatchlist = symbols.Normalize(nextWatchlist)
 		if system.PullWatchlist != nil {
 			remote, err := system.PullWatchlist()
 			if err != nil {
 				return nil, err
 			}
-			symbols = mergeSymbols(symbols, remote)
+			nextWatchlist = symbols.Merge(nextWatchlist, remote)
 		}
 		if system.Runner != nil {
-			system.Runner.SetWatchlist(symbols)
+			system.Runner.SetWatchlist(nextWatchlist)
 		}
-		return symbols, nil
+		return nextWatchlist, nil
 	}
 	model := tui.New(system.Engine, system.Watchlist...).
 		WithWatchlistChangeHandler(onWatchlistChanged)
@@ -182,30 +183,7 @@ func applyEnvOverrides(cfg *app.Config) {
 }
 
 func splitSymbols(raw string) []string {
-	return mergeSymbols(strings.Split(raw, ","))
-}
-
-func mergeSymbols(lists ...[]string) []string {
-	total := 0
-	for _, list := range lists {
-		total += len(list)
-	}
-	out := make([]string, 0, total)
-	seen := map[string]struct{}{}
-	for _, list := range lists {
-		for _, s := range list {
-			s = strings.ToUpper(strings.TrimSpace(s))
-			if s == "" {
-				continue
-			}
-			if _, ok := seen[s]; ok {
-				continue
-			}
-			seen[s] = struct{}{}
-			out = append(out, s)
-		}
-	}
-	return out
+	return symbols.Normalize(strings.Split(raw, ","))
 }
 
 func runHeadless(ctx context.Context, eng interface{ Snapshot() domain.Snapshot }) {

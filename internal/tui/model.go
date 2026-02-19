@@ -12,6 +12,7 @@ import (
 
 	"helix-tui/internal/domain"
 	"helix-tui/internal/engine"
+	"helix-tui/internal/symbols"
 )
 
 var (
@@ -54,7 +55,7 @@ type Model struct {
 func New(engine *engine.Engine, watchlist ...string) Model {
 	return Model{
 		engine:    engine,
-		watchlist: normalizeSymbols(watchlist),
+		watchlist: symbols.Normalize(watchlist),
 		quotes:    map[string]domain.Quote{},
 		prevLast:  map[string]float64{},
 		quoteErr:  map[string]string{},
@@ -433,7 +434,7 @@ func (m *Model) handleWatchCommand(raw string) (bool, tea.Cmd) {
 			m.statusError = true
 			return true, nil
 		}
-		next = normalizeSymbols(next)
+		next = symbols.Normalize(next)
 		m.watchlist = next
 		for _, symbol := range next {
 			m.engine.AllowSymbol(symbol)
@@ -451,13 +452,13 @@ func (m *Model) handleWatchCommand(raw string) (bool, tea.Cmd) {
 		m.statusError = true
 		return true, nil
 	}
-	symbols := normalizeSymbols([]string{args[2]})
-	if len(symbols) == 0 {
+	normalized := symbols.Normalize([]string{args[2]})
+	if len(normalized) == 0 {
 		m.status = "symbol is required"
 		m.statusError = true
 		return true, nil
 	}
-	symbol := symbols[0]
+	symbol := normalized[0]
 
 	switch args[1] {
 	case "add":
@@ -587,23 +588,6 @@ func countEventsByType(events []domain.Event, eventType string) int {
 		}
 	}
 	return count
-}
-
-func normalizeSymbols(raw []string) []string {
-	out := make([]string, 0, len(raw))
-	seen := map[string]struct{}{}
-	for _, symbol := range raw {
-		symbol = strings.ToUpper(strings.TrimSpace(symbol))
-		if symbol == "" {
-			continue
-		}
-		if _, ok := seen[symbol]; ok {
-			continue
-		}
-		seen[symbol] = struct{}{}
-		out = append(out, symbol)
-	}
-	return out
 }
 
 func (m Model) eventPageSize() int {

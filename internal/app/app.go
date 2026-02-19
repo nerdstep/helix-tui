@@ -13,6 +13,7 @@ import (
 	"helix-tui/internal/credentials"
 	"helix-tui/internal/domain"
 	"helix-tui/internal/engine"
+	"helix-tui/internal/symbols"
 )
 
 type Config struct {
@@ -87,7 +88,7 @@ func NewSystem(cfg Config) (*System, error) {
 	isAlpacaBroker := brokerLabel == "alpaca"
 	credentialSource := ""
 	watchlistPullErr := error(nil)
-	watchlist := normalizeSymbols(cfg.Watchlist)
+	watchlist := symbols.Normalize(cfg.Watchlist)
 	keyringCfg := credentials.KeyringConfig{
 		Enabled: cfg.UseKeyring,
 		Save:    cfg.SaveToKeyring,
@@ -133,7 +134,7 @@ func NewSystem(cfg Config) (*System, error) {
 	}
 
 	allow := make(map[string]struct{}, len(cfg.AllowSymbols))
-	for _, s := range mergeSymbols(cfg.AllowSymbols, watchlist) {
+	for _, s := range symbols.Merge(cfg.AllowSymbols, watchlist) {
 		s = strings.ToUpper(strings.TrimSpace(s))
 		if s != "" {
 			allow[s] = struct{}{}
@@ -243,43 +244,4 @@ func normalizeMode(mode domain.Mode) domain.Mode {
 	default:
 		return domain.ModeManual
 	}
-}
-
-func normalizeSymbols(raw []string) []string {
-	if len(raw) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(raw))
-	seen := map[string]struct{}{}
-	for _, s := range raw {
-		s = strings.ToUpper(strings.TrimSpace(s))
-		if s == "" {
-			continue
-		}
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = struct{}{}
-		out = append(out, s)
-	}
-	return out
-}
-
-func mergeSymbols(lists ...[]string) []string {
-	out := make([]string, 0)
-	seen := map[string]struct{}{}
-	for _, list := range lists {
-		for _, s := range list {
-			s = strings.ToUpper(strings.TrimSpace(s))
-			if s == "" {
-				continue
-			}
-			if _, ok := seen[s]; ok {
-				continue
-			}
-			seen[s] = struct{}{}
-			out = append(out, s)
-		}
-	}
-	return out
 }

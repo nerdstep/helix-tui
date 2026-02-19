@@ -9,6 +9,7 @@ import (
 
 	"helix-tui/internal/domain"
 	"helix-tui/internal/engine"
+	"helix-tui/internal/symbols"
 )
 
 type Runner struct {
@@ -23,9 +24,9 @@ type Runner struct {
 	objective   string
 }
 
-func (r *Runner) SetWatchlist(symbols []string) {
+func (r *Runner) SetWatchlist(nextWatchlist []string) {
 	r.mu.Lock()
-	r.watchlist = normalizeSymbols(symbols)
+	r.watchlist = symbols.Normalize(nextWatchlist)
 	r.mu.Unlock()
 }
 
@@ -211,21 +212,4 @@ func summarizeIntent(i domain.TradeIntent) string {
 		i.Confidence,
 		strings.TrimSpace(i.Rationale),
 	)
-}
-
-func normalizeSymbols(raw []string) []string {
-	out := make([]string, 0, len(raw))
-	seen := map[string]struct{}{}
-	for _, s := range raw {
-		s = strings.ToUpper(strings.TrimSpace(s))
-		if s == "" {
-			continue
-		}
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = struct{}{}
-		out = append(out, s)
-	}
-	return out
 }

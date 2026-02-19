@@ -12,6 +12,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"helix-tui/internal/domain"
+	"helix-tui/internal/symbols"
 )
 
 const (
@@ -443,35 +444,13 @@ func normalizeFeed(raw string) marketdata.Feed {
 }
 
 func normalizeSymbols(raw []string) []string {
-	out := make([]string, 0, len(raw))
-	seen := map[string]struct{}{}
-	for _, symbol := range raw {
-		symbol = strings.ToUpper(strings.TrimSpace(symbol))
-		if symbol == "" {
-			continue
-		}
-		if _, ok := seen[symbol]; ok {
-			continue
-		}
-		seen[symbol] = struct{}{}
-		out = append(out, symbol)
-	}
-	return out
+	return symbols.Normalize(raw)
 }
 
 func normalizeSymbolsFromAssets(assets []sdkalpaca.Asset) []string {
-	out := make([]string, 0, len(assets))
-	seen := map[string]struct{}{}
+	raw := make([]string, 0, len(assets))
 	for _, asset := range assets {
-		symbol := strings.ToUpper(strings.TrimSpace(asset.Symbol))
-		if symbol == "" {
-			continue
-		}
-		if _, ok := seen[symbol]; ok {
-			continue
-		}
-		seen[symbol] = struct{}{}
-		out = append(out, symbol)
+		raw = append(raw, asset.Symbol)
 	}
-	return out
+	return symbols.Normalize(raw)
 }

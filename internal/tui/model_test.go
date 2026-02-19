@@ -12,6 +12,7 @@ import (
 	"helix-tui/internal/broker/paper"
 	"helix-tui/internal/domain"
 	"helix-tui/internal/engine"
+	"helix-tui/internal/symbols"
 )
 
 func TestNewAndInit(t *testing.T) {
@@ -192,7 +193,7 @@ func TestRefreshCmdAndView(t *testing.T) {
 }
 
 func TestNormalizeSymbols(t *testing.T) {
-	got := normalizeSymbols([]string{"aapl", " AAPL ", "msft", ""})
+	got := symbols.Normalize([]string{"aapl", " AAPL ", "msft", ""})
 	if len(got) != 2 || got[0] != "AAPL" || got[1] != "MSFT" {
 		t.Fatalf("unexpected normalize result: %#v", got)
 	}

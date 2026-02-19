@@ -1,0 +1,66 @@
+package tui
+
+import "fmt"
+
+func (m Model) eventPageSize() int {
+	return 8
+}
+
+func (m Model) maxEventScroll() int {
+	total := len(m.snapshot.Events)
+	visible := m.eventPageSize()
+	if total <= visible {
+		return 0
+	}
+	return total - visible
+}
+
+func (m *Model) clampEventScroll() {
+	if m.eventScroll < 0 {
+		m.eventScroll = 0
+		return
+	}
+	max := m.maxEventScroll()
+	if m.eventScroll > max {
+		m.eventScroll = max
+	}
+}
+
+func (m *Model) setEventScroll(next int) {
+	m.eventScroll = next
+	m.clampEventScroll()
+}
+
+func (m *Model) scrollEvents(delta int) {
+	m.setEventScroll(m.eventScroll + delta)
+	m.status = m.eventScrollStatus()
+	m.statusError = false
+}
+
+func (m Model) eventWindow() (start, end, total int) {
+	total = len(m.snapshot.Events)
+	if total == 0 {
+		return 0, 0, 0
+	}
+	visible := m.eventPageSize()
+	end = total - m.eventScroll
+	if end < 0 {
+		end = 0
+	}
+	start = end - visible
+	if start < 0 {
+		start = 0
+	}
+	if end < start {
+		end = start
+	}
+	return start, end, total
+}
+
+func (m Model) eventScrollStatus() string {
+	start, end, total := m.eventWindow()
+	if total == 0 {
+		return "events: (none)"
+	}
+	return fmt.Sprintf("events: showing %d-%d of %d", start+1, end, total)
+}

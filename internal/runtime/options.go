@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"flag"
+	"fmt"
 	"io"
 	"strings"
 
@@ -42,6 +43,7 @@ func parseRunOptions(args []string, cfg app.Config, configPath string, stderr io
 	fs.DurationVar(&cfg.AgentInterval, "agent-interval", cfg.AgentInterval, "agent cycle interval")
 	fs.Float64Var(&cfg.AgentOrderQty, "agent-qty", cfg.AgentOrderQty, "agent order quantity per intent")
 	fs.Float64Var(&cfg.AgentMovePct, "agent-move-pct", cfg.AgentMovePct, "agent trigger threshold (0.01 = 1%)")
+	fs.Float64Var(&cfg.AgentMinGainPct, "agent-min-gain-pct", cfg.AgentMinGainPct, "minimum expected gain percent required per intent (0 disables)")
 	fs.IntVar(&cfg.MaxAgentIntents, "agent-max-intents", cfg.MaxAgentIntents, "max intents executed per cycle")
 	fs.BoolVar(&cfg.AgentDryRun, "dry-run", cfg.AgentDryRun, "run full autonomous flow without submitting orders")
 	fs.DurationVar(&cfg.SyncTimeout, "sync-timeout", cfg.SyncTimeout, "timeout for broker sync calls")
@@ -73,6 +75,9 @@ func parseRunOptions(args []string, cfg app.Config, configPath string, stderr io
 	}
 	if allowSymbols != "" {
 		cfg.AllowSymbols = SplitSymbols(allowSymbols)
+	}
+	if cfg.AgentMinGainPct < 0 {
+		return runOptions{}, fmt.Errorf("agent-min-gain-pct must be >= 0")
 	}
 	if watchlistArg != "" {
 		cfg.Watchlist = SplitSymbols(watchlistArg)

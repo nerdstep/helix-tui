@@ -28,21 +28,21 @@ max_day_notional = 20000
 type = "heuristic" # heuristic | llm
 # Used by paper mode. In alpaca mode, watchlist comes from Alpaca watchlist "helix-tui".
 watchlist = ["AAPL", "MSFT", "TSLA", "NVDA"]
-interval = "10s"
+interval = "15s"
 sync_timeout = "15s" # broker sync timeout used by autonomous cycles
 order_timeout = "15s" # order execution timeout used by autonomous cycles
-qty = 1.0
-move_pct = 0.01
+qty = 1.0 # heuristic agent only: per-intent order quantity
+move_pct = 0.01 # heuristic agent only: minimum sampled move (0.01 = 1%) before signaling
+min_gain_pct = 1.0 # minimum expected gain percent per intent; 0 disables
 max_intents = 1
 dry_run = false
-objective = "Generate conservative, risk-aware trade intents."
 
 [agent.llm]
 api_key = "" # optional if OPENAI_API_KEY / HELIX_LLM_API_KEY is set or keyring has one
 base_url = "https://api.openai.com/v1" # OpenAI-compatible endpoint
-model = "gpt-4.1-mini"
+model = "gpt-5-mini"
 timeout = "20s"
-system_prompt = ""
+system_prompt = "You are a US equities execution planner for helix-tui. Use only the JSON context in the user message (account, positions, open orders, watchlist, quotes, recent events). Do not use external news, filings, or web knowledge. Return JSON only with schema {\"intents\":[{\"symbol\":\"AAPL\",\"side\":\"buy|sell\",\"qty\":1.0,\"order_type\":\"market|limit\",\"limit_price\":123.45,\"confidence\":0.0,\"rationale\":\"...\"}]}. Prefer exactly one intent per cycle when at least one watchlist symbol has a valid quote and there is no conflicting open order for that symbol; otherwise return {\"intents\":[]}. Keep rationale concise and tied to the provided quote and position data."
 
 [logging]
 file = "" # optional path to append event logs, e.g. "logs/helix.log"

@@ -94,6 +94,8 @@ type TradeIntent struct {
 	LimitPrice *float64
 	Rationale  string
 	Confidence float64
+	// ExpectedGainPct is the model-estimated return for this trade idea.
+	ExpectedGainPct float64
 }
 
 type Event struct {

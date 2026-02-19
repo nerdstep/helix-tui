@@ -443,3 +443,55 @@ func TestSDKBackedMethodsWithLocalHTTPServer(t *testing.T) {
 		t.Fatalf("CancelOrder failed: %v", err)
 	}
 }
+
+func TestPlaceOrderMarketIgnoresLimitPrice(t *testing.T) {
+	var placedBody map[string]any
+
+	tradeMux := http.NewServeMux()
+	tradeMux.HandleFunc("/v2/orders", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		_ = json.NewDecoder(r.Body).Decode(&placedBody)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id":         "ord-mkt-1",
+			"symbol":     "AAPL",
+			"side":       "buy",
+			"qty":        "1",
+			"filled_qty": "0",
+			"type":       "market",
+			"status":     "new",
+			"created_at": time.Now().UTC().Format(time.RFC3339Nano),
+			"updated_at": time.Now().UTC().Format(time.RFC3339Nano),
+		})
+	})
+	tradeSrv := httptest.NewServer(tradeMux)
+	defer tradeSrv.Close()
+
+	b := New(Config{
+		BaseURL:     tradeSrv.URL,
+		DataBaseURL: tradeSrv.URL,
+		APIKey:      "key",
+		APISecret:   "secret",
+		Feed:        "iex",
+	})
+	ctx := context.Background()
+	limit := 0.0
+	_, err := b.PlaceOrder(ctx, domain.OrderRequest{
+		Symbol:     "AAPL",
+		Side:       domain.SideBuy,
+		Qty:        1,
+		Type:       domain.OrderTypeMarket,
+		LimitPrice: &limit,
+	})
+	if err != nil {
+		t.Fatalf("PlaceOrder failed: %v", err)
+	}
+	if placedBody["type"] != "market" {
+		t.Fatalf("expected market order payload, got %#v", placedBody)
+	}
+	if v, ok := placedBody["limit_price"]; ok && v != nil {
+		t.Fatalf("expected nil limit_price for market order payload: %#v", placedBody)
+	}
+}

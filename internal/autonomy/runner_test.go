@@ -13,7 +13,7 @@ import (
 )
 
 func TestNewRunnerDefaults(t *testing.T) {
-	r := NewRunner(nil, nil, domain.ModeAuto, nil, 0, 0, 0, 0, false, "  objective  ")
+	r := NewRunner(nil, nil, domain.ModeAuto, nil, 0, 0, 0, 0, 0, false)
 	if r.interval != 10*time.Second {
 		t.Fatalf("unexpected default interval: %s", r.interval)
 	}
@@ -26,8 +26,8 @@ func TestNewRunnerDefaults(t *testing.T) {
 	if r.maxPerCycle != 1 {
 		t.Fatalf("unexpected default maxPerCycle: %d", r.maxPerCycle)
 	}
-	if r.objective != "objective" {
-		t.Fatalf("unexpected objective trimming: %q", r.objective)
+	if r.heartbeatInterval <= 0 {
+		t.Fatalf("expected heartbeat interval default")
 	}
 }
 
@@ -123,6 +123,39 @@ func TestHandleIntent_AutoExecutesOrder(t *testing.T) {
 	}
 }
 
+func TestHandleIntent_MinGainRejectsMissingExpectedGainForBuy(t *testing.T) {
+	r, _ := newRunnerTestHarness(domain.ModeAuto, false)
+	r.minGainPct = 1
+	err := r.handleIntent(context.Background(), domain.TradeIntent{
+		Symbol: "AAPL",
+		Side:   domain.SideBuy,
+		Qty:    1,
+	})
+	if err == nil {
+		t.Fatalf("expected min gain rejection")
+	}
+	if !strings.Contains(err.Error(), "expected gain missing") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestHandleIntent_MinGainAllowsWhenIntentProvidesExpectedGain(t *testing.T) {
+	r, broker := newRunnerTestHarness(domain.ModeAuto, false)
+	r.minGainPct = 1
+	err := r.handleIntent(context.Background(), domain.TradeIntent{
+		Symbol:          "AAPL",
+		Side:            domain.SideBuy,
+		Qty:             1,
+		ExpectedGainPct: 2,
+	})
+	if err != nil {
+		t.Fatalf("handleIntent failed: %v", err)
+	}
+	if broker.placeCalls != 1 {
+		t.Fatalf("expected one place call, got %d", broker.placeCalls)
+	}
+}
+
 func TestHandleIntent_UnknownMode(t *testing.T) {
 	r, _ := newRunnerTestHarness(domain.Mode("mystery"), false)
 	err := r.handleIntent(context.Background(), domain.TradeIntent{
@@ -149,7 +182,6 @@ func TestRunCycle_UsesMaxPerCycleAndPassesAgentInput(t *testing.T) {
 	r.agent = agent
 	r.maxPerCycle = 1
 	r.watchlist = []string{"AAPL", "MSFT"}
-	r.objective = "test objective"
 
 	if err := r.runCycle(context.Background()); err != nil {
 		t.Fatalf("runCycle failed: %v", err)
@@ -160,7 +192,7 @@ func TestRunCycle_UsesMaxPerCycleAndPassesAgentInput(t *testing.T) {
 	if agent.lastInput.Mode != domain.ModeAuto {
 		t.Fatalf("unexpected mode in agent input: %q", agent.lastInput.Mode)
 	}
-	if len(agent.lastInput.Watchlist) != 2 || agent.lastInput.Objective != "test objective" {
+	if len(agent.lastInput.Watchlist) != 2 {
 		t.Fatalf("unexpected agent input: %#v", agent.lastInput)
 	}
 	if broker.placeCalls != 1 {
@@ -187,6 +219,20 @@ func TestRunCycle_IntentErrorRecordedAsEvent(t *testing.T) {
 	}
 	if !hasEventType(r.engine.Snapshot().Events, "agent_cycle_complete") {
 		t.Fatalf("expected agent_cycle_complete event")
+	}
+}
+
+func TestRunCycle_EmitsHeartbeat(t *testing.T) {
+	r, _ := newRunnerTestHarness(domain.ModeAuto, false)
+	r.agent = &fakeAgent{}
+	r.heartbeatInterval = time.Second
+	r.heartbeatWindowStart = time.Now().Add(-time.Minute)
+
+	if err := r.runCycle(context.Background()); err != nil {
+		t.Fatalf("runCycle failed: %v", err)
+	}
+	if !hasEventType(r.engine.Snapshot().Events, "agent_heartbeat") {
+		t.Fatalf("expected agent_heartbeat event")
 	}
 }
 
@@ -279,8 +325,8 @@ func newRunnerTestHarness(mode domain.Mode, dryRun bool) (*Runner, *fakeBroker) 
 		2*time.Second,
 		3*time.Second,
 		2,
+		0,
 		dryRun,
-		"objective",
 	)
 	return r, b
 }

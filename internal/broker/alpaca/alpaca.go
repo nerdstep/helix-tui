@@ -220,15 +220,19 @@ func (b *Broker) PlaceOrder(ctx context.Context, req domain.OrderRequest) (domai
 	}
 
 	qty := decimal.NewFromFloat(req.Qty)
+	orderType := toSDKOrderType(req.Type)
 	orderReq := sdkalpaca.PlaceOrderRequest{
 		Symbol:        symbol,
 		Qty:           &qty,
 		Side:          toSDKSide(req.Side),
-		Type:          toSDKOrderType(req.Type),
+		Type:          orderType,
 		TimeInForce:   sdkalpaca.Day,
 		ClientOrderID: req.ClientOrderID,
 	}
-	if req.LimitPrice != nil {
+	if req.Type == domain.OrderTypeLimit {
+		if req.LimitPrice == nil || *req.LimitPrice <= 0 {
+			return domain.Order{}, fmt.Errorf("limit price must be > 0")
+		}
 		limit := decimal.NewFromFloat(*req.LimitPrice)
 		orderReq.LimitPrice = &limit
 	}

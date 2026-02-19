@@ -93,12 +93,13 @@ func (a *Agent) ProposeTrades(ctx context.Context, input domain.AgentInput) ([]d
 			conf := confidence(absMove, a.minMovePct)
 			out = append(out, scoredIntent{
 				intent: domain.TradeIntent{
-					Symbol:     symbol,
-					Side:       domain.SideBuy,
-					Qty:        a.orderQty,
-					OrderType:  domain.OrderTypeMarket,
-					Rationale:  fmt.Sprintf("price moved %.2f%% down since last sample", movePct*100),
-					Confidence: conf,
+					Symbol:          symbol,
+					Side:            domain.SideBuy,
+					Qty:             a.orderQty,
+					OrderType:       domain.OrderTypeMarket,
+					Rationale:       fmt.Sprintf("price moved %.2f%% down since last sample", movePct*100),
+					Confidence:      conf,
+					ExpectedGainPct: absMove * 100,
 				},
 				score: absMove,
 			})
@@ -113,12 +114,13 @@ func (a *Agent) ProposeTrades(ctx context.Context, input domain.AgentInput) ([]d
 			conf := confidence(absMove, a.minMovePct)
 			out = append(out, scoredIntent{
 				intent: domain.TradeIntent{
-					Symbol:     symbol,
-					Side:       domain.SideSell,
-					Qty:        qty,
-					OrderType:  domain.OrderTypeMarket,
-					Rationale:  fmt.Sprintf("price moved %.2f%% up since last sample", movePct*100),
-					Confidence: conf,
+					Symbol:          symbol,
+					Side:            domain.SideSell,
+					Qty:             qty,
+					OrderType:       domain.OrderTypeMarket,
+					Rationale:       fmt.Sprintf("price moved %.2f%% up since last sample", movePct*100),
+					Confidence:      conf,
+					ExpectedGainPct: absMove * 100,
 				},
 				score: absMove,
 			})

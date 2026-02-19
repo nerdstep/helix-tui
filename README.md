@@ -51,8 +51,11 @@ The app can load runtime settings from a TOML file using `github.com/pelletier/g
   - `[alpaca].base_url`
 - Agent selection/config keys:
   - `[agent].type` (`heuristic` or `llm`)
+  - `[agent].qty` (heuristic agent only)
+  - `[agent].move_pct` (heuristic agent only)
   - `[agent].sync_timeout`
   - `[agent].order_timeout`
+  - `[agent].min_gain_pct`
   - `[agent.llm].api_key`
   - `[agent.llm].base_url`
   - `[agent.llm].model`
@@ -162,6 +165,7 @@ go run ./cmd/helix \
   -agent-interval=10s \
   -agent-qty=1 \
   -agent-move-pct=0.01 \
+  -agent-min-gain-pct=0 \
   -agent-max-intents=1
 ```
 
@@ -202,11 +206,19 @@ go run ./cmd/helix \
 - `auto`: agent intents are executed automatically through the same risk gate as manual orders.
 
 `-dry-run` works with autonomous modes and logs intents without submitting orders.
+`-agent-min-gain-pct` enforces a minimum expected gain percent per intent (0 disables).
 
 Agent implementations:
 
 - `heuristic`: built-in deterministic price-move strategy.
 - `llm`: LLM proposes trade intents from snapshot/watchlist/quotes/events context (implemented with official `github.com/openai/openai-go`).
+
+Agent tuning notes:
+
+- `-agent-qty` / `[agent].qty`: heuristic agent only; fixed quantity used when heuristic emits intents.
+- `-agent-move-pct` / `[agent].move_pct`: heuristic agent only; absolute sampled price-move threshold (`0.01` = `1%`) before signaling.
+- LLM-specific TOML settings live under `[agent.llm]`.
+- `[agent.llm].system_prompt`: primary instruction channel for LLM behavior and goals.
 
 ## Safety Defaults
 
@@ -238,3 +250,4 @@ These checks are enforced in `internal/engine/risk.go`.
 - SQLite persistence runs startup migrations from `internal/storage` and tracks applied versions in `schema_migrations`.
 - The TUI includes watchlist quote rows, position P&L, and basic agent/system runtime stats.
 - Event history supports keyboard paging (`PgUp`, `PgDn`, `Home`, `End`) and retains a larger recent window for scrollback.
+- Autonomous mode emits periodic `agent_heartbeat` summary events so idle-but-healthy loops are visible in logs.

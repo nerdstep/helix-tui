@@ -25,7 +25,7 @@ func TestProposeTradesParsesLLMIntents(t *testing.T) {
 		APIKey: "test-key",
 		Model:  "test-model",
 	}, staticChatClient{
-		content: `{"intents":[{"symbol":"aapl","side":"buy","qty":2,"order_type":"market","confidence":0.8,"rationale":"strong setup"}]}`,
+		content: `{"intents":[{"symbol":"aapl","side":"buy","qty":2,"order_type":"market","confidence":0.8,"expected_gain_pct":2.5,"rationale":"strong setup"}]}`,
 	})
 	if err != nil {
 		t.Fatalf("newWithClient failed: %v", err)
@@ -35,7 +35,6 @@ func TestProposeTradesParsesLLMIntents(t *testing.T) {
 		Mode:      domain.ModeAuto,
 		Watchlist: []string{"AAPL"},
 		Snapshot:  domain.Snapshot{},
-		Objective: "Trade momentum reversals.",
 	})
 	if err != nil {
 		t.Fatalf("ProposeTrades failed: %v", err)
@@ -46,6 +45,26 @@ func TestProposeTradesParsesLLMIntents(t *testing.T) {
 	intent := intents[0]
 	if intent.Symbol != "AAPL" || intent.Side != domain.SideBuy || intent.Qty != 2 {
 		t.Fatalf("unexpected intent: %#v", intent)
+	}
+	if intent.ExpectedGainPct != 2.5 {
+		t.Fatalf("expected expected_gain_pct to be parsed, got %#v", intent)
+	}
+}
+
+func TestParseIntentsMarketIgnoresLimitPrice(t *testing.T) {
+	raw := `{"intents":[{"symbol":"AAPL","side":"buy","qty":1,"order_type":"market","limit_price":0,"expected_gain_pct":1.2}]}`
+	intents, err := parseIntents(raw, []string{"AAPL"})
+	if err != nil {
+		t.Fatalf("parseIntents failed: %v", err)
+	}
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %#v", intents)
+	}
+	if intents[0].OrderType != domain.OrderTypeMarket {
+		t.Fatalf("expected market order type, got %#v", intents[0])
+	}
+	if intents[0].LimitPrice != nil {
+		t.Fatalf("expected market order limit price to be cleared, got %#v", intents[0].LimitPrice)
 	}
 }
 

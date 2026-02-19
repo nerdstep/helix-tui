@@ -159,6 +159,9 @@ func (m Model) buildSystemRows() []string {
 	if e := latestEventByType(m.snapshot.Events, "agent_proposal"); e != nil {
 		rows = append(rows, "last_proposal="+e.Details)
 	}
+	if e := latestEventByType(m.snapshot.Events, "agent_heartbeat"); e != nil {
+		rows = append(rows, "heartbeat="+e.Details)
+	}
 	if e := latestEventByType(m.snapshot.Events, "agent_runner_error"); e != nil {
 		rows = append(rows, fmt.Sprintf("runner_error=%s", e.Details))
 	}

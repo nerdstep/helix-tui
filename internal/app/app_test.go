@@ -36,6 +36,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.AgentInterval <= 0 || cfg.AgentOrderQty <= 0 || cfg.AgentMovePct <= 0 {
 		t.Fatalf("unexpected agent defaults: %#v", cfg)
 	}
+	if cfg.AgentMinGainPct != 0 {
+		t.Fatalf("unexpected default min gain pct: %f", cfg.AgentMinGainPct)
+	}
 	if cfg.SyncTimeout <= 0 || cfg.OrderTimeout <= 0 {
 		t.Fatalf("unexpected runtime timeout defaults: sync=%s order=%s", cfg.SyncTimeout, cfg.OrderTimeout)
 	}

@@ -22,8 +22,24 @@ type Runner struct {
 	syncTimeout  time.Duration
 	orderTimeout time.Duration
 	maxPerCycle  int
+	minGainPct   float64
 	dryRun       bool
-	objective    string
+
+	heartbeatInterval    time.Duration
+	heartbeatWindowStart time.Time
+	heartbeat            heartbeatStats
+}
+
+type heartbeatStats struct {
+	cycles         int
+	idleCycles     int
+	generated      int
+	executed       int
+	rejected       int
+	approvals      int
+	dryRun         int
+	skipped        int
+	totalLatencyMs int64
 }
 
 func (r *Runner) SetWatchlist(nextWatchlist []string) {
@@ -49,8 +65,8 @@ func NewRunner(
 	syncTimeout time.Duration,
 	orderTimeout time.Duration,
 	maxPerCycle int,
+	minGainPct float64,
 	dryRun bool,
-	objective string,
 ) *Runner {
 	if interval <= 0 {
 		interval = 10 * time.Second
@@ -64,17 +80,21 @@ func NewRunner(
 	if maxPerCycle <= 0 {
 		maxPerCycle = 1
 	}
+	if minGainPct < 0 {
+		minGainPct = 0
+	}
 	return &Runner{
-		engine:       engine,
-		agent:        agent,
-		mode:         mode,
-		watchlist:    watchlist,
-		interval:     interval,
-		syncTimeout:  syncTimeout,
-		orderTimeout: orderTimeout,
-		maxPerCycle:  maxPerCycle,
-		dryRun:       dryRun,
-		objective:    strings.TrimSpace(objective),
+		engine:            engine,
+		agent:             agent,
+		mode:              mode,
+		watchlist:         watchlist,
+		interval:          interval,
+		syncTimeout:       syncTimeout,
+		orderTimeout:      orderTimeout,
+		maxPerCycle:       maxPerCycle,
+		minGainPct:        minGainPct,
+		dryRun:            dryRun,
+		heartbeatInterval: heartbeatIntervalForCycle(interval),
 	}
 }
 
@@ -121,11 +141,11 @@ func (r *Runner) runCycle(ctx context.Context) error {
 		Mode:      r.mode,
 		Watchlist: watchlist,
 		Snapshot:  snapshot,
-		Objective: r.objective,
 	})
 	if err != nil {
 		return fmt.Errorf("propose trades: %w", err)
 	}
+	proposalLatencyMs := time.Since(cycleStartedAt).Milliseconds()
 	generated := len(intents)
 	r.engine.AddEvent(
 		"agent_proposal",
@@ -133,11 +153,12 @@ func (r *Runner) runCycle(ctx context.Context) error {
 			"generated=%d watchlist=%d latency_ms=%d",
 			generated,
 			len(watchlist),
-			time.Since(cycleStartedAt).Milliseconds(),
+			proposalLatencyMs,
 		),
 	)
 	if len(intents) == 0 {
 		r.engine.AddEvent("agent_cycle_complete", "generated=0 attempted=0 executed=0 rejected=0 approvals=0 dry_run=0 skipped=0")
+		r.recordHeartbeat(proposalLatencyMs, generated, 0, 0, 0, 0, 0)
 		return nil
 	}
 
@@ -183,6 +204,7 @@ func (r *Runner) runCycle(ctx context.Context) error {
 			skipped,
 		),
 	)
+	r.recordHeartbeat(proposalLatencyMs, generated, executed, rejected, approvals, dryRun, skipped)
 	return nil
 }
 
@@ -194,8 +216,20 @@ func (r *Runner) handleIntent(ctx context.Context, intent domain.TradeIntent) er
 	if intent.Symbol == "" {
 		return fmt.Errorf("intent symbol is required")
 	}
-	if intent.OrderType == "" {
+	switch intent.OrderType {
+	case "", domain.OrderTypeMarket:
 		intent.OrderType = domain.OrderTypeMarket
+		intent.LimitPrice = nil
+	case domain.OrderTypeLimit:
+		if intent.LimitPrice == nil || *intent.LimitPrice <= 0 {
+			return fmt.Errorf("limit order requires positive limit price")
+		}
+	default:
+		intent.OrderType = domain.OrderTypeMarket
+		intent.LimitPrice = nil
+	}
+	if err := r.enforceMinExpectedGain(ctx, intent); err != nil {
+		return err
 	}
 
 	switch r.mode {
@@ -231,12 +265,125 @@ func (r *Runner) handleIntent(ctx context.Context, intent domain.TradeIntent) er
 
 func summarizeIntent(i domain.TradeIntent) string {
 	return fmt.Sprintf(
-		"%s %s qty=%.2f type=%s conf=%.2f rationale=%s",
+		"%s %s qty=%.2f type=%s conf=%.2f gain=%.2f%% rationale=%s",
 		i.Side,
 		i.Symbol,
 		i.Qty,
 		i.OrderType,
 		i.Confidence,
+		i.ExpectedGainPct,
 		strings.TrimSpace(i.Rationale),
 	)
+}
+
+func heartbeatIntervalForCycle(cycleInterval time.Duration) time.Duration {
+	const minHeartbeat = 30 * time.Second
+	derived := cycleInterval * 6
+	if derived > minHeartbeat {
+		return derived
+	}
+	return minHeartbeat
+}
+
+func (r *Runner) recordHeartbeat(proposalLatencyMs int64, generated, executed, rejected, approvals, dryRun, skipped int) {
+	if r.heartbeatInterval <= 0 {
+		return
+	}
+	now := time.Now().UTC()
+	if r.heartbeatWindowStart.IsZero() {
+		r.heartbeatWindowStart = now
+	}
+	r.heartbeat.cycles++
+	if generated == 0 {
+		r.heartbeat.idleCycles++
+	}
+	r.heartbeat.generated += generated
+	r.heartbeat.executed += executed
+	r.heartbeat.rejected += rejected
+	r.heartbeat.approvals += approvals
+	r.heartbeat.dryRun += dryRun
+	r.heartbeat.skipped += skipped
+	r.heartbeat.totalLatencyMs += proposalLatencyMs
+
+	if now.Sub(r.heartbeatWindowStart) < r.heartbeatInterval {
+		return
+	}
+	avgLatencyMs := int64(0)
+	if r.heartbeat.cycles > 0 {
+		avgLatencyMs = r.heartbeat.totalLatencyMs / int64(r.heartbeat.cycles)
+	}
+	r.engine.AddEvent(
+		"agent_heartbeat",
+		fmt.Sprintf(
+			"window=%s cycles=%d idle=%d generated=%d executed=%d rejected=%d approvals=%d dry_run=%d skipped=%d avg_latency_ms=%d",
+			r.heartbeatInterval.Round(time.Second),
+			r.heartbeat.cycles,
+			r.heartbeat.idleCycles,
+			r.heartbeat.generated,
+			r.heartbeat.executed,
+			r.heartbeat.rejected,
+			r.heartbeat.approvals,
+			r.heartbeat.dryRun,
+			r.heartbeat.skipped,
+			avgLatencyMs,
+		),
+	)
+	r.heartbeatWindowStart = now
+	r.heartbeat = heartbeatStats{}
+}
+
+func (r *Runner) enforceMinExpectedGain(ctx context.Context, intent domain.TradeIntent) error {
+	if r.minGainPct <= 0 {
+		return nil
+	}
+	gainPct, source, err := r.resolveExpectedGainPct(ctx, intent)
+	if err != nil {
+		return err
+	}
+	if gainPct < r.minGainPct {
+		return fmt.Errorf("expected gain %.2f%% below minimum %.2f%% (%s)", gainPct, r.minGainPct, source)
+	}
+	return nil
+}
+
+func (r *Runner) resolveExpectedGainPct(ctx context.Context, intent domain.TradeIntent) (float64, string, error) {
+	if intent.ExpectedGainPct > 0 {
+		return intent.ExpectedGainPct, "intent", nil
+	}
+	if intent.Side != domain.SideSell {
+		return 0, "intent", fmt.Errorf("expected gain missing for %s intent", intent.Side)
+	}
+	snapshot := r.engine.Snapshot()
+	avgCost := 0.0
+	for _, pos := range snapshot.Positions {
+		if strings.EqualFold(pos.Symbol, intent.Symbol) {
+			avgCost = pos.AvgCost
+			break
+		}
+	}
+	if avgCost <= 0 {
+		return 0, "position", fmt.Errorf("expected gain missing: no avg cost for %s", intent.Symbol)
+	}
+
+	exitPrice := 0.0
+	if intent.OrderType == domain.OrderTypeLimit && intent.LimitPrice != nil {
+		exitPrice = *intent.LimitPrice
+	} else {
+		quote, err := r.engine.GetQuote(ctx, intent.Symbol)
+		if err != nil {
+			return 0, "quote", fmt.Errorf("get quote for gain check: %w", err)
+		}
+		if quote.Bid > 0 {
+			exitPrice = quote.Bid
+		} else if quote.Last > 0 {
+			exitPrice = quote.Last
+		} else {
+			exitPrice = quote.Ask
+		}
+	}
+	if exitPrice <= 0 {
+		return 0, "quote", fmt.Errorf("expected gain missing: no reference price for %s", intent.Symbol)
+	}
+
+	return ((exitPrice - avgCost) / avgCost) * 100, "position", nil
 }

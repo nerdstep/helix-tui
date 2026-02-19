@@ -34,9 +34,9 @@ type Config struct {
 	AgentInterval       time.Duration
 	AgentOrderQty       float64
 	AgentMovePct        float64
+	AgentMinGainPct     float64
 	MaxAgentIntents     int
 	AgentDryRun         bool
-	AgentObjective      string
 	SyncTimeout         time.Duration
 	OrderTimeout        time.Duration
 	LogFile             string
@@ -85,8 +85,8 @@ func DefaultConfig() Config {
 		AgentInterval:   10 * time.Second,
 		AgentOrderQty:   1,
 		AgentMovePct:    0.01,
+		AgentMinGainPct: 0,
 		MaxAgentIntents: 1,
-		AgentObjective:  "Generate conservative, risk-aware trade intents.",
 		SyncTimeout:     15 * time.Second,
 		OrderTimeout:    15 * time.Second,
 		LogMode:         "append",

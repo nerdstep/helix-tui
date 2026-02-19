@@ -159,8 +159,8 @@ func buildRunner(cfg Config, broker domain.Broker, e *engine.Engine, watchlist [
 		cfg.SyncTimeout,
 		cfg.OrderTimeout,
 		cfg.MaxAgentIntents,
+		cfg.AgentMinGainPct,
 		cfg.AgentDryRun,
-		cfg.AgentObjective,
 	)
 	return runner, mode, agentType, nil
 }

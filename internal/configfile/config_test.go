@@ -70,9 +70,9 @@ sync_timeout = "18s"
 order_timeout = "22s"
 qty = 2.5
 move_pct = 0.03
+min_gain_pct = 1.25
 max_intents = 4
 dry_run = true
-objective = "  test objective  "
 
 [agent.llm]
 api_key = "  llm-key  "
@@ -138,14 +138,14 @@ path = " data/helix.db "
 	if cfg.AgentOrderQty != 2.5 || cfg.AgentMovePct != 0.03 || cfg.MaxAgentIntents != 4 {
 		t.Fatalf("unexpected agent numeric settings")
 	}
+	if cfg.AgentMinGainPct != 1.25 {
+		t.Fatalf("unexpected min gain pct: %f", cfg.AgentMinGainPct)
+	}
 	if !cfg.AgentDryRun {
 		t.Fatalf("expected dry run to be true")
 	}
 	if cfg.AgentType != "llm" {
 		t.Fatalf("unexpected agent type: %q", cfg.AgentType)
-	}
-	if cfg.AgentObjective != "test objective" {
-		t.Fatalf("unexpected objective: %q", cfg.AgentObjective)
 	}
 	if cfg.LLMAPIKey != "llm-key" {
 		t.Fatalf("unexpected llm api key: %q", cfg.LLMAPIKey)
@@ -252,6 +252,26 @@ mode = "rotate"
 		t.Fatalf("expected logging mode validation error")
 	}
 	if !strings.Contains(err.Error(), "logging.mode") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoad_InvalidAgentMinGainPct(t *testing.T) {
+	cfg := app.DefaultConfig()
+	path := filepath.Join(t.TempDir(), "config.toml")
+	content := `
+[agent]
+min_gain_pct = -1
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	err := Load(path, &cfg, true)
+	if err == nil {
+		t.Fatalf("expected min gain pct validation error")
+	}
+	if !strings.Contains(err.Error(), "agent.min_gain_pct") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

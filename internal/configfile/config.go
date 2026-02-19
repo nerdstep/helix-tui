@@ -66,9 +66,9 @@ type agentConfig struct {
 	OrderTimeout *string        `toml:"order_timeout"`
 	Qty          *float64       `toml:"qty"`
 	MovePct      *float64       `toml:"move_pct"`
+	MinGainPct   *float64       `toml:"min_gain_pct"`
 	MaxIntents   *int           `toml:"max_intents"`
 	DryRun       *bool          `toml:"dry_run"`
-	Objective    *string        `toml:"objective"`
 	LLM          llmAgentConfig `toml:"llm"`
 }
 
@@ -205,14 +205,17 @@ func applyFileConfig(cfg *app.Config, in fileConfig) error {
 	if in.Agent.MovePct != nil {
 		cfg.AgentMovePct = *in.Agent.MovePct
 	}
+	if in.Agent.MinGainPct != nil {
+		if *in.Agent.MinGainPct < 0 {
+			return fmt.Errorf("agent.min_gain_pct must be >= 0")
+		}
+		cfg.AgentMinGainPct = *in.Agent.MinGainPct
+	}
 	if in.Agent.MaxIntents != nil {
 		cfg.MaxAgentIntents = *in.Agent.MaxIntents
 	}
 	if in.Agent.DryRun != nil {
 		cfg.AgentDryRun = *in.Agent.DryRun
-	}
-	if in.Agent.Objective != nil {
-		cfg.AgentObjective = strings.TrimSpace(*in.Agent.Objective)
 	}
 	if in.Agent.LLM.APIKey != nil {
 		cfg.LLMAPIKey = strings.TrimSpace(*in.Agent.LLM.APIKey)

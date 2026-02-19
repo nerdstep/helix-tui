@@ -102,7 +102,6 @@ func (a *Agent) ProposeTrades(ctx context.Context, input domain.AgentInput) ([]d
 	payload := llmInput{
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		Mode:        string(input.Mode),
-		Objective:   strings.TrimSpace(input.Objective),
 		Watchlist:   watchlist,
 		Account:     input.Snapshot.Account,
 		Positions:   input.Snapshot.Positions,
@@ -131,13 +130,14 @@ func (a *Agent) ProposeTrades(ctx context.Context, input domain.AgentInput) ([]d
 const defaultSystemPrompt = "You are a conservative US equities trading research assistant. "
 
 const forcedJSONInstruction = "Use only the provided JSON context. " +
-	"Return strict JSON: {\"intents\":[{\"symbol\":\"AAPL\",\"side\":\"buy|sell\",\"qty\":1.0,\"order_type\":\"market|limit\",\"limit_price\":123.45,\"confidence\":0.0,\"rationale\":\"...\"}]}. " +
+	"Return strict JSON: {\"intents\":[{\"symbol\":\"AAPL\",\"side\":\"buy|sell\",\"qty\":1.0,\"order_type\":\"market|limit\",\"limit_price\":123.45,\"confidence\":0.0,\"expected_gain_pct\":1.5,\"rationale\":\"...\"}]}. " +
+	"Include expected_gain_pct for every intent. " +
+	"Avoid dust-sized orders when possible. " +
 	"Only propose watchlist symbols. Keep qty positive. Return {\"intents\":[]} when uncertain."
 
 type llmInput struct {
 	GeneratedAt  string            `json:"generated_at"`
 	Mode         string            `json:"mode"`
-	Objective    string            `json:"objective"`
 	Watchlist    []string          `json:"watchlist"`
 	Account      domain.Account    `json:"account"`
 	Positions    []domain.Position `json:"positions"`
@@ -213,6 +213,7 @@ type intentOutput struct {
 	OrderType  string   `json:"order_type"`
 	LimitPrice *float64 `json:"limit_price"`
 	Confidence float64  `json:"confidence"`
+	Expected   float64  `json:"expected_gain_pct"`
 	Rationale  string   `json:"rationale"`
 }
 
@@ -249,14 +250,17 @@ func parseIntents(raw string, watchlist []string) ([]domain.TradeIntent, error) 
 			continue
 		}
 		orderType := domain.OrderType(strings.ToLower(strings.TrimSpace(intent.OrderType)))
+		limitPrice := intent.LimitPrice
 		switch orderType {
 		case domain.OrderTypeMarket:
+			limitPrice = nil
 		case domain.OrderTypeLimit:
 			if intent.LimitPrice == nil || *intent.LimitPrice <= 0 {
 				continue
 			}
 		default:
 			orderType = domain.OrderTypeMarket
+			limitPrice = nil
 		}
 
 		conf := intent.Confidence
@@ -271,13 +275,14 @@ func parseIntents(raw string, watchlist []string) ([]domain.TradeIntent, error) 
 			rationale = "llm-generated intent"
 		}
 		intents = append(intents, domain.TradeIntent{
-			Symbol:     symbol,
-			Side:       side,
-			Qty:        intent.Qty,
-			OrderType:  orderType,
-			LimitPrice: intent.LimitPrice,
-			Confidence: conf,
-			Rationale:  rationale,
+			Symbol:          symbol,
+			Side:            side,
+			Qty:             intent.Qty,
+			OrderType:       orderType,
+			LimitPrice:      limitPrice,
+			Confidence:      conf,
+			ExpectedGainPct: intent.Expected,
+			Rationale:       rationale,
 		})
 	}
 	return intents, nil

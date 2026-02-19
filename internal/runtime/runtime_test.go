@@ -1,4 +1,4 @@
-package main
+package runtime
 
 import (
 	"bytes"
@@ -53,7 +53,7 @@ func TestParseConfigPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path, explicit, err := parseConfigPath(tt.args)
+			path, explicit, err := ParseConfigPath(tt.args)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("expected error")
@@ -83,7 +83,7 @@ func TestApplyEnvOverrides(t *testing.T) {
 	t.Setenv("APCA_API_SECRET_KEY", "env-secret")
 	t.Setenv("APCA_API_DATA_URL", "env-url")
 
-	applyEnvOverrides(&cfg)
+	ApplyEnvOverrides(&cfg)
 	if cfg.AlpacaAPIKey != "env-key" {
 		t.Fatalf("unexpected key: %q", cfg.AlpacaAPIKey)
 	}
@@ -96,14 +96,14 @@ func TestApplyEnvOverrides(t *testing.T) {
 }
 
 func TestSplitSymbols(t *testing.T) {
-	got := splitSymbols("aapl, AAPL, msft ,, tsla")
+	got := SplitSymbols("aapl, AAPL, msft ,, tsla")
 	want := []string{"AAPL", "MSFT", "TSLA"}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("splitSymbols mismatch: got %#v want %#v", got, want)
+		t.Fatalf("SplitSymbols mismatch: got %#v want %#v", got, want)
 	}
 }
 
-func TestRunHeadless_StopsOnCanceledContext(t *testing.T) {
+func TestRunHeadlessStopsOnCanceledContext(t *testing.T) {
 	oldStdout := os.Stdout
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -116,7 +116,7 @@ func TestRunHeadless_StopsOnCanceledContext(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	runHeadless(ctx, headlessEngineStub{})
+	RunHeadless(ctx, headlessEngineStub{})
 	_ = w.Close()
 
 	var buf bytes.Buffer
@@ -127,7 +127,7 @@ func TestRunHeadless_StopsOnCanceledContext(t *testing.T) {
 	}
 }
 
-func TestRun_HeadlessManual(t *testing.T) {
+func TestRunHeadlessManual(t *testing.T) {
 	oldStdout := os.Stdout
 	_, w, err := os.Pipe()
 	if err != nil {
@@ -141,28 +141,28 @@ func TestRun_HeadlessManual(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	stderr := &bytes.Buffer{}
-	err = run(ctx, []string{"-headless", "-broker=paper", "-mode=manual"}, stderr)
+	err = Run(ctx, []string{"-headless", "-broker=paper", "-mode=manual"}, stderr)
 	_ = w.Close()
 	if err != nil {
-		t.Fatalf("run failed: %v", err)
+		t.Fatalf("Run failed: %v", err)
 	}
 }
 
-func TestRun_Errors(t *testing.T) {
+func TestRunErrors(t *testing.T) {
 	stderr := &bytes.Buffer{}
 	ctx := context.Background()
 
-	err := run(ctx, []string{"-does-not-exist"}, stderr)
+	err := Run(ctx, []string{"-does-not-exist"}, stderr)
 	if err == nil {
 		t.Fatalf("expected parse error")
 	}
 
-	err = run(ctx, []string{"-headless", "-broker=unsupported"}, stderr)
+	err = Run(ctx, []string{"-headless", "-broker=unsupported"}, stderr)
 	if err == nil || !strings.Contains(err.Error(), "unsupported broker") {
 		t.Fatalf("expected unsupported broker error, got %v", err)
 	}
 
-	err = run(ctx, []string{"-config=does-not-exist.toml"}, stderr)
+	err = Run(ctx, []string{"-config=does-not-exist.toml"}, stderr)
 	if err == nil || !strings.Contains(err.Error(), "failed to load config") {
 		t.Fatalf("expected config load error, got %v", err)
 	}

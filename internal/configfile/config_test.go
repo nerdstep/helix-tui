@@ -58,7 +58,6 @@ func TestLoad_AppliesConfigValues(t *testing.T) {
 	content := `
 broker = "alpaca"
 mode = "AUTO"
-allow_symbols = ["aapl", "AAPL", " msft "]
 
 [alpaca]
 env = "live"
@@ -118,9 +117,6 @@ path = "data/helix.db"
 	}
 	if cfg.Mode != "AUTO" {
 		t.Fatalf("unexpected mode: %q", cfg.Mode)
-	}
-	if !reflect.DeepEqual(cfg.AllowSymbols, []string{"aapl", "AAPL", " msft "}) {
-		t.Fatalf("unexpected allow symbols: %#v", cfg.AllowSymbols)
 	}
 	if cfg.Alpaca.APIKey != "key123" || cfg.Alpaca.APISecret != "sec123" {
 		t.Fatalf("unexpected alpaca credentials: %q / %q", cfg.Alpaca.APIKey, cfg.Alpaca.APISecret)

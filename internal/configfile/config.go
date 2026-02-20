@@ -20,15 +20,14 @@ import (
 const DefaultPath = "config.toml"
 
 type Config struct {
-	Broker       string       `koanf:"broker"`
-	Mode         string       `koanf:"mode"`
-	AllowSymbols []string     `koanf:"allow_symbols"`
-	Alpaca       AlpacaConfig `koanf:"alpaca"`
-	Keyring      Keyring      `koanf:"keyring"`
-	Risk         RiskConfig   `koanf:"risk"`
-	Agent        AgentConfig  `koanf:"agent"`
-	Logging      Logging      `koanf:"logging"`
-	Database     Database     `koanf:"database"`
+	Broker   string       `koanf:"broker"`
+	Mode     string       `koanf:"mode"`
+	Alpaca   AlpacaConfig `koanf:"alpaca"`
+	Keyring  Keyring      `koanf:"keyring"`
+	Risk     RiskConfig   `koanf:"risk"`
+	Agent    AgentConfig  `koanf:"agent"`
+	Logging  Logging      `koanf:"logging"`
+	Database Database     `koanf:"database"`
 }
 
 type AlpacaConfig struct {
@@ -87,9 +86,8 @@ type Database struct {
 func Default() Config {
 	d := app.DefaultConfig()
 	return Config{
-		Broker:       d.Broker,
-		Mode:         string(d.Mode),
-		AllowSymbols: cloneStrings(d.AllowSymbols),
+		Broker: d.Broker,
+		Mode:   string(d.Mode),
 		Alpaca: AlpacaConfig{
 			Env:       d.AlpacaEnv,
 			BaseURL:   d.AlpacaBaseURL,
@@ -153,7 +151,6 @@ func (c Config) ToAppConfig() app.Config {
 		KeyringUser:         c.Keyring.User,
 		MaxNotionalPerTrade: c.Risk.MaxTradeNotional,
 		MaxNotionalPerDay:   c.Risk.MaxDayNotional,
-		AllowSymbols:        cloneStrings(c.AllowSymbols),
 		Mode:                domain.Mode(c.Mode),
 		Watchlist:           cloneStrings(c.Agent.Watchlist),
 		AgentType:           c.Agent.Type,
@@ -180,7 +177,6 @@ func (c Config) ToAppConfig() app.Config {
 func (c *Config) Normalize() {
 	c.Broker = strings.TrimSpace(c.Broker)
 	c.Mode = strings.ToLower(strings.TrimSpace(c.Mode))
-	c.AllowSymbols = symbols.Normalize(c.AllowSymbols)
 
 	c.Alpaca.Env = strings.TrimSpace(c.Alpaca.Env)
 	c.Alpaca.BaseURL = strings.TrimSpace(c.Alpaca.BaseURL)

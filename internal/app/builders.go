@@ -76,10 +76,10 @@ func resolveWatchlist(cfg Config, watchlistSyncBroker *alpaca.Broker) ([]string,
 	return remote, nil
 }
 
-func buildAllowSymbols(configAllow, watchlist []string) map[string]struct{} {
-	merged := symbols.Merge(configAllow, watchlist)
-	allow := make(map[string]struct{}, len(merged))
-	for _, symbol := range merged {
+func buildAllowSymbols(watchlist []string) map[string]struct{} {
+	normalized := symbols.Normalize(watchlist)
+	allow := make(map[string]struct{}, len(normalized))
+	for _, symbol := range normalized {
 		allow[symbol] = struct{}{}
 	}
 	return allow

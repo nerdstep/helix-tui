@@ -2,7 +2,6 @@
 
 broker = "paper" # paper | alpaca
 mode = "manual" # manual | assist | auto
-allow_symbols = ["AAPL", "MSFT", "TSLA", "NVDA"]
 
 [alpaca]
 env = "paper" # paper | live
@@ -26,6 +25,7 @@ max_day_notional = 20000
 
 [agent]
 type = "heuristic" # heuristic | llm
+# Watchlist is the effective risk allowlist.
 # Used by paper mode. In alpaca mode, watchlist comes from Alpaca watchlist "helix-tui".
 watchlist = ["AAPL", "MSFT", "TSLA", "NVDA"]
 interval = "15s"

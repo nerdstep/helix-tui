@@ -205,7 +205,6 @@ func TestNewSystem_WatchlistSymbolsAreAllowlisted(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Broker = "paper"
 	cfg.Mode = domain.ModeManual
-	cfg.AllowSymbols = []string{"AAPL"}
 	cfg.Watchlist = []string{"MSFT"}
 
 	sys, err := NewSystem(cfg)
@@ -318,11 +317,8 @@ func TestResolveWatchlistWithoutSyncBroker(t *testing.T) {
 	}
 }
 
-func TestBuildAllowSymbolsMergesAndDedupes(t *testing.T) {
-	got := buildAllowSymbols(
-		[]string{"aapl", " msft ", "AAPL"},
-		[]string{"msft", "nvda", " NVDA "},
-	)
+func TestBuildAllowSymbolsUsesWatchlistOnly(t *testing.T) {
+	got := buildAllowSymbols([]string{"aapl", " msft ", "AAPL", "msft", "nvda", " NVDA "})
 	want := map[string]struct{}{
 		"AAPL": {},
 		"MSFT": {},

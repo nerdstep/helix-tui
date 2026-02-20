@@ -73,6 +73,7 @@ func (m Model) buildOrderRows() []string {
 		return rows
 	}
 	rows = append(rows, strings.Split(view, "\n")...)
+	rows = append(rows, mutedStyle.Render("cancel: cancel #<row> or cancel <id-prefix>"))
 	return rows
 }
 

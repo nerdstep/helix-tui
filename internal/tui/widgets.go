@@ -221,15 +221,16 @@ func positionTableColumns(totalWidth int) []table.Column {
 }
 
 func orderTableColumns(totalWidth int) []table.Column {
-	minWidths := []int{6, 4, 4, 5, 6}
-	targetWidths := []int{14, 6, 8, 10, 12}
+	minWidths := []int{2, 8, 4, 4, 5, 6}
+	targetWidths := []int{4, 16, 6, 8, 10, 12}
 	widths := fitColumnWidths(totalWidth, minWidths, targetWidths)
 	return []table.Column{
-		{Title: "Order ID", Width: widths[0]},
-		{Title: "Side", Width: widths[1]},
-		{Title: "Symbol", Width: widths[2]},
-		{Title: "Qty", Width: widths[3]},
-		{Title: "Status", Width: widths[4]},
+		{Title: "#", Width: widths[0]},
+		{Title: "Order ID", Width: widths[1]},
+		{Title: "Side", Width: widths[2]},
+		{Title: "Symbol", Width: widths[3]},
+		{Title: "Qty", Width: widths[4]},
+		{Title: "Status", Width: widths[5]},
 	}
 }
 
@@ -310,9 +311,10 @@ func positionTableRows(positions []domain.Position) []table.Row {
 
 func orderTableRows(orders []domain.Order) []table.Row {
 	rows := make([]table.Row, 0, len(orders))
-	for _, o := range orders {
+	for i, o := range orders {
 		rows = append(rows, table.Row{
-			runewidth.Truncate(o.ID, 14, ""),
+			fmt.Sprintf("%d", i+1),
+			runewidth.Truncate(o.ID, 16, ""),
 			strings.ToUpper(string(o.Side)),
 			runewidth.Truncate(o.Symbol, 8, ""),
 			fmt.Sprintf("%.2f", o.Qty),

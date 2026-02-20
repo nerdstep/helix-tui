@@ -72,7 +72,7 @@ func parseCoreCommand(raw string) (*coreCommand, *statusOnlyMsg) {
 		return &coreCommand{Type: coreCommandFlatten}, nil
 	case "cancel":
 		if len(args) != 2 {
-			return nil, statusError("usage: cancel <ORDER_ID>")
+			return nil, statusError("usage: cancel <ORDER_ID|ORDER_ID_PREFIX|#ROW>")
 		}
 		return &coreCommand{Type: coreCommandCancel, OrderID: args[1]}, nil
 	case "buy", "sell":

@@ -139,7 +139,7 @@ go run ./cmd/helix \
 
 - `buy <SYM> <QTY>`
 - `sell <SYM> <QTY>`
-- `cancel <ORDER_ID>`
+- `cancel <ORDER_ID|ORDER_ID_PREFIX|#ROW>`
 - `flatten`
 - `sync`
 - `events up|down|top|tail [N]` (scroll event history)
@@ -173,7 +173,7 @@ Agent tuning notes:
 
 ## Safety Defaults
 
-- Symbol allowlist
+- Watchlist-based symbol allowlist
 - Max notional per trade
 - Max daily notional
 

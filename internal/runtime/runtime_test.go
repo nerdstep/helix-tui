@@ -104,7 +104,6 @@ func TestApplyEnvOverrides(t *testing.T) {
 func TestNormalizeAndValidateConfig(t *testing.T) {
 	cfg := configfile.Default()
 	cfg.Mode = " AUTO "
-	cfg.AllowSymbols = []string{"aapl", " AAPL ", "msft"}
 	cfg.Agent.Type = " LLM "
 	cfg.Agent.Watchlist = []string{"tsla", " TSLA ", "nvda"}
 	cfg.Logging.Mode = " APPEND "
@@ -124,9 +123,6 @@ func TestNormalizeAndValidateConfig(t *testing.T) {
 	}
 	if cfg.Logging.Level != "debug" {
 		t.Fatalf("unexpected normalized log level: %q", cfg.Logging.Level)
-	}
-	if got := strings.Join(cfg.AllowSymbols, ","); got != "AAPL,MSFT" {
-		t.Fatalf("unexpected allow symbols: %q", got)
 	}
 	if got := strings.Join(cfg.Agent.Watchlist, ","); got != "TSLA,NVDA" {
 		t.Fatalf("unexpected watchlist: %q", got)

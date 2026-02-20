@@ -27,7 +27,6 @@ type Config struct {
 	KeyringUser         string
 	MaxNotionalPerTrade float64
 	MaxNotionalPerDay   float64
-	AllowSymbols        []string
 	Mode                domain.Mode
 	Watchlist           []string
 	AgentType           string
@@ -72,30 +71,22 @@ func DefaultConfig() Config {
 		KeyringUser:         credentials.DefaultUser,
 		MaxNotionalPerTrade: 5000,
 		MaxNotionalPerDay:   20000,
-		AllowSymbols: []string{
-			"AAPL",
-			"MSFT",
-			"TSLA",
-			"NVDA",
-			"AMZN",
-			"GOOGL",
-		},
-		Mode:            domain.ModeManual,
-		Watchlist:       []string{"AAPL", "MSFT", "TSLA", "NVDA"},
-		AgentType:       "heuristic",
-		AgentInterval:   10 * time.Second,
-		AgentOrderQty:   1,
-		AgentMovePct:    0.01,
-		AgentMinGainPct: 0,
-		MaxAgentIntents: 1,
-		SyncTimeout:     15 * time.Second,
-		OrderTimeout:    15 * time.Second,
-		LogMode:         "append",
-		LogLevel:        "info",
-		DatabasePath:    storage.DefaultPath,
-		LLMBaseURL:      "https://api.openai.com/v1",
-		LLMModel:        "gpt-4.1-mini",
-		LLMTimeout:      20 * time.Second,
+		Mode:                domain.ModeManual,
+		Watchlist:           []string{"AAPL", "MSFT", "TSLA", "NVDA"},
+		AgentType:           "heuristic",
+		AgentInterval:       10 * time.Second,
+		AgentOrderQty:       1,
+		AgentMovePct:        0.01,
+		AgentMinGainPct:     0,
+		MaxAgentIntents:     1,
+		SyncTimeout:         15 * time.Second,
+		OrderTimeout:        15 * time.Second,
+		LogMode:             "append",
+		LogLevel:            "info",
+		DatabasePath:        storage.DefaultPath,
+		LLMBaseURL:          "https://api.openai.com/v1",
+		LLMModel:            "gpt-4.1-mini",
+		LLMTimeout:          20 * time.Second,
 	}
 }
 
@@ -105,7 +96,7 @@ func NewSystem(cfg Config) (*System, error) {
 		return nil, err
 	}
 	watchlist, watchlistPullErr := resolveWatchlist(cfg, brokerSpec.watchlistSyncBroker)
-	allowSymbols := buildAllowSymbols(cfg.AllowSymbols, watchlist)
+	allowSymbols := buildAllowSymbols(watchlist)
 	e, err := buildEngine(cfg, brokerSpec.broker, allowSymbols)
 	if err != nil {
 		return nil, err

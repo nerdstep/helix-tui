@@ -9,35 +9,9 @@ import (
 func (m Model) View() string {
 	vm := m.buildViewModel()
 	gap := 1
-	contentWidth := m.width
-	if contentWidth <= 0 {
-		contentWidth = 132
-	}
-	usableWidth := maxInt(24, contentWidth-1)
-	minPanelWidth := 32
-	var body string
-	if usableWidth >= minPanelWidth*2+gap {
-		colWidths := splitEvenWidths(usableWidth, 2, gap)
-		row1 := joinHorizontalWithGap([]string{
-			renderPanel(vm.positions, colWidths[0]),
-			renderPanel(vm.orders, colWidths[1]),
-		}, gap)
-		row2 := renderPanel(vm.watchlist, usableWidth)
-		row3 := joinHorizontalWithGap([]string{
-			renderPanel(vm.pnl, colWidths[0]),
-			renderPanel(vm.system, colWidths[1]),
-		}, gap)
-		body = lipgloss.JoinVertical(lipgloss.Left, row1, row2, row3)
-	} else {
-		body = lipgloss.JoinVertical(
-			lipgloss.Left,
-			renderPanel(vm.positions, usableWidth),
-			renderPanel(vm.orders, usableWidth),
-			renderPanel(vm.watchlist, usableWidth),
-			renderPanel(vm.pnl, usableWidth),
-			renderPanel(vm.system, usableWidth),
-		)
-	}
+	spec := m.computeLayoutSpec()
+	tabBar := m.renderTabBar(spec.usableWidth)
+	content := m.renderTabContent(vm, spec, gap)
 
 	statusRenderer := okStyle
 	if vm.statusError {
@@ -46,15 +20,52 @@ func (m Model) View() string {
 	status := statusRenderer.Render(vm.status)
 	input := inputStyle.Render("> " + vm.input)
 
-	return strings.Join([]string{
-		vm.header,
-		vm.account,
-		body,
-		renderPanel(vm.events, usableWidth),
+	lines := []string{vm.header, tabBar}
+	if vm.account != "" {
+		lines = append(lines, vm.account)
+	}
+	lines = append(lines,
+		content,
 		status,
 		input,
 		vm.footer,
-	}, "\n")
+	)
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderTabContent(vm viewModel, spec layoutSpec, gap int) string {
+	if m.activeTab == tabLogs {
+		return renderPanel(vm.events, spec.usableWidth)
+	}
+	if m.activeTab == tabSystem {
+		return renderPanel(vm.system, spec.usableWidth)
+	}
+	if spec.twoColumn {
+		row1 := renderPanel(vm.watchlist, spec.usableWidth)
+		row2 := renderTwoColumnPanels(vm.positions, vm.orders, spec.leftWidth, spec.rightWidth, spec.usableWidth, gap)
+		row3 := renderTwoColumnPanels(vm.pnl, vm.momentum, spec.leftWidth, spec.rightWidth, spec.usableWidth, gap)
+		return lipgloss.JoinVertical(lipgloss.Left, row1, row2, row3)
+	}
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		renderPanel(vm.watchlist, spec.usableWidth),
+		renderPanel(vm.positions, spec.usableWidth),
+		renderPanel(vm.orders, spec.usableWidth),
+		renderPanel(vm.pnl, spec.usableWidth),
+		renderPanel(vm.momentum, spec.usableWidth),
+	)
+}
+
+func renderTwoColumnPanels(leftLines []string, rightLines []string, leftWidth int, rightWidth int, total int, gap int) string {
+	left := renderPanel(leftLines, leftWidth)
+	right := renderPanel(rightLines, rightWidth)
+	row := joinHorizontalWithGap([]string{left, right}, gap)
+	delta := total - lipgloss.Width(row)
+	if delta != 0 {
+		right = renderPanel(rightLines, maxInt(1, rightWidth+delta))
+		row = joinHorizontalWithGap([]string{left, right}, gap)
+	}
+	return row
 }
 
 func renderPanel(lines []string, width int) string {

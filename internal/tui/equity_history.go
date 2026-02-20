@@ -55,8 +55,15 @@ func buildEquitySparkline(points []EquityPoint, width, height int, style lipglos
 	if len(values) == 0 {
 		return ""
 	}
-	sl := sparkline.New(width, height, sparkline.WithStyle(style))
-	sl.PushAll(values)
+	normalized, maxValue := normalizeSparklineValues(values)
+	sl := sparkline.New(
+		width,
+		height,
+		sparkline.WithStyle(style),
+		sparkline.WithNoAutoMaxValue(),
+		sparkline.WithMaxValue(maxValue),
+	)
+	sl.PushAll(normalized)
 	sl.DrawBraille()
 	return sl.View()
 }
@@ -80,4 +87,36 @@ func sampleEquity(points []EquityPoint, width int) []float64 {
 		out[i] = points[idx].Equity
 	}
 	return out
+}
+
+func normalizeSparklineValues(values []float64) ([]float64, float64) {
+	if len(values) == 0 {
+		return nil, 1
+	}
+
+	minV := values[0]
+	maxV := values[0]
+	for _, v := range values[1:] {
+		if v < minV {
+			minV = v
+		}
+		if v > maxV {
+			maxV = v
+		}
+	}
+	rangeV := maxV - minV
+	if rangeV < 1e-9 {
+		out := make([]float64, len(values))
+		// Draw a centerline when equity is effectively flat.
+		for i := range out {
+			out[i] = 0.5
+		}
+		return out, 1
+	}
+
+	out := make([]float64, len(values))
+	for i, v := range values {
+		out[i] = v - minV
+	}
+	return out, rangeV
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -13,15 +15,11 @@ import (
 )
 
 var (
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("230")).
-			Background(lipgloss.Color("24")).
-			Padding(0, 1)
-	accountStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("117")).
-			Background(lipgloss.Color("235")).
-			Padding(0, 1)
+	headerLabelStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("117")).
+				Bold(true)
+	headerValueStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("230"))
 	okStyle = lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("119"))
@@ -39,10 +37,26 @@ var (
 			Foreground(lipgloss.Color("159"))
 	inputStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("229"))
-	positiveStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))
-	negativeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("204"))
-	warnStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
-	footerStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+	positiveStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))
+	negativeStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("204"))
+	warnStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
+	footerStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+	tabActiveStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("230")).
+			Background(lipgloss.Color("24")).
+			Padding(0, 1)
+	tabInactiveStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("245")).
+				Padding(0, 1)
+)
+
+type uiTab string
+
+const (
+	tabOverview uiTab = "overview"
+	tabLogs     uiTab = "logs"
+	tabSystem   uiTab = "system"
 )
 
 type tickMsg time.Time
@@ -64,6 +78,10 @@ type Model struct {
 	onWatchlistSync    func([]string) ([]string, error)
 	onEquityPoint      func(EquityPoint) error
 	eventScroll        int
+	eventsViewport     viewport.Model
+	positionsTable     table.Model
+	ordersTable        table.Model
+	watchlistTable     table.Model
 	quotes             map[string]domain.Quote
 	prevLast           map[string]float64
 	quoteErr           map[string]string
@@ -72,12 +90,13 @@ type Model struct {
 	input              string
 	status             string
 	statusError        bool
+	activeTab          uiTab
 	width              int
 	height             int
 }
 
 func New(engine *engine.Engine, watchlist ...string) Model {
-	return Model{
+	m := Model{
 		engine:          engine,
 		watchlist:       symbols.Normalize(watchlist),
 		quotes:          map[string]domain.Quote{},
@@ -85,7 +104,14 @@ func New(engine *engine.Engine, watchlist ...string) Model {
 		quoteErr:        map[string]string{},
 		equityMaxPoints: 1000,
 		status:          "Type 'help' for commands.",
+		activeTab:       tabOverview,
 	}
+	m.eventsViewport = viewport.New(1, m.eventPageSize())
+	m.positionsTable = newPositionsTable()
+	m.ordersTable = newOrdersTable()
+	m.watchlistTable = newWatchlistTable()
+	m.syncWidgets()
+	return m
 }
 
 func (m Model) WithWatchlistChangeHandler(fn func([]string) error) Model {

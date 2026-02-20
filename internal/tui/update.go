@@ -29,6 +29,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) updateWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.width = msg.Width
 	m.height = msg.Height
+	m.syncWidgets()
 	return m, nil
 }
 
@@ -59,6 +60,7 @@ func (m Model) updateRefresh(msg refreshMsg) (tea.Model, tea.Cmd) {
 		}
 		m.quoteErr[symbol] = errMsg
 	}
+	m.syncWidgets()
 	return m, nil
 }
 
@@ -86,11 +88,20 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyEsc:
 		m.input = ""
 		return m, nil
+	case tea.KeyTab:
+		m.toggleTab()
+		return m, nil
 	case tea.KeyPgUp:
 		m.scrollEvents(m.eventPageSize())
 		return m, nil
 	case tea.KeyPgDown:
 		m.scrollEvents(-m.eventPageSize())
+		return m, nil
+	case tea.KeyUp:
+		m.scrollEvents(1)
+		return m, nil
+	case tea.KeyDown:
+		m.scrollEvents(-1)
 		return m, nil
 	case tea.KeyHome:
 		m.setEventScroll(m.maxEventScroll())
@@ -116,6 +127,9 @@ func (m Model) submitInput() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if handled, cmd := m.handleWatchCommand(input); handled {
+		return m, cmd
+	}
+	if handled, cmd := m.handleTabCommand(input); handled {
 		return m, cmd
 	}
 	if handled, cmd := m.handleEventsCommand(input); handled {

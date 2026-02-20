@@ -17,6 +17,7 @@ type viewModel struct {
 	orders      []string
 	watchlist   []string
 	pnl         []string
+	momentum    []string
 	system      []string
 	events      []string
 	status      string
@@ -27,18 +28,19 @@ type viewModel struct {
 
 func (m Model) buildViewModel() viewModel {
 	return viewModel{
-		header:      titleStyle.Render("helix-tui | CLI + TUI trading cockpit"),
-		account:     accountStyle.Render(fmt.Sprintf("Cash: $%.2f  BuyingPower: $%.2f  Equity: $%.2f", m.snapshot.Account.Cash, m.snapshot.Account.BuyingPower, m.snapshot.Account.Equity)),
+		header:      m.buildHeader(),
+		account:     "",
 		positions:   m.buildPositionRows(),
 		orders:      m.buildOrderRows(),
 		watchlist:   m.buildWatchRows(),
 		pnl:         m.buildPnlRows(),
+		momentum:    m.buildMomentumRows(),
 		system:      m.buildSystemRows(),
 		events:      m.buildEventRows(),
 		status:      m.status,
 		statusError: m.statusError,
 		input:       m.input,
-		footer:      footerStyle.Render("Commands: buy/sell/cancel/flatten/sync/watch/events/help/q"),
+		footer:      footerStyle.Render("Commands: buy/sell/cancel/flatten/sync/watch/events/tab/help/q | tabs: Tab key (overview/logs/system) | log scroll: Up/Down/PgUp/PgDn/Home/End"),
 	}
 }
 
@@ -47,9 +49,14 @@ func (m Model) buildPositionRows() []string {
 	if len(m.snapshot.Positions) == 0 {
 		return append(rows, mutedStyle.Render("(none)"))
 	}
-	for _, p := range m.snapshot.Positions {
-		rows = append(rows, fmt.Sprintf("%-6s qty=%8.2f avg=%8.2f last=%8.2f", p.Symbol, p.Qty, p.AvgCost, p.LastPrice))
+	view := strings.TrimRight(m.positionsTable.View(), "\n")
+	if view == "" {
+		for _, p := range m.snapshot.Positions {
+			rows = append(rows, fmt.Sprintf("%-6s qty=%8.2f avg=%8.2f last=%8.2f", p.Symbol, p.Qty, p.AvgCost, p.LastPrice))
+		}
+		return rows
 	}
+	rows = append(rows, strings.Split(view, "\n")...)
 	return rows
 }
 
@@ -58,9 +65,14 @@ func (m Model) buildOrderRows() []string {
 	if len(m.snapshot.Orders) == 0 {
 		return append(rows, mutedStyle.Render("(none)"))
 	}
-	for _, o := range m.snapshot.Orders {
-		rows = append(rows, fmt.Sprintf("%-14s %-4s %-6s qty=%8.2f status=%s", o.ID, o.Side, o.Symbol, o.Qty, o.Status))
+	view := strings.TrimRight(m.ordersTable.View(), "\n")
+	if view == "" {
+		for _, o := range m.snapshot.Orders {
+			rows = append(rows, fmt.Sprintf("%-14s %-4s %-6s qty=%8.2f status=%s", o.ID, o.Side, o.Symbol, o.Qty, o.Status))
+		}
+		return rows
 	}
+	rows = append(rows, strings.Split(view, "\n")...)
 	return rows
 }
 
@@ -69,27 +81,11 @@ func (m Model) buildWatchRows() []string {
 	if len(m.watchlist) == 0 {
 		return append(rows, mutedStyle.Render("(none configured)"))
 	}
-	for _, symbol := range m.watchlist {
-		if errMsg, ok := m.quoteErr[symbol]; ok {
-			rows = append(rows, fmt.Sprintf("%-6s error=%s", symbol, errStyle.Render(errMsg)))
-			continue
-		}
-		q, ok := m.quotes[symbol]
-		if !ok {
-			rows = append(rows, fmt.Sprintf("%-6s %s", symbol, mutedStyle.Render("pending...")))
-			continue
-		}
-		spread := q.Ask - q.Bid
-		change := mutedStyle.Render("n/a")
-		if prev, ok := m.prevLast[symbol]; ok && prev > 0 {
-			change = renderSignedPct(((q.Last - prev) / prev) * 100)
-		}
-		stale := ""
-		if !q.Time.IsZero() && time.Since(q.Time) > 15*time.Second {
-			stale = " " + warnStyle.Render("stale")
-		}
-		rows = append(rows, fmt.Sprintf("%-6s last=%8.2f bid=%8.2f ask=%8.2f spr=%6.2f chg=%8s%s", symbol, q.Last, q.Bid, q.Ask, spread, change, stale))
+	view := strings.TrimRight(m.watchlistTable.View(), "\n")
+	if view == "" {
+		return append(rows, mutedStyle.Render("(loading...)"))
 	}
+	rows = append(rows, strings.Split(view, "\n")...)
 	return rows
 }
 
@@ -118,6 +114,41 @@ func (m Model) buildPnlRows() []string {
 		rows = append(rows, fmt.Sprintf("%-6s qty=%8.2f mark=%8.2f uPnL=%9s (%8s)", p.Symbol, p.Qty, mark, renderSignedCurrency(u), renderSignedPct(pct)))
 	}
 	rows = append(rows, fmt.Sprintf("Total uPnL=%s", renderSignedCurrency(totalUPNL)))
+	return rows
+}
+
+func (m Model) buildMomentumRows() []string {
+	rows := []string{panelTitleStyle.Render("Equity Momentum")}
+	if len(m.equityHistory) < 3 {
+		return append(rows, mutedStyle.Render("Momentum trend: collecting data..."))
+	}
+
+	chartWidth := 56
+	if m.width > 0 {
+		chartWidth = minInt(maxInt(28, m.width/2-12), 96)
+	}
+	chartHeight := 6
+
+	momentum := make([]EquityPoint, 0, len(m.equityHistory)-1)
+	for i := 1; i < len(m.equityHistory); i++ {
+		prev := m.equityHistory[i-1]
+		curr := m.equityHistory[i]
+		momentum = append(momentum, EquityPoint{
+			Time:   curr.Time,
+			Equity: curr.Equity - prev.Equity,
+		})
+	}
+	last := momentum[len(momentum)-1].Equity
+	avg := 0.0
+	for _, p := range momentum {
+		avg += p.Equity
+	}
+	avg /= float64(len(momentum))
+
+	chart := buildEquitySparkline(momentum, chartWidth, chartHeight, styleForSigned(last))
+	rows = append(rows, fmt.Sprintf("Momentum trend (%d pts):", len(momentum)))
+	rows = append(rows, strings.Split(chart, "\n")...)
+	rows = append(rows, fmt.Sprintf("Last step=%s  Avg step=%s", renderSignedCurrency(last), renderSignedCurrency(avg)))
 	return rows
 }
 
@@ -185,10 +216,11 @@ func (m Model) buildEventRows() []string {
 	if len(m.snapshot.Events) == 0 {
 		return append(rows, mutedStyle.Render("(none)"))
 	}
-	start, end, total := m.eventWindow()
-	for _, e := range m.snapshot.Events[start:end] {
-		rows = append(rows, fmt.Sprintf("%s %-18s %s", formatLocalClock(e.Time), e.Type, e.Details))
+	view := strings.TrimRight(m.eventsViewport.View(), "\n")
+	if view != "" {
+		rows = append(rows, strings.Split(view, "\n")...)
 	}
+	start, end, total := m.eventWindow()
 	rows = append(rows, mutedStyle.Render(fmt.Sprintf("showing %d-%d of %d (events up/down/top/tail, PgUp/PgDn)", start+1, end, total)))
 	return rows
 }

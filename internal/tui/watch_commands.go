@@ -59,6 +59,7 @@ func (m *Model) handleWatchSync() tea.Cmd {
 	for _, symbol := range next {
 		m.engine.AllowSymbol(symbol)
 	}
+	m.syncWidgets()
 	if len(next) == 0 {
 		m.setStatus("watchlist synced: (none)", false)
 	} else {
@@ -84,6 +85,7 @@ func (m *Model) handleWatchAdd(symbol string) tea.Cmd {
 	}
 	m.watchlist = next
 	m.engine.AllowSymbol(symbol)
+	m.syncWidgets()
 	m.setStatus(fmt.Sprintf("added %s to watchlist", symbol), false)
 	return m.refreshCmd()
 }
@@ -117,6 +119,7 @@ func (m *Model) handleWatchRemove(symbol string) tea.Cmd {
 	delete(m.quotes, symbol)
 	delete(m.prevLast, symbol)
 	delete(m.quoteErr, symbol)
+	m.syncWidgets()
 	m.setStatus(fmt.Sprintf("removed %s from watchlist", symbol), false)
 	return nil
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"helix-tui/internal/broker/paper"
 	"helix-tui/internal/domain"
@@ -175,23 +176,26 @@ func TestRefreshCmdAndView(t *testing.T) {
 		Details: "generated=1 attempted=1 executed=1 rejected=0 approvals=0 dry_run=0 skipped=0",
 	})
 	view := m.View()
-	if !strings.Contains(view, "helix-tui") || !strings.Contains(view, "Commands:") {
+	if !strings.Contains(view, "Cash:") || !strings.Contains(view, "Commands:") {
 		t.Fatalf("unexpected view output: %q", view)
+	}
+	if !strings.Contains(view, "Overview") || !strings.Contains(view, "Logs") || !strings.Contains(view, "System") {
+		t.Fatalf("expected tabs in view output: %q", view)
 	}
 	if !strings.Contains(view, "Watchlist") || !strings.Contains(view, "AAPL") {
 		t.Fatalf("expected watchlist panel in view output: %q", view)
 	}
-	if !strings.Contains(view, "System") || !strings.Contains(view, "last_sync=") {
-		t.Fatalf("unexpected view output: %q", view)
-	}
 	if !strings.Contains(view, "Position P&L") || !strings.Contains(view, "Total uPnL") {
 		t.Fatalf("expected pnl panel in view output: %q", view)
+	}
+	if !strings.Contains(view, "Equity Momentum") {
+		t.Fatalf("expected momentum panel in view output: %q", view)
 	}
 	if !strings.Contains(view, "Equity trend") {
 		t.Fatalf("expected equity trend output: %q", view)
 	}
-	if !strings.Contains(view, "last_cycle=") {
-		t.Fatalf("expected agent cycle stats in view output: %q", view)
+	if strings.Contains(view, "Recent Events") {
+		t.Fatalf("events should render on logs tab only: %q", view)
 	}
 }
 
@@ -365,6 +369,59 @@ func TestEventsKeyScroll(t *testing.T) {
 	m2 := model.(Model)
 	if m2.eventScroll != 0 {
 		t.Fatalf("expected end to return to latest events")
+	}
+}
+
+func TestTabSwitching(t *testing.T) {
+	m := New(newTestEngine())
+	now := time.Now().UTC()
+	for i := 0; i < 5; i++ {
+		m.snapshot.Events = append(m.snapshot.Events, domain.Event{
+			Time:    now.Add(time.Duration(i) * time.Second),
+			Type:    "evt",
+			Details: strconv.Itoa(i),
+		})
+	}
+	m.syncWidgets()
+
+	overviewView := m.View()
+	if strings.Contains(overviewView, "Recent Events") {
+		t.Fatalf("events should not show on overview tab: %q", overviewView)
+	}
+
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m1 := model.(Model)
+	if m1.activeTab != tabLogs {
+		t.Fatalf("expected active tab logs, got %s", m1.activeTab)
+	}
+	logsView := m1.View()
+	if !strings.Contains(logsView, "Recent Events") {
+		t.Fatalf("expected events on logs tab: %q", logsView)
+	}
+
+	model, _ = m1.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m2 := model.(Model)
+	if m2.activeTab != tabSystem {
+		t.Fatalf("expected active tab system, got %s", m2.activeTab)
+	}
+	systemView := m2.View()
+	if !strings.Contains(systemView, "System") || !strings.Contains(systemView, "watchlist=") {
+		t.Fatalf("expected system panel on system tab: %q", systemView)
+	}
+
+	m2.input = "tab overview"
+	model, _ = m2.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m3 := model.(Model)
+	if m3.activeTab != tabOverview {
+		t.Fatalf("expected active tab overview, got %s", m3.activeTab)
+	}
+}
+
+func TestRenderTwoColumnPanelsWidthAlignment(t *testing.T) {
+	total := 120
+	row := renderTwoColumnPanels([]string{"L"}, []string{"R"}, 59, 60, total, 1)
+	if got := lipgloss.Width(row); got != total {
+		t.Fatalf("expected two-column row width %d, got %d", total, got)
 	}
 }
 

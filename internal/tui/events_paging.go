@@ -29,6 +29,7 @@ func (m *Model) clampEventScroll() {
 func (m *Model) setEventScroll(next int) {
 	m.eventScroll = next
 	m.clampEventScroll()
+	m.applyEventScrollToViewport()
 }
 
 func (m *Model) scrollEvents(delta int) {
@@ -55,6 +56,12 @@ func (m Model) eventWindow() (start, end, total int) {
 		end = start
 	}
 	return start, end, total
+}
+
+func (m *Model) applyEventScrollToViewport() {
+	max := m.maxEventScroll()
+	offset := max - m.eventScroll
+	m.eventsViewport.SetYOffset(offset)
 }
 
 func (m Model) eventScrollStatus() string {

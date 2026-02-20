@@ -2,7 +2,7 @@ package tui
 
 import "strings"
 
-const helpCommandText = "buy/sell/cancel/flatten/sync/watch/events (watch list|add|remove|sync, events up|down|top|tail)"
+const helpCommandText = "buy/sell/cancel/flatten/sync/watch/events/tab (watch list|add|remove|sync, events up|down|top|tail, tab overview|logs|system)"
 
 type statusOnlyMsg struct {
 	status  string

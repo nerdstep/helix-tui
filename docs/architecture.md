@@ -12,8 +12,10 @@ flowchart LR
     RUNNER[autonomy.Runner]
     CTX[Decision Context Gate<br/>hash + change detection]
     QSC[runtime quote stream controller]
-    AGENT[agent/heuristic.Agent]
+    AGENT[agent/heuristic.Agent<br/>or agent/llm.Agent]
     ENGINE[engine.Engine]
+    EVTDB[(SQLite trade_events)]
+    EVTSINK[runtime trade event persistor]
     RISK[engine.RiskGate]
     KEYRING[credentials keyring]
     AB[(Broker Interface)]
@@ -29,6 +31,7 @@ flowchart LR
     APP --> TUI
     APP --> RUNNER
     APP --> QSC
+    APP --> EVTSINK
     RUNNER --> CTX
     CTX --> AGENT
     AGENT --> ENGINE
@@ -36,6 +39,8 @@ flowchart LR
     QSC --> ENGINE
     QSC --> ABRK
     ENGINE --> RISK
+    ENGINE --> EVTSINK
+    EVTSINK --> EVTDB
     ENGINE --> AB
     AB --> PBRK
     AB --> ABRK
@@ -136,12 +141,14 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant E as Engine (in-memory events)
-    participant R as autonomy.Runner
+    participant P as runtime trade event persistor
     participant DB as SQLite trade_events
+    participant R as autonomy.Runner
     participant L as LLM Agent
 
+    E->>P: Emit relevant trade/agent event
+    P->>DB: Transactional AppendMany(batch)
     R->>E: Snapshot()
-    R->>DB: Append new relevant trade events
     R->>DB: ListRecent(N)
     DB-->>R: persisted recent events
     R->>L: ProposeTrades(input with DB-backed recent_events)

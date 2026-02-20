@@ -36,9 +36,10 @@ func TestTradeEventRepositoryAppendManyStoresStructuredFields(t *testing.T) {
 			Details: "buy AAPL qty=10.00 type=limit conf=0.80 gain=2.25% rationale=breakout setup",
 		},
 		{
-			Time:    now.Add(3 * time.Second),
-			Type:    "agent_intent_rejected",
-			Details: "sell AAPL qty=5.00 type=limit conf=0.30 gain=0.10% rejection=expected gain below minimum",
+			Time:            now.Add(3 * time.Second),
+			Type:            "agent_intent_rejected",
+			Details:         "sell AAPL qty=5.00 type=limit conf=0.30 gain=0.10%",
+			RejectionReason: "expected gain below minimum",
 		},
 	})
 	if err != nil {

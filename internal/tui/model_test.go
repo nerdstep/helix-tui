@@ -187,7 +187,7 @@ func TestRefreshCmdAndView(t *testing.T) {
 	if !strings.Contains(view, "Watchlist") || !strings.Contains(view, "AAPL") {
 		t.Fatalf("expected watchlist panel in view output: %q", view)
 	}
-	if !strings.Contains(view, "Position P&L") || !strings.Contains(view, "Total uPnL") {
+	if !strings.Contains(view, "Position P&L") || !strings.Contains(view, "uPnL") {
 		t.Fatalf("expected pnl panel in view output: %q", view)
 	}
 	if !strings.Contains(view, "Equity Momentum") {
@@ -407,8 +407,11 @@ func TestTabSwitching(t *testing.T) {
 		t.Fatalf("expected active tab system, got %s", m2.activeTab)
 	}
 	systemView := m2.View()
-	if !strings.Contains(systemView, "System") || !strings.Contains(systemView, "watchlist=") {
+	if !strings.Contains(systemView, "Runtime") || !strings.Contains(systemView, "watchlist:") {
 		t.Fatalf("expected system panel on system tab: %q", systemView)
+	}
+	if !strings.Contains(systemView, "requests:") {
+		t.Fatalf("expected request counters in system panel: %q", systemView)
 	}
 
 	m2.input = "tab overview"
@@ -492,6 +495,29 @@ func TestOrderTableColumnsLeaveGapAfterOrderID(t *testing.T) {
 	}
 	if cols[1].Width <= 8 {
 		t.Fatalf("expected Order ID column width > 8 for spacing, got %d", cols[1].Width)
+	}
+}
+
+func TestPositionTableIncludesUPNLColumn(t *testing.T) {
+	cols := positionTableColumns(56)
+	if len(cols) != 5 {
+		t.Fatalf("expected 5 position columns, got %d", len(cols))
+	}
+	if cols[4].Title != "uPnL" {
+		t.Fatalf("expected uPnL as last column, got %q", cols[4].Title)
+	}
+}
+
+func TestViewShowsMinSizePanelWhenTooSmall(t *testing.T) {
+	m := New(newTestEngine())
+	m.width = minUIWidth - 1
+	m.height = minUIHeight - 1
+	view := m.View()
+	if !strings.Contains(view, "Terminal Size") {
+		t.Fatalf("expected min-size warning panel, got %q", view)
+	}
+	if !strings.Contains(view, "Minimum recommended") {
+		t.Fatalf("expected minimum size text, got %q", view)
 	}
 }
 

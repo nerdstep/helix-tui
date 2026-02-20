@@ -183,7 +183,7 @@ func (m *Model) syncPositionsTable() {
 	}
 	m.positionsTable.SetWidth(innerWidth)
 	m.positionsTable.SetColumns(positionTableColumns(innerWidth))
-	m.positionsTable.SetRows(positionTableRows(m.snapshot.Positions))
+	m.positionsTable.SetRows(positionTableRows(m.snapshot.Positions, m.quotes))
 	height := maxInt(2, len(m.snapshot.Positions)+1)
 	m.positionsTable.SetHeight(height)
 }
@@ -213,20 +213,21 @@ func (m *Model) syncWatchlistTable() {
 }
 
 func positionTableColumns(totalWidth int) []table.Column {
-	minWidths := []int{4, 5, 5, 5}
-	targetWidths := []int{8, 10, 10, 10}
+	minWidths := []int{4, 4, 4, 4, 6}
+	targetWidths := []int{8, 10, 8, 8, 11}
 	widths := fitColumnWidths(totalWidth, minWidths, targetWidths)
 	return []table.Column{
 		{Title: "Symbol", Width: widths[0]},
 		{Title: "Qty", Width: widths[1]},
 		{Title: "Avg", Width: widths[2]},
 		{Title: "Last", Width: widths[3]},
+		{Title: "uPnL", Width: widths[4]},
 	}
 }
 
 func orderTableColumns(totalWidth int) []table.Column {
 	minWidths := []int{2, 9, 4, 4, 5, 6}
-	targetWidths := []int{4, 9, 6, 8, 10, 12}
+	targetWidths := []int{4, 10, 6, 8, 10, 12}
 	widths := fitColumnWidths(totalWidth, minWidths, targetWidths)
 	return []table.Column{
 		{Title: "#", Width: widths[0]},
@@ -240,7 +241,7 @@ func orderTableColumns(totalWidth int) []table.Column {
 
 func watchlistTableColumns(totalWidth int) []table.Column {
 	minWidths := []int{4, 6, 6, 6, 5, 6, 8}
-	targetWidths := []int{8, 10, 10, 10, 8, 8, 16}
+	targetWidths := []int{10, 10, 10, 10, 10, 10, 18}
 	widths := fitColumnWidths(totalWidth, minWidths, targetWidths)
 	return []table.Column{
 		{Title: "Symbol", Width: widths[0]},
@@ -300,14 +301,23 @@ func columnWidthSum(widths []int) int {
 	return total
 }
 
-func positionTableRows(positions []domain.Position) []table.Row {
+func positionTableRows(positions []domain.Position, quotes map[string]domain.Quote) []table.Row {
 	rows := make([]table.Row, 0, len(positions))
 	for _, p := range positions {
+		mark := p.LastPrice
+		if q, ok := quotes[p.Symbol]; ok && q.Last > 0 {
+			mark = q.Last
+		}
+		if mark <= 0 {
+			mark = p.AvgCost
+		}
+		upnl := (mark - p.AvgCost) * p.Qty
 		rows = append(rows, table.Row{
 			runewidth.Truncate(p.Symbol, 8, ""),
 			fmt.Sprintf("%.2f", p.Qty),
 			fmt.Sprintf("%.2f", p.AvgCost),
-			fmt.Sprintf("%.2f", p.LastPrice),
+			fmt.Sprintf("%.2f", mark),
+			fmt.Sprintf("%+.2f", upnl),
 		})
 	}
 	return rows

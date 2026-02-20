@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -12,6 +13,9 @@ func (m Model) View() string {
 	spec := m.computeLayoutSpec()
 	tabBar := m.renderTabBar(spec.usableWidth)
 	content := m.renderTabContent(vm, spec, gap)
+	if m.isBelowMinSize() {
+		content = renderPanel(m.buildMinSizeRows(), spec.usableWidth)
+	}
 
 	statusRenderer := okStyle
 	if vm.statusError {
@@ -38,7 +42,17 @@ func (m Model) renderTabContent(vm viewModel, spec layoutSpec, gap int) string {
 		return renderPanel(vm.events, spec.usableWidth)
 	}
 	if m.activeTab == tabSystem {
-		return renderPanel(vm.system, spec.usableWidth)
+		if spec.twoColumn {
+			row1 := renderTwoColumnPanels(vm.systemRuntime, vm.systemAgent, spec.leftWidth, spec.rightWidth, spec.usableWidth, gap)
+			row2 := renderPanel(vm.systemPersistence, spec.usableWidth)
+			return lipgloss.JoinVertical(lipgloss.Left, row1, row2)
+		}
+		return lipgloss.JoinVertical(
+			lipgloss.Left,
+			renderPanel(vm.systemRuntime, spec.usableWidth),
+			renderPanel(vm.systemAgent, spec.usableWidth),
+			renderPanel(vm.systemPersistence, spec.usableWidth),
+		)
 	}
 	if spec.twoColumn {
 		row1 := renderPanel(vm.watchlist, spec.usableWidth)
@@ -54,6 +68,21 @@ func (m Model) renderTabContent(vm viewModel, spec layoutSpec, gap int) string {
 		renderPanel(vm.pnl, spec.usableWidth),
 		renderPanel(vm.momentum, spec.usableWidth),
 	)
+}
+
+func (m Model) isBelowMinSize() bool {
+	if m.width <= 0 || m.height <= 0 {
+		return false
+	}
+	return m.width < minUIWidth || m.height < minUIHeight
+}
+
+func (m Model) buildMinSizeRows() []string {
+	rows := []string{panelTitleStyle.Render("Terminal Size")}
+	rows = append(rows, fmt.Sprintf("Current: %dx%d", m.width, m.height))
+	rows = append(rows, fmt.Sprintf("Minimum recommended: %dx%d", minUIWidth, minUIHeight))
+	rows = append(rows, mutedStyle.Render("Resize the terminal window to restore full dashboard rendering."))
+	return rows
 }
 
 func renderTwoColumnPanels(leftLines []string, rightLines []string, leftWidth int, rightWidth int, total int, gap int) string {

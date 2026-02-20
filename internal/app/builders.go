@@ -192,6 +192,7 @@ func buildAgent(cfg Config, broker domain.Broker) (domain.Agent, string, error) 
 			SystemPrompt:     cfg.LLMSystemPrompt,
 			MaxTradeNotional: cfg.MaxNotionalPerTrade,
 			MaxDayNotional:   cfg.MaxNotionalPerDay,
+			MinGainPct:       cfg.AgentMinGainPct,
 		})
 		if err != nil {
 			return nil, "", err

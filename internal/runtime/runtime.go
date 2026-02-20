@@ -28,6 +28,10 @@ func Run(ctx context.Context, args []string, stderr io.Writer) error {
 	if err != nil {
 		system.Engine.AddEvent("database_error", err.Error())
 	} else {
+		persistor := newTradeEventPersistor(store.Events(), system.Engine.AddStructuredEvent)
+		system.Engine.AddEventSink(persistor.HandleEvent)
+		defer persistor.Close()
+
 		defer func() {
 			if closeErr := store.Close(); closeErr != nil {
 				system.Engine.AddEvent("database_error", fmt.Sprintf("close: %v", closeErr))

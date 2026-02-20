@@ -155,6 +155,7 @@ func TestProposeTradesIncludesRiskContextInPayload(t *testing.T) {
 		Model:            "test-model",
 		MaxTradeNotional: 5000,
 		MaxDayNotional:   20000,
+		MinGainPct:       0.75,
 	}, capture)
 	if err != nil {
 		t.Fatalf("newWithClient failed: %v", err)
@@ -186,6 +187,9 @@ func TestProposeTradesIncludesRiskContextInPayload(t *testing.T) {
 	}
 	if got, ok := risk["max_day_notional"].(float64); !ok || got != 20000 {
 		t.Fatalf("unexpected max_day_notional: %#v", risk["max_day_notional"])
+	}
+	if got, ok := risk["min_gain_pct"].(float64); !ok || got != 0.75 {
+		t.Fatalf("unexpected min_gain_pct: %#v", risk["min_gain_pct"])
 	}
 }
 

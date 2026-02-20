@@ -27,6 +27,7 @@ type Engine struct {
 	events     []domain.Event
 	eventStart int
 	eventCount int
+	eventSinks []func(domain.Event)
 }
 
 func New(broker domain.Broker, gate *RiskGate) *Engine {
@@ -73,14 +74,21 @@ func (e *Engine) sync(ctx context.Context, emitEvent bool) error {
 		orderMap[o.ID] = o
 	}
 
+	var emitted domain.Event
 	e.mu.Lock()
 	e.account = account
 	e.positions = posMap
 	e.orders = orderMap
 	if emitEvent {
-		e.addEventLocked("sync", "reconciled account, positions, and orders")
+		emitted = e.addEventLocked(domain.Event{
+			Type:    "sync",
+			Details: "reconciled account, positions, and orders",
+		})
 	}
 	e.mu.Unlock()
+	if emitEvent {
+		e.dispatchEventSinks(emitted)
+	}
 	return nil
 }
 
@@ -100,11 +108,12 @@ func (e *Engine) PlaceOrder(ctx context.Context, req domain.OrderRequest) (domai
 
 	e.mu.Lock()
 	e.orders[order.ID] = order
-	e.addEventLocked(
-		"order_placed",
-		fmt.Sprintf("%s %s %.2f (%s)", order.Side, order.Symbol, order.Qty, order.ID),
-	)
+	emitted := e.addEventLocked(domain.Event{
+		Type:    "order_placed",
+		Details: fmt.Sprintf("%s %s %.2f (%s)", order.Side, order.Symbol, order.Qty, order.ID),
+	})
 	e.mu.Unlock()
+	e.dispatchEventSinks(emitted)
 	return order, nil
 }
 
@@ -163,8 +172,12 @@ func (e *Engine) CancelOrder(ctx context.Context, orderID string) error {
 		ord.UpdatedAt = time.Now().UTC()
 		e.orders[orderID] = ord
 	}
-	e.addEventLocked("order_canceled", orderID)
+	emitted := e.addEventLocked(domain.Event{
+		Type:    "order_canceled",
+		Details: orderID,
+	})
 	e.mu.Unlock()
+	e.dispatchEventSinks(emitted)
 	return nil
 }
 
@@ -244,8 +257,25 @@ func (e *Engine) Snapshot() domain.Snapshot {
 }
 
 func (e *Engine) AddEvent(eventType, details string) {
+	e.AddStructuredEvent(domain.Event{
+		Type:    eventType,
+		Details: details,
+	})
+}
+
+func (e *Engine) AddStructuredEvent(event domain.Event) {
 	e.mu.Lock()
-	e.addEventLocked(eventType, details)
+	emitted := e.addEventLocked(event)
+	e.mu.Unlock()
+	e.dispatchEventSinks(emitted)
+}
+
+func (e *Engine) AddEventSink(sink func(domain.Event)) {
+	if sink == nil {
+		return
+	}
+	e.mu.Lock()
+	e.eventSinks = append(e.eventSinks, sink)
 	e.mu.Unlock()
 }
 
@@ -255,11 +285,14 @@ func (e *Engine) AllowSymbol(symbol string) {
 
 func (e *Engine) applyTradeUpdate(update domain.TradeUpdate) {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-
 	ord, ok := e.orders[update.OrderID]
 	if !ok {
-		e.addEventLocked("trade_update_unknown_order", update.OrderID)
+		emitted := e.addEventLocked(domain.Event{
+			Type:    "trade_update_unknown_order",
+			Details: update.OrderID,
+		})
+		e.mu.Unlock()
+		e.dispatchEventSinks(emitted)
 		return
 	}
 
@@ -267,15 +300,24 @@ func (e *Engine) applyTradeUpdate(update domain.TradeUpdate) {
 	ord.FilledQty = update.FillQty
 	ord.UpdatedAt = update.Time
 	e.orders[ord.ID] = ord
-	e.addEventLocked(
-		"trade_update",
-		fmt.Sprintf("%s status=%s filled=%.2f", ord.ID, ord.Status, ord.FilledQty),
-	)
+	emitted := e.addEventLocked(domain.Event{
+		Type:    "trade_update",
+		Details: fmt.Sprintf("%s status=%s filled=%.2f", ord.ID, ord.Status, ord.FilledQty),
+	})
+	e.mu.Unlock()
+	e.dispatchEventSinks(emitted)
 }
 
-func (e *Engine) addEventLocked(eventType, details string) {
-	if len(e.events) == 0 {
-		return
+func (e *Engine) addEventLocked(event domain.Event) domain.Event {
+	event.Type = strings.TrimSpace(event.Type)
+	event.Details = strings.TrimSpace(event.Details)
+	event.RejectionReason = strings.TrimSpace(event.RejectionReason)
+	if event.Time.IsZero() {
+		event.Time = time.Now().UTC()
+	}
+
+	if len(e.events) == 0 || event.Type == "" {
+		return event
 	}
 	idx := (e.eventStart + e.eventCount) % len(e.events)
 	if e.eventCount == len(e.events) {
@@ -284,9 +326,22 @@ func (e *Engine) addEventLocked(eventType, details string) {
 	} else {
 		e.eventCount++
 	}
-	e.events[idx] = domain.Event{
-		Time:    time.Now().UTC(),
-		Type:    eventType,
-		Details: details,
+	e.events[idx] = event
+	return event
+}
+
+func (e *Engine) dispatchEventSinks(event domain.Event) {
+	if event.Type == "" {
+		return
+	}
+	e.mu.RLock()
+	sinks := make([]func(domain.Event), len(e.eventSinks))
+	copy(sinks, e.eventSinks)
+	e.mu.RUnlock()
+	for _, sink := range sinks {
+		if sink == nil {
+			continue
+		}
+		sink(event)
 	}
 }

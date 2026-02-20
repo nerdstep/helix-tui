@@ -11,36 +11,40 @@ import (
 )
 
 type viewModel struct {
-	header      string
-	account     string
-	positions   []string
-	orders      []string
-	watchlist   []string
-	pnl         []string
-	momentum    []string
-	system      []string
-	events      []string
-	status      string
-	statusError bool
-	input       string
-	footer      string
+	header            string
+	account           string
+	positions         []string
+	orders            []string
+	watchlist         []string
+	pnl               []string
+	momentum          []string
+	systemRuntime     []string
+	systemAgent       []string
+	systemPersistence []string
+	events            []string
+	status            string
+	statusError       bool
+	input             string
+	footer            string
 }
 
 func (m Model) buildViewModel() viewModel {
 	return viewModel{
-		header:      m.buildHeader(),
-		account:     "",
-		positions:   m.buildPositionRows(),
-		orders:      m.buildOrderRows(),
-		watchlist:   m.buildWatchRows(),
-		pnl:         m.buildPnlRows(),
-		momentum:    m.buildMomentumRows(),
-		system:      m.buildSystemRows(),
-		events:      m.buildEventRows(),
-		status:      m.status,
-		statusError: m.statusError,
-		input:       m.input,
-		footer:      footerStyle.Render("Commands: buy/sell/cancel/flatten/sync/watch/events/tab/help/q | tabs: Tab key (overview/logs/system)"),
+		header:            m.buildHeader(),
+		account:           "",
+		positions:         m.buildPositionRows(),
+		orders:            m.buildOrderRows(),
+		watchlist:         m.buildWatchRows(),
+		pnl:               m.buildPnlRows(),
+		momentum:          m.buildMomentumRows(),
+		systemRuntime:     m.buildSystemRuntimeRows(),
+		systemAgent:       m.buildSystemAgentRows(),
+		systemPersistence: m.buildSystemPersistenceRows(),
+		events:            m.buildEventRows(),
+		status:            m.status,
+		statusError:       m.statusError,
+		input:             m.input,
+		footer:            footerStyle.Render("Commands: buy/sell/cancel/flatten/sync/watch/events/tab/help/q | tabs: Tab key (overview/logs/system)"),
 	}
 }
 
@@ -52,10 +56,14 @@ func (m Model) buildPositionRows() []string {
 	view := strings.TrimRight(m.positionsTable.View(), "\n")
 	if view == "" {
 		for _, p := range m.snapshot.Positions {
-			rows = append(rows, fmt.Sprintf("%-6s qty=%8.2f avg=%8.2f last=%8.2f", p.Symbol, p.Qty, p.AvgCost, p.LastPrice))
+			upnl := (p.LastPrice - p.AvgCost) * p.Qty
+			rows = append(rows, fmt.Sprintf("%-6s qty=%8.2f avg=%8.2f last=%8.2f uPnL=%s", p.Symbol, p.Qty, p.AvgCost, p.LastPrice, renderSignedCurrency(upnl)))
 		}
 		return rows
 	}
+	view = colorizeTableColumns(view, m.positionsTable.Columns(), map[int]func(string) string{
+		4: colorizeSignedValueCell,
+	})
 	rows = append(rows, strings.Split(view, "\n")...)
 	return rows
 }
@@ -138,31 +146,23 @@ func colorizeWatchStateCell(cell string) string {
 	}
 }
 
+func colorizeSignedValueCell(cell string) string {
+	v := strings.TrimSpace(cell)
+	switch {
+	case strings.HasPrefix(v, "+") && v != "+0.00":
+		return positiveStyle.Render(cell)
+	case strings.HasPrefix(v, "-"):
+		return negativeStyle.Render(cell)
+	case v == "+0.00" || v == "0.00":
+		return mutedStyle.Render(cell)
+	default:
+		return cell
+	}
+}
+
 func (m Model) buildPnlRows() []string {
 	rows := []string{panelTitleStyle.Render("Position P&L")}
 	rows = append(rows, m.buildEquityChartRows()...)
-	if len(m.snapshot.Positions) == 0 {
-		return append(rows, mutedStyle.Render("(no open positions)"))
-	}
-
-	totalUPNL := 0.0
-	for _, p := range m.snapshot.Positions {
-		mark := p.LastPrice
-		if q, ok := m.quotes[p.Symbol]; ok && q.Last > 0 {
-			mark = q.Last
-		}
-		if mark <= 0 {
-			mark = p.AvgCost
-		}
-		u := (mark - p.AvgCost) * p.Qty
-		totalUPNL += u
-		pct := 0.0
-		if p.AvgCost > 0 {
-			pct = ((mark - p.AvgCost) / p.AvgCost) * 100
-		}
-		rows = append(rows, fmt.Sprintf("%-6s qty=%8.2f mark=%8.2f uPnL=%9s (%8s)", p.Symbol, p.Qty, mark, renderSignedCurrency(u), renderSignedPct(pct)))
-	}
-	rows = append(rows, fmt.Sprintf("Total uPnL=%s", renderSignedCurrency(totalUPNL)))
 	return rows
 }
 
@@ -226,36 +226,110 @@ func (m Model) buildEquityChartRows() []string {
 	return rows
 }
 
-func (m Model) buildSystemRows() []string {
-	rows := []string{panelTitleStyle.Render("System")}
-	rows = append(rows, fmt.Sprintf("watchlist=%d events=%d", len(m.watchlist), len(m.snapshot.Events)))
+type systemKV struct {
+	key   string
+	value string
+}
+
+func (m Model) buildSystemRuntimeRows() []string {
+	mode := "unknown"
+	if e := latestEventByType(m.snapshot.Events, "agent_mode"); e != nil && strings.TrimSpace(e.Details) != "" {
+		mode = e.Details
+	}
+	lastSync := "n/a"
 	if e := latestEventByType(m.snapshot.Events, "sync"); e != nil {
-		rows = append(rows, fmt.Sprintf("last_sync=%s", formatLocalClock(e.Time)))
+		lastSync = formatLocalClock(e.Time)
 	}
-	if e := latestEventByType(m.snapshot.Events, "agent_mode"); e != nil {
-		rows = append(rows, e.Details)
-	}
-	cycles := countEventsByType(m.snapshot.Events, "agent_cycle_complete")
-	rows = append(rows, fmt.Sprintf("agent cycles=%d", cycles))
+	cycleStart := "n/a"
 	if e := latestEventByType(m.snapshot.Events, "agent_cycle_start"); e != nil {
-		rows = append(rows, fmt.Sprintf("cycle_start=%s", formatLocalClock(e.Time)))
+		cycleStart = formatLocalClock(e.Time)
 	}
-	if e := latestEventByType(m.snapshot.Events, "agent_proposal"); e != nil {
-		rows = append(rows, "last_proposal="+e.Details)
-	}
-	if e := latestEventByType(m.snapshot.Events, "agent_heartbeat"); e != nil {
-		rows = append(rows, "heartbeat="+e.Details)
-	}
-	if e := latestEventByType(m.snapshot.Events, "agent_runner_error"); e != nil {
-		rows = append(rows, fmt.Sprintf("runner_error=%s", e.Details))
-	}
-	if e := latestEventByType(m.snapshot.Events, "agent_cycle_error"); e != nil {
-		rows = append(rows, fmt.Sprintf("last_error=%s %s", formatLocalClock(e.Time), e.Details))
-	}
-	rows = append(rows, fmt.Sprintf("agent executed=%d rejected=%d dry_run=%d", countEventsByType(m.snapshot.Events, "agent_intent_executed"), countEventsByType(m.snapshot.Events, "agent_intent_rejected"), countEventsByType(m.snapshot.Events, "agent_intent_dry_run")))
+	lastCycleAge := "n/a"
 	if e := latestEventByType(m.snapshot.Events, "agent_cycle_complete"); e != nil {
-		rows = append(rows, fmt.Sprintf("last_cycle=%s %s", formatLocalClock(e.Time), e.Details))
-		rows = append(rows, fmt.Sprintf("last_cycle_age=%s", time.Since(e.Time).Round(time.Second)))
+		lastCycleAge = time.Since(e.Time).Round(time.Second).String()
+	}
+	return buildSystemKVPairs(
+		"Runtime",
+		[]systemKV{
+			{key: "watchlist", value: fmt.Sprintf("%d symbols", len(m.watchlist))},
+			{key: "events", value: fmt.Sprintf("%d in-memory", len(m.snapshot.Events))},
+			{key: "mode", value: mode},
+			{key: "last sync", value: lastSync},
+			{key: "cycle start", value: cycleStart},
+			{key: "cycle age", value: lastCycleAge},
+		},
+	)
+}
+
+func (m Model) buildSystemAgentRows() []string {
+	lastProposal := "n/a"
+	if e := latestEventByType(m.snapshot.Events, "agent_proposal"); e != nil && strings.TrimSpace(e.Details) != "" {
+		lastProposal = e.Details
+	}
+	heartbeat := "n/a"
+	if e := latestEventByType(m.snapshot.Events, "agent_heartbeat"); e != nil && strings.TrimSpace(e.Details) != "" {
+		heartbeat = e.Details
+	}
+	lastError := "none"
+	if e := latestEventByType(m.snapshot.Events, "agent_cycle_error"); e != nil {
+		lastError = fmt.Sprintf("%s %s", formatLocalClock(e.Time), e.Details)
+	}
+	return buildSystemKVPairs(
+		"Agent",
+		[]systemKV{
+			{key: "cycles", value: fmt.Sprintf("%d", countEventsByType(m.snapshot.Events, "agent_cycle_complete"))},
+			{key: "requests", value: fmt.Sprintf("ok=%d failed=%d", countEventsByType(m.snapshot.Events, "agent_proposal"), countEventsByType(m.snapshot.Events, "agent_cycle_error"))},
+			{key: "intents", value: fmt.Sprintf("executed=%d rejected=%d dry_run=%d", countEventsByType(m.snapshot.Events, "agent_intent_executed"), countEventsByType(m.snapshot.Events, "agent_intent_rejected"), countEventsByType(m.snapshot.Events, "agent_intent_dry_run"))},
+			{key: "last proposal", value: lastProposal},
+			{key: "heartbeat", value: heartbeat},
+			{key: "last error", value: lastError},
+		},
+	)
+}
+
+func (m Model) buildSystemPersistenceRows() []string {
+	persistStats := "n/a"
+	if e := latestEventByType(m.snapshot.Events, "event_persist_stats"); e != nil && strings.TrimSpace(e.Details) != "" {
+		persistStats = e.Details
+	}
+	persistError := "none"
+	if e := latestEventByType(m.snapshot.Events, "event_persist_error"); e != nil {
+		persistError = fmt.Sprintf("%s %s", formatLocalClock(e.Time), e.Details)
+	}
+	lastCycle := "n/a"
+	if e := latestEventByType(m.snapshot.Events, "agent_cycle_complete"); e != nil {
+		lastCycle = fmt.Sprintf("%s %s", formatLocalClock(e.Time), e.Details)
+	}
+	runnerError := "none"
+	if e := latestEventByType(m.snapshot.Events, "agent_runner_error"); e != nil && strings.TrimSpace(e.Details) != "" {
+		runnerError = e.Details
+	}
+	return buildSystemKVPairs(
+		"Persistence",
+		[]systemKV{
+			{key: "persist stats", value: persistStats},
+			{key: "persist error", value: persistError},
+			{key: "runner error", value: runnerError},
+			{key: "last cycle", value: lastCycle},
+		},
+	)
+}
+
+func buildSystemKVPairs(title string, pairs []systemKV) []string {
+	rows := []string{panelTitleStyle.Render(title)}
+	if len(pairs) == 0 {
+		return append(rows, mutedStyle.Render("(none)"))
+	}
+	keyWidth := 0
+	for _, pair := range pairs {
+		if len(pair.key) > keyWidth {
+			keyWidth = len(pair.key)
+		}
+	}
+	keyWidth = maxInt(keyWidth, 10)
+	for _, pair := range pairs {
+		key := mutedStyle.Render(fmt.Sprintf("%-*s", keyWidth, pair.key+":"))
+		rows = append(rows, fmt.Sprintf("%s %s", key, pair.value))
 	}
 	return rows
 }

@@ -43,7 +43,8 @@ var (
 	orderPlacedPattern    = regexp.MustCompile(`^(buy|sell)\s+([A-Z][A-Z0-9.\-]*)\s+([0-9]+(?:\.[0-9]+)?)\s+\(([^)]+)\)$`)
 	tradeUpdatePattern    = regexp.MustCompile(`^([^\s]+)\s+status=([a-z_]+)\s+filled=([0-9]+(?:\.[0-9]+)?)$`)
 	executedIntentPattern = regexp.MustCompile(`^(buy|sell)\s+([A-Z][A-Z0-9.\-]*)\s+qty=([0-9]+(?:\.[0-9]+)?)\s+type=([a-z_]+)\s+conf=([-0-9.]+)\s+gain=([-0-9.]+)%\s+rationale=(.*)$`)
-	rejectedIntentPattern = regexp.MustCompile(`^(buy|sell)\s+([A-Z][A-Z0-9.\-]*)\s+qty=([0-9]+(?:\.[0-9]+)?)\s+type=([a-z_]+)\s+conf=([-0-9.]+)\s+gain=([-0-9.]+)%\s+rejection=(.*)$`)
+	rejectedIntentPattern = regexp.MustCompile(`^(buy|sell)\s+([A-Z][A-Z0-9.\-]*)\s+qty=([0-9]+(?:\.[0-9]+)?)\s+type=([a-z_]+)\s+conf=([-0-9.]+)\s+gain=([-0-9.]+)%$`)
+	legacyRejectedPattern = regexp.MustCompile(`^(buy|sell)\s+([A-Z][A-Z0-9.\-]*)\s+qty=([0-9]+(?:\.[0-9]+)?)\s+type=([a-z_]+)\s+conf=([-0-9.]+)\s+gain=([-0-9.]+)%\s+rejection=(.*)$`)
 )
 
 func (r *TradeEventRepository) Append(event domain.Event) error {
@@ -104,9 +105,10 @@ func (r *TradeEventRepository) ListRecent(limit int) ([]domain.Event, error) {
 
 func toTradeEventRecord(event domain.Event) tradeEventRecord {
 	record := tradeEventRecord{
-		Time:      event.Time.UTC(),
-		EventType: strings.ToLower(strings.TrimSpace(event.Type)),
-		Details:   strings.TrimSpace(event.Details),
+		Time:            event.Time.UTC(),
+		EventType:       strings.ToLower(strings.TrimSpace(event.Type)),
+		Details:         strings.TrimSpace(event.Details),
+		RejectionReason: strings.TrimSpace(event.RejectionReason),
 	}
 	if record.Time.IsZero() {
 		record.Time = time.Now().UTC()
@@ -139,14 +141,18 @@ func toTradeEventRecord(event domain.Event) tradeEventRecord {
 			record.Rationale = strings.TrimSpace(parts[7])
 		}
 	case "agent_intent_rejected":
-		if parts := rejectedIntentPattern.FindStringSubmatch(record.Details); len(parts) == 8 {
+		if parts := rejectedIntentPattern.FindStringSubmatch(record.Details); len(parts) == 7 {
 			record.Side = parts[1]
 			record.Symbol = parts[2]
 			record.Qty = parseFloat(parts[3])
 			record.OrderType = parts[4]
 			record.Confidence = parseFloat(parts[5])
 			record.ExpectedGainPct = parseFloat(parts[6])
-			record.RejectionReason = strings.TrimSpace(parts[7])
+		}
+		if record.RejectionReason == "" {
+			if parts := legacyRejectedPattern.FindStringSubmatch(record.Details); len(parts) == 8 {
+				record.RejectionReason = strings.TrimSpace(parts[7])
+			}
 		}
 	default:
 		// keep details only

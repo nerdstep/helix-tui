@@ -30,6 +30,7 @@ type Config struct {
 	SystemPrompt     string
 	MaxTradeNotional float64
 	MaxDayNotional   float64
+	MinGainPct       float64
 }
 
 type Agent struct {
@@ -81,6 +82,7 @@ func newWithClient(broker domain.Broker, cfg Config, client chatClient) (*Agent,
 		risk: riskInput{
 			MaxTradeNotional: cfg.MaxTradeNotional,
 			MaxDayNotional:   cfg.MaxDayNotional,
+			MinGainPct:       cfg.MinGainPct,
 		},
 		maxWatchlist: 12,
 		maxEvents:    defaultMaxPromptEvents,
@@ -208,6 +210,7 @@ const forcedJSONInstruction = "Return strict JSON: {\"intents\":[{\"symbol\":\"A
 	"Include expected_gain_pct for every intent. " +
 	"Avoid dust-sized orders when possible. " +
 	"Respect risk.max_trade_notional and risk.max_day_notional from the JSON input. " +
+	"Respect risk.min_gain_pct from the JSON input and avoid intents expected below that threshold. " +
 	"For each intent, size qty so estimated notional stays within risk.max_trade_notional. " +
 	"Keep rationale concise and tied to the provided quote and position data." +
 	"Only propose watchlist symbols. Keep qty positive. " +
@@ -229,6 +232,7 @@ type llmInput struct {
 type riskInput struct {
 	MaxTradeNotional float64 `json:"max_trade_notional"`
 	MaxDayNotional   float64 `json:"max_day_notional"`
+	MinGainPct       float64 `json:"min_gain_pct"`
 }
 
 type orderInput struct {

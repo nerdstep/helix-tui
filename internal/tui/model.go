@@ -57,6 +57,8 @@ const (
 	tabOverview uiTab = "overview"
 	tabLogs     uiTab = "logs"
 	tabSystem   uiTab = "system"
+	minUIWidth        = 60
+	minUIHeight       = 37
 )
 
 type tickMsg time.Time

@@ -343,29 +343,31 @@ func TestRunCycle_UsesEventHistoryStoreForAgentContext(t *testing.T) {
 	}
 }
 
-func TestRunCycle_PersistsRelevantTradeEvents(t *testing.T) {
+func TestRunCycle_RejectedIntentIncludesRejectionReason(t *testing.T) {
 	r, _ := newRunnerTestHarness(domain.ModeAuto, false)
-	agent := &fakeAgent{}
-	r.agent = agent
-	store := &fakeEventHistoryStore{}
-	r.SetEventHistory(store)
-
-	r.engine.AddEvent("order_placed", "buy AAPL 1")
-	r.engine.AddEvent("agent_cycle_start", "mode=auto watchlist=1")
-	r.engine.AddEvent("trade_update", "abc status=filled filled=1.00")
+	r.agent = &fakeAgent{
+		intents: []domain.TradeIntent{
+			{Symbol: "AAPL", Side: domain.SideBuy, Qty: 0},
+		},
+	}
 
 	if err := r.runCycle(context.Background()); err != nil {
 		t.Fatalf("runCycle failed: %v", err)
 	}
-	if !hasEventType(store.appended, "order_placed") {
-		t.Fatalf("expected order_placed to be persisted, got %#v", store.appended)
+	events := r.engine.Snapshot().Events
+	for _, e := range events {
+		if e.Type != "agent_intent_rejected" {
+			continue
+		}
+		if strings.TrimSpace(e.RejectionReason) == "" {
+			t.Fatalf("expected rejection reason on rejected event: %#v", e)
+		}
+		if strings.Contains(e.Details, "rationale=") {
+			t.Fatalf("did not expect rationale in rejected details: %#v", e.Details)
+		}
+		return
 	}
-	if !hasEventType(store.appended, "trade_update") {
-		t.Fatalf("expected trade_update to be persisted, got %#v", store.appended)
-	}
-	if hasEventType(store.appended, "agent_cycle_start") {
-		t.Fatalf("did not expect agent_cycle_start to be persisted: %#v", store.appended)
-	}
+	t.Fatalf("expected agent_intent_rejected event")
 }
 
 type fakeAgent struct {
@@ -376,18 +378,8 @@ type fakeAgent struct {
 }
 
 type fakeEventHistoryStore struct {
-	appended      []domain.Event
-	appendErr     error
 	listRecentOut []domain.Event
 	listRecentErr error
-}
-
-func (f *fakeEventHistoryStore) AppendMany(events []domain.Event) error {
-	if f.appendErr != nil {
-		return f.appendErr
-	}
-	f.appended = append(f.appended, events...)
-	return nil
 }
 
 func (f *fakeEventHistoryStore) ListRecent(_ int) ([]domain.Event, error) {

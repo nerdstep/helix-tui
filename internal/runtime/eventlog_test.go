@@ -122,6 +122,7 @@ func TestEventLogLevel(t *testing.T) {
 		{eventType: "agent_context_summary", want: zerolog.DebugLevel},
 		{eventType: "quote_stream_start", want: zerolog.DebugLevel},
 		{eventType: "quote_stream_stop", want: zerolog.DebugLevel},
+		{eventType: "event_persist_stats", want: zerolog.DebugLevel},
 		{eventType: "agent_context_payload", want: zerolog.TraceLevel},
 		{eventType: "agent_intent_rejected", want: zerolog.WarnLevel},
 		{eventType: "watchlist_sync_error", want: zerolog.WarnLevel},

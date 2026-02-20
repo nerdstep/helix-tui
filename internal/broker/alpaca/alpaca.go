@@ -24,6 +24,8 @@ const (
 	DataWSBase   = "https://stream.data.alpaca.markets/v2"
 	EnvPaper     = "paper"
 	EnvLive      = "live"
+	// Guard against pathological NBBO outliers that can produce unrealistic mid prices.
+	maxQuoteSpreadPctForMid = 25.0
 )
 
 type Broker struct {
@@ -205,20 +207,11 @@ func (b *Broker) GetQuote(ctx context.Context, symbol string) (domain.Quote, err
 		return domain.Quote{}, fmt.Errorf("no quote returned for %s", symbol)
 	}
 
-	last := 0.0
-	if quote.BidPrice > 0 && quote.AskPrice > 0 {
-		last = (quote.BidPrice + quote.AskPrice) / 2
-	} else if quote.AskPrice > 0 {
-		last = quote.AskPrice
-	} else {
-		last = quote.BidPrice
-	}
-
 	return domain.Quote{
 		Symbol: symbol,
 		Bid:    quote.BidPrice,
 		Ask:    quote.AskPrice,
-		Last:   last,
+		Last:   quoteLastFromBidAsk(quote.BidPrice, quote.AskPrice),
 		Time:   quote.Timestamp,
 	}, nil
 }
@@ -418,21 +411,36 @@ func toDomainTradeUpdate(u sdkalpaca.TradeUpdate) domain.TradeUpdate {
 }
 
 func toDomainStreamQuote(q stream.Quote) domain.Quote {
-	last := 0.0
-	if q.BidPrice > 0 && q.AskPrice > 0 {
-		last = (q.BidPrice + q.AskPrice) / 2
-	} else if q.AskPrice > 0 {
-		last = q.AskPrice
-	} else {
-		last = q.BidPrice
-	}
 	return domain.Quote{
 		Symbol: strings.ToUpper(strings.TrimSpace(q.Symbol)),
 		Bid:    q.BidPrice,
 		Ask:    q.AskPrice,
-		Last:   last,
+		Last:   quoteLastFromBidAsk(q.BidPrice, q.AskPrice),
 		Time:   q.Timestamp,
 	}
+}
+
+func quoteLastFromBidAsk(bid, ask float64) float64 {
+	if bid > 0 && ask > 0 {
+		if ask < bid {
+			return bid
+		}
+		spread := ask - bid
+		if bid > 0 {
+			spreadPct := (spread / bid) * 100
+			if spreadPct > maxQuoteSpreadPctForMid {
+				return bid
+			}
+		}
+		return bid + spread/2
+	}
+	if bid > 0 {
+		return bid
+	}
+	if ask > 0 {
+		return ask
+	}
+	return 0
 }
 
 func toSDKSide(side domain.Side) sdkalpaca.Side {

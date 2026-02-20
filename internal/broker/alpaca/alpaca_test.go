@@ -290,6 +290,16 @@ func TestToDomainStreamQuote(t *testing.T) {
 	if q.Symbol != "AAPL" || q.Bid != 99.5 || q.Ask != 100.5 || q.Last != 100 {
 		t.Fatalf("unexpected quote mapping: %#v", q)
 	}
+
+	wide := toDomainStreamQuote(stream.Quote{
+		Symbol:    "amc",
+		BidPrice:  1.20,
+		AskPrice:  808.46,
+		Timestamp: time.Now().UTC(),
+	})
+	if wide.Last != 1.20 {
+		t.Fatalf("expected wide spread quote to use bid as last, got %#v", wide)
+	}
 }
 
 func TestStreamQuotesEmptySymbols(t *testing.T) {

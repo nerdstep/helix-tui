@@ -100,10 +100,27 @@ func (m Model) watchlistPanelWidth() int {
 	return m.computeLayoutSpec().usableWidth
 }
 
+func (m Model) systemRuntimePanelWidth() int {
+	return m.computeLayoutSpec().leftWidth
+}
+
+func (m Model) systemAgentPanelWidth() int {
+	spec := m.computeLayoutSpec()
+	if spec.twoColumn {
+		return spec.rightWidth
+	}
+	return spec.usableWidth
+}
+
+func (m Model) systemPersistencePanelWidth() int {
+	return m.computeLayoutSpec().usableWidth
+}
+
 func (m *Model) syncWidgets() {
 	m.syncPositionsTable()
 	m.syncOrdersTable()
 	m.syncWatchlistTable()
+	m.syncSystemTables()
 	m.syncEventsViewport()
 }
 
@@ -126,8 +143,10 @@ func (m *Model) syncEventsViewport() {
 
 func (m Model) buildEventViewportLines() []string {
 	rows := make([]string, 0, len(m.snapshot.Events))
+	maxWidth := maxInt(1, m.eventsViewport.Width)
 	for _, e := range m.snapshot.Events {
-		rows = append(rows, fmt.Sprintf("%s %-18s %s", formatLocalClock(e.Time), e.Type, e.Details))
+		line := fmt.Sprintf("%s %-18s %s", formatLocalClock(e.Time), e.Type, e.Details)
+		rows = append(rows, runewidth.Truncate(line, maxWidth, "…"))
 	}
 	return rows
 }
@@ -163,6 +182,18 @@ func newWatchlistTable() table.Model {
 		table.WithColumns(watchlistTableColumns(64)),
 		table.WithHeight(2),
 		table.WithWidth(64),
+		table.WithFocused(false),
+		table.WithStyles(styles),
+	)
+}
+
+func newSystemTable() table.Model {
+	styles := newPanelTableStyles()
+	return table.New(
+		table.WithRows(nil),
+		table.WithColumns(systemTableColumns(48)),
+		table.WithHeight(2),
+		table.WithWidth(48),
 		table.WithFocused(false),
 		table.WithStyles(styles),
 	)
@@ -212,10 +243,28 @@ func (m *Model) syncWatchlistTable() {
 	m.watchlistTable.SetHeight(height)
 }
 
+func (m *Model) syncSystemTables() {
+	m.syncSystemTable(&m.systemRuntimeTable, m.systemRuntimePanelWidth(), systemKVRows(m.systemRuntimeData()))
+	m.syncSystemTable(&m.systemAgentTable, m.systemAgentPanelWidth(), systemKVRows(m.systemAgentData()))
+	m.syncSystemTable(&m.systemPersistTable, m.systemPersistencePanelWidth(), systemKVRows(m.systemPersistenceData()))
+}
+
+func (m *Model) syncSystemTable(tbl *table.Model, panelWidth int, rows []table.Row) {
+	innerWidth := panelInnerWidth(panelWidth)
+	if innerWidth < 24 {
+		return
+	}
+	tbl.SetWidth(innerWidth)
+	tbl.SetColumns(systemTableColumns(innerWidth))
+	tbl.SetRows(rows)
+	height := maxInt(2, len(rows)+1)
+	tbl.SetHeight(height)
+}
+
 func positionTableColumns(totalWidth int) []table.Column {
 	minWidths := []int{4, 4, 4, 4, 6}
 	targetWidths := []int{8, 10, 8, 8, 11}
-	widths := fitColumnWidths(totalWidth, minWidths, targetWidths)
+	widths := fitTableColumnWidths(totalWidth, minWidths, targetWidths)
 	return []table.Column{
 		{Title: "Symbol", Width: widths[0]},
 		{Title: "Qty", Width: widths[1]},
@@ -226,23 +275,34 @@ func positionTableColumns(totalWidth int) []table.Column {
 }
 
 func orderTableColumns(totalWidth int) []table.Column {
-	minWidths := []int{2, 9, 4, 4, 5, 6}
-	targetWidths := []int{4, 10, 6, 8, 10, 12}
-	widths := fitColumnWidths(totalWidth, minWidths, targetWidths)
+	minWidths := []int{2, 9, 4, 4, 5, 5, 6}
+	targetWidths := []int{4, 10, 6, 7, 8, 8, 10}
+	widths := fitTableColumnWidths(totalWidth, minWidths, targetWidths)
 	return []table.Column{
 		{Title: "#", Width: widths[0]},
 		{Title: "Order ID", Width: widths[1]},
 		{Title: "Side", Width: widths[2]},
 		{Title: "Symbol", Width: widths[3]},
 		{Title: "Qty", Width: widths[4]},
-		{Title: "Status", Width: widths[5]},
+		{Title: "Limit", Width: widths[5]},
+		{Title: "Status", Width: widths[6]},
+	}
+}
+
+func systemTableColumns(totalWidth int) []table.Column {
+	minWidths := []int{8, 12}
+	targetWidths := []int{16, 34}
+	widths := fitTableColumnWidths(totalWidth, minWidths, targetWidths)
+	return []table.Column{
+		{Title: "Key", Width: widths[0]},
+		{Title: "Value", Width: widths[1]},
 	}
 }
 
 func watchlistTableColumns(totalWidth int) []table.Column {
 	minWidths := []int{4, 6, 6, 6, 5, 6, 8}
 	targetWidths := []int{10, 10, 10, 10, 10, 10, 18}
-	widths := fitColumnWidths(totalWidth, minWidths, targetWidths)
+	widths := fitTableColumnWidths(totalWidth, minWidths, targetWidths)
 	return []table.Column{
 		{Title: "Symbol", Width: widths[0]},
 		{Title: "Last", Width: widths[1]},
@@ -293,6 +353,18 @@ func fitColumnWidths(total int, minimum []int, target []int) []int {
 	return out
 }
 
+func fitTableColumnWidths(total int, minimum []int, target []int) []int {
+	if len(minimum) == 0 {
+		return nil
+	}
+	separatorBudget := len(minimum) - 1
+	contentWidth := total - separatorBudget
+	if contentWidth < len(minimum) {
+		contentWidth = len(minimum)
+	}
+	return fitColumnWidths(contentWidth, minimum, target)
+}
+
 func columnWidthSum(widths []int) int {
 	total := 0
 	for _, w := range widths {
@@ -326,14 +398,27 @@ func positionTableRows(positions []domain.Position, quotes map[string]domain.Quo
 func orderTableRows(orders []domain.Order) []table.Row {
 	rows := make([]table.Row, 0, len(orders))
 	for i, o := range orders {
+		limit := "-"
+		if o.LimitPrice != nil && *o.LimitPrice > 0 {
+			limit = fmt.Sprintf("%.2f", *o.LimitPrice)
+		}
 		rows = append(rows, table.Row{
 			fmt.Sprintf("%d", i+1),
 			runewidth.Truncate(o.ID, 8, ""),
 			strings.ToUpper(string(o.Side)),
 			runewidth.Truncate(o.Symbol, 8, ""),
 			fmt.Sprintf("%.2f", o.Qty),
+			limit,
 			runewidth.Truncate(string(o.Status), 16, ""),
 		})
+	}
+	return rows
+}
+
+func systemKVRows(items []systemKV) []table.Row {
+	rows := make([]table.Row, 0, len(items))
+	for _, item := range items {
+		rows = append(rows, table.Row{item.key, item.value})
 	}
 	return rows
 }
@@ -439,7 +524,7 @@ func splitFixedWidthColumns(line string, widths []int) []string {
 	runes := []rune(line)
 	segments := make([]string, 0, len(widths))
 	pos := 0
-	for _, w := range widths {
+	for idx, w := range widths {
 		if w <= 0 {
 			continue
 		}
@@ -451,8 +536,14 @@ func splitFixedWidthColumns(line string, widths []int) []string {
 		if end > len(runes) {
 			end = len(runes)
 		}
-		segments = append(segments, string(runes[pos:end]))
+		segment := string(runes[pos:end])
 		pos = end
+		// Bubble tables separate columns with spaces; keep one separator with the cell.
+		if idx < len(widths)-1 && pos < len(runes) && runes[pos] == ' ' {
+			segment += string(runes[pos])
+			pos++
+		}
+		segments = append(segments, segment)
 	}
 	return segments
 }

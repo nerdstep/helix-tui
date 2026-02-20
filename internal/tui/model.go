@@ -84,6 +84,9 @@ type Model struct {
 	positionsTable     table.Model
 	ordersTable        table.Model
 	watchlistTable     table.Model
+	systemRuntimeTable table.Model
+	systemAgentTable   table.Model
+	systemPersistTable table.Model
 	quotes             map[string]domain.Quote
 	quoteSeenAt        map[string]time.Time
 	prevLast           map[string]float64
@@ -114,6 +117,9 @@ func New(engine *engine.Engine, watchlist ...string) Model {
 	m.positionsTable = newPositionsTable()
 	m.ordersTable = newOrdersTable()
 	m.watchlistTable = newWatchlistTable()
+	m.systemRuntimeTable = newSystemTable()
+	m.systemAgentTable = newSystemTable()
+	m.systemPersistTable = newSystemTable()
 	m.syncWidgets()
 	return m
 }

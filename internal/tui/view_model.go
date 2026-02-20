@@ -76,7 +76,11 @@ func (m Model) buildOrderRows() []string {
 	view := strings.TrimRight(m.ordersTable.View(), "\n")
 	if view == "" {
 		for _, o := range m.snapshot.Orders {
-			rows = append(rows, fmt.Sprintf("%-14s %-4s %-6s qty=%8.2f status=%s", o.ID, o.Side, o.Symbol, o.Qty, o.Status))
+			limit := "market"
+			if o.LimitPrice != nil && *o.LimitPrice > 0 {
+				limit = fmt.Sprintf("%.2f", *o.LimitPrice)
+			}
+			rows = append(rows, fmt.Sprintf("%-14s %-4s %-6s qty=%8.2f limit=%7s status=%s", o.ID, o.Side, o.Symbol, o.Qty, limit, o.Status))
 		}
 		return rows
 	}
@@ -232,6 +236,36 @@ type systemKV struct {
 }
 
 func (m Model) buildSystemRuntimeRows() []string {
+	rows := []string{panelTitleStyle.Render("Runtime")}
+	view := strings.TrimRight(m.systemRuntimeTable.View(), "\n")
+	if view == "" {
+		return append(rows, mutedStyle.Render("(loading...)"))
+	}
+	rows = append(rows, strings.Split(view, "\n")...)
+	return rows
+}
+
+func (m Model) buildSystemAgentRows() []string {
+	rows := []string{panelTitleStyle.Render("Agent")}
+	view := strings.TrimRight(m.systemAgentTable.View(), "\n")
+	if view == "" {
+		return append(rows, mutedStyle.Render("(loading...)"))
+	}
+	rows = append(rows, strings.Split(view, "\n")...)
+	return rows
+}
+
+func (m Model) buildSystemPersistenceRows() []string {
+	rows := []string{panelTitleStyle.Render("Persistence")}
+	view := strings.TrimRight(m.systemPersistTable.View(), "\n")
+	if view == "" {
+		return append(rows, mutedStyle.Render("(loading...)"))
+	}
+	rows = append(rows, strings.Split(view, "\n")...)
+	return rows
+}
+
+func (m Model) systemRuntimeData() []systemKV {
 	mode := "unknown"
 	if e := latestEventByType(m.snapshot.Events, "agent_mode"); e != nil && strings.TrimSpace(e.Details) != "" {
 		mode = e.Details
@@ -248,20 +282,17 @@ func (m Model) buildSystemRuntimeRows() []string {
 	if e := latestEventByType(m.snapshot.Events, "agent_cycle_complete"); e != nil {
 		lastCycleAge = time.Since(e.Time).Round(time.Second).String()
 	}
-	return buildSystemKVPairs(
-		"Runtime",
-		[]systemKV{
-			{key: "watchlist", value: fmt.Sprintf("%d symbols", len(m.watchlist))},
-			{key: "events", value: fmt.Sprintf("%d in-memory", len(m.snapshot.Events))},
-			{key: "mode", value: mode},
-			{key: "last sync", value: lastSync},
-			{key: "cycle start", value: cycleStart},
-			{key: "cycle age", value: lastCycleAge},
-		},
-	)
+	return []systemKV{
+		{key: "watchlist", value: fmt.Sprintf("%d symbols", len(m.watchlist))},
+		{key: "events", value: fmt.Sprintf("%d in-memory", len(m.snapshot.Events))},
+		{key: "mode", value: mode},
+		{key: "last sync", value: lastSync},
+		{key: "cycle start", value: cycleStart},
+		{key: "cycle age", value: lastCycleAge},
+	}
 }
 
-func (m Model) buildSystemAgentRows() []string {
+func (m Model) systemAgentData() []systemKV {
 	lastProposal := "n/a"
 	if e := latestEventByType(m.snapshot.Events, "agent_proposal"); e != nil && strings.TrimSpace(e.Details) != "" {
 		lastProposal = e.Details
@@ -274,20 +305,17 @@ func (m Model) buildSystemAgentRows() []string {
 	if e := latestEventByType(m.snapshot.Events, "agent_cycle_error"); e != nil {
 		lastError = fmt.Sprintf("%s %s", formatLocalClock(e.Time), e.Details)
 	}
-	return buildSystemKVPairs(
-		"Agent",
-		[]systemKV{
-			{key: "cycles", value: fmt.Sprintf("%d", countEventsByType(m.snapshot.Events, "agent_cycle_complete"))},
-			{key: "requests", value: fmt.Sprintf("ok=%d failed=%d", countEventsByType(m.snapshot.Events, "agent_proposal"), countEventsByType(m.snapshot.Events, "agent_cycle_error"))},
-			{key: "intents", value: fmt.Sprintf("executed=%d rejected=%d dry_run=%d", countEventsByType(m.snapshot.Events, "agent_intent_executed"), countEventsByType(m.snapshot.Events, "agent_intent_rejected"), countEventsByType(m.snapshot.Events, "agent_intent_dry_run"))},
-			{key: "last proposal", value: lastProposal},
-			{key: "heartbeat", value: heartbeat},
-			{key: "last error", value: lastError},
-		},
-	)
+	return []systemKV{
+		{key: "cycles", value: fmt.Sprintf("%d", countEventsByType(m.snapshot.Events, "agent_cycle_complete"))},
+		{key: "requests", value: fmt.Sprintf("ok=%d failed=%d", countEventsByType(m.snapshot.Events, "agent_proposal"), countEventsByType(m.snapshot.Events, "agent_cycle_error"))},
+		{key: "intents", value: fmt.Sprintf("executed=%d rejected=%d dry_run=%d", countEventsByType(m.snapshot.Events, "agent_intent_executed"), countEventsByType(m.snapshot.Events, "agent_intent_rejected"), countEventsByType(m.snapshot.Events, "agent_intent_dry_run"))},
+		{key: "last proposal", value: lastProposal},
+		{key: "heartbeat", value: heartbeat},
+		{key: "last error", value: lastError},
+	}
 }
 
-func (m Model) buildSystemPersistenceRows() []string {
+func (m Model) systemPersistenceData() []systemKV {
 	persistStats := "n/a"
 	if e := latestEventByType(m.snapshot.Events, "event_persist_stats"); e != nil && strings.TrimSpace(e.Details) != "" {
 		persistStats = e.Details
@@ -304,34 +332,12 @@ func (m Model) buildSystemPersistenceRows() []string {
 	if e := latestEventByType(m.snapshot.Events, "agent_runner_error"); e != nil && strings.TrimSpace(e.Details) != "" {
 		runnerError = e.Details
 	}
-	return buildSystemKVPairs(
-		"Persistence",
-		[]systemKV{
-			{key: "persist stats", value: persistStats},
-			{key: "persist error", value: persistError},
-			{key: "runner error", value: runnerError},
-			{key: "last cycle", value: lastCycle},
-		},
-	)
-}
-
-func buildSystemKVPairs(title string, pairs []systemKV) []string {
-	rows := []string{panelTitleStyle.Render(title)}
-	if len(pairs) == 0 {
-		return append(rows, mutedStyle.Render("(none)"))
+	return []systemKV{
+		{key: "persist stats", value: persistStats},
+		{key: "persist error", value: persistError},
+		{key: "runner error", value: runnerError},
+		{key: "last cycle", value: lastCycle},
 	}
-	keyWidth := 0
-	for _, pair := range pairs {
-		if len(pair.key) > keyWidth {
-			keyWidth = len(pair.key)
-		}
-	}
-	keyWidth = maxInt(keyWidth, 10)
-	for _, pair := range pairs {
-		key := mutedStyle.Render(fmt.Sprintf("%-*s", keyWidth, pair.key+":"))
-		rows = append(rows, fmt.Sprintf("%s %s", key, pair.value))
-	}
-	return rows
 }
 
 func (m Model) buildEventRows() []string {

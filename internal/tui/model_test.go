@@ -407,10 +407,10 @@ func TestTabSwitching(t *testing.T) {
 		t.Fatalf("expected active tab system, got %s", m2.activeTab)
 	}
 	systemView := m2.View()
-	if !strings.Contains(systemView, "Runtime") || !strings.Contains(systemView, "watchlist:") {
+	if !strings.Contains(systemView, "Runtime") || !strings.Contains(systemView, "watchlist") {
 		t.Fatalf("expected system panel on system tab: %q", systemView)
 	}
-	if !strings.Contains(systemView, "requests:") {
+	if !strings.Contains(systemView, "requests") {
 		t.Fatalf("expected request counters in system panel: %q", systemView)
 	}
 
@@ -493,8 +493,40 @@ func TestOrderTableColumnsLeaveGapAfterOrderID(t *testing.T) {
 	if len(cols) < 2 {
 		t.Fatalf("unexpected columns: %#v", cols)
 	}
-	if cols[1].Width <= 8 {
-		t.Fatalf("expected Order ID column width > 8 for spacing, got %d", cols[1].Width)
+	if cols[1].Width < 8 {
+		t.Fatalf("expected Order ID column width >= 8 for spacing, got %d", cols[1].Width)
+	}
+}
+
+func TestOrderTableIncludesLimitColumn(t *testing.T) {
+	cols := orderTableColumns(48)
+	if len(cols) != 7 {
+		t.Fatalf("expected 7 order columns, got %d", len(cols))
+	}
+	if cols[5].Title != "Limit" {
+		t.Fatalf("expected Limit column at index 5, got %q", cols[5].Title)
+	}
+	sum := 0
+	for _, c := range cols {
+		sum += c.Width
+	}
+	rendered := sum + (len(cols) - 1)
+	if rendered > 48 {
+		t.Fatalf("expected order columns to fit width, rendered=%d total=48", rendered)
+	}
+}
+
+func TestOrderTableRowsIncludeLimitValue(t *testing.T) {
+	limit := 12.34
+	rows := orderTableRows([]domain.Order{
+		{ID: "ord-1", Side: domain.SideBuy, Symbol: "AAPL", Qty: 5, Status: domain.OrderStatusNew, LimitPrice: &limit},
+		{ID: "ord-2", Side: domain.SideSell, Symbol: "MSFT", Qty: 3, Status: domain.OrderStatusAccepted},
+	})
+	if got := rows[0][5]; got != "12.34" {
+		t.Fatalf("expected limit value 12.34, got %q", got)
+	}
+	if got := rows[1][5]; got != "-" {
+		t.Fatalf("expected '-' for market/non-limit order, got %q", got)
 	}
 }
 

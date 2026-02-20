@@ -1,14 +1,29 @@
 package tui
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 func (m Model) eventPageSize() int {
 	if m.activeTab == tabLogs && m.height > 0 {
-		// Approximate visible lines after header/tab/status/input/footer and panel chrome.
-		const reserved = 8
-		return maxInt(8, m.height-reserved)
+		return maxInt(1, m.height-m.logsReservedHeight())
 	}
 	return 8
+}
+
+func (m Model) logsReservedHeight() int {
+	headerHeight := lipgloss.Height(m.buildHeader())
+	if headerHeight < 1 {
+		headerHeight = 1
+	}
+	tabHeight := lipgloss.Height(m.renderTabBar(m.computeLayoutSpec().usableWidth))
+	if tabHeight < 1 {
+		tabHeight = 1
+	}
+	// status + input + footer plus panel borders and static rows around viewport.
+	return headerHeight + tabHeight + 5 + panelStyle.GetVerticalFrameSize() + 2
 }
 
 func (m Model) maxEventScroll() int {

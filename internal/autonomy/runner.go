@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -54,6 +56,8 @@ const (
 	contextLogFull          contextLogMode = "full"
 	defaultEventHistorySize                = 200
 )
+
+var errEquivalentOpenOrder = errors.New("equivalent open order already exists")
 
 type heartbeatStats struct {
 	cycles         int
@@ -238,6 +242,11 @@ func (r *Runner) runCycle(ctx context.Context) error {
 
 	for _, intent := range intents {
 		if err := r.handleIntent(ctx, intent); err != nil {
+			if errors.Is(err, errEquivalentOpenOrder) {
+				skipped++
+				r.engine.AddEvent("agent_intent_skipped", fmt.Sprintf("auto mode: %s reason=equivalent_open_order", summarizeIntent(intent)))
+				continue
+			}
 			rejected++
 			r.engine.AddStructuredEvent(domain.Event{
 				Type:            "agent_intent_rejected",
@@ -330,6 +339,9 @@ func (r *Runner) handleIntent(ctx context.Context, intent domain.TradeIntent) er
 		}
 		execCtx, cancel := context.WithTimeout(ctx, r.orderTimeout)
 		defer cancel()
+		if err := r.cancelOpenOrdersForIntent(execCtx, intent); err != nil {
+			return err
+		}
 		_, err := r.engine.PlaceOrder(execCtx, domain.OrderRequest{
 			Symbol:     intent.Symbol,
 			Side:       intent.Side,
@@ -345,6 +357,89 @@ func (r *Runner) handleIntent(ctx context.Context, intent domain.TradeIntent) er
 	default:
 		return fmt.Errorf("unknown mode %q", r.mode)
 	}
+}
+
+func (r *Runner) cancelOpenOrdersForIntent(ctx context.Context, intent domain.TradeIntent) error {
+	snapshot := r.engine.Snapshot()
+	canceled := 0
+	foundEquivalent := false
+	for _, order := range snapshot.Orders {
+		if !isActiveOpenOrder(order.Status) {
+			continue
+		}
+		if !strings.EqualFold(order.Symbol, intent.Symbol) {
+			continue
+		}
+		if order.Side != intent.Side {
+			continue
+		}
+		if isEquivalentOpenOrder(order, intent) {
+			foundEquivalent = true
+			continue
+		}
+		if err := r.engine.CancelOrder(ctx, order.ID); err != nil {
+			if isIgnorableCancelError(err) {
+				continue
+			}
+			return fmt.Errorf("cancel existing open order %s: %w", order.ID, err)
+		}
+		canceled++
+	}
+	if canceled > 0 {
+		r.engine.AddEvent(
+			"agent_open_orders_replaced",
+			fmt.Sprintf("symbol=%s side=%s canceled=%d", intent.Symbol, intent.Side, canceled),
+		)
+	}
+	if foundEquivalent {
+		return errEquivalentOpenOrder
+	}
+	return nil
+}
+
+func isActiveOpenOrder(status domain.OrderStatus) bool {
+	switch status {
+	case domain.OrderStatusNew, domain.OrderStatusAccepted, domain.OrderStatusPartially:
+		return true
+	default:
+		return false
+	}
+}
+
+func isIgnorableCancelError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "not found") || strings.Contains(msg, "already filled")
+}
+
+func isEquivalentOpenOrder(order domain.Order, intent domain.TradeIntent) bool {
+	if !strings.EqualFold(order.Symbol, intent.Symbol) || order.Side != intent.Side || order.Type != intent.OrderType {
+		return false
+	}
+	if !withinQtyTolerance(order.Qty, intent.Qty) {
+		return false
+	}
+	if intent.OrderType != domain.OrderTypeLimit {
+		return true
+	}
+	if order.LimitPrice == nil || intent.LimitPrice == nil || *order.LimitPrice <= 0 || *intent.LimitPrice <= 0 {
+		return false
+	}
+	return withinLimitPriceTolerance(*order.LimitPrice, *intent.LimitPrice)
+}
+
+func withinQtyTolerance(a, b float64) bool {
+	diff := math.Abs(a - b)
+	tol := math.Max(0.01, math.Abs(b)*0.005) // 0.5% or 0.01 share minimum
+	return diff <= tol
+}
+
+func withinLimitPriceTolerance(a, b float64) bool {
+	diff := math.Abs(a - b)
+	tol := math.Max(0.01, math.Abs(b)*0.0025) // 0.25% or 1 cent minimum
+	return diff <= tol
 }
 
 func summarizeIntent(i domain.TradeIntent) string {

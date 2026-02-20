@@ -123,6 +123,99 @@ func TestHandleIntent_AutoExecutesOrder(t *testing.T) {
 	}
 }
 
+func TestHandleIntent_AutoCancelsExistingSameSideOpenOrdersBeforePlacing(t *testing.T) {
+	r, broker := newRunnerTestHarness(domain.ModeAuto, false)
+	existingLimit := 101.0
+	newLimit := 102.0
+	broker.openOrders = []domain.Order{
+		{
+			ID:         "ord-open-1",
+			Symbol:     "AAPL",
+			Side:       domain.SideBuy,
+			Qty:        1,
+			Type:       domain.OrderTypeLimit,
+			LimitPrice: &existingLimit,
+			Status:     domain.OrderStatusNew,
+			CreatedAt:  time.Now().UTC().Add(-time.Minute),
+			UpdatedAt:  time.Now().UTC().Add(-time.Minute),
+		},
+	}
+	if err := r.engine.Sync(context.Background()); err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+
+	err := r.handleIntent(context.Background(), domain.TradeIntent{
+		Symbol:     "aapl",
+		Side:       domain.SideBuy,
+		Qty:        1,
+		OrderType:  domain.OrderTypeLimit,
+		LimitPrice: &newLimit,
+	})
+	if err != nil {
+		t.Fatalf("handleIntent failed: %v", err)
+	}
+	if broker.cancelCalls != 1 {
+		t.Fatalf("expected one cancel call, got %d", broker.cancelCalls)
+	}
+	if len(broker.canceledOrderIDs) != 1 || broker.canceledOrderIDs[0] != "ord-open-1" {
+		t.Fatalf("expected canceled open order ord-open-1, got %#v", broker.canceledOrderIDs)
+	}
+	if broker.placeCalls != 1 {
+		t.Fatalf("expected one place call, got %d", broker.placeCalls)
+	}
+	events := r.engine.Snapshot().Events
+	if !hasEventType(events, "order_canceled") {
+		t.Fatalf("expected order_canceled event")
+	}
+	if !hasEventType(events, "agent_open_orders_replaced") {
+		t.Fatalf("expected agent_open_orders_replaced event")
+	}
+}
+
+func TestRunCycle_AutoSkipsEquivalentOpenOrder(t *testing.T) {
+	r, broker := newRunnerTestHarness(domain.ModeAuto, false)
+	limit := 101.00
+	broker.openOrders = []domain.Order{
+		{
+			ID:         "ord-open-1",
+			Symbol:     "AAPL",
+			Side:       domain.SideBuy,
+			Qty:        10,
+			Type:       domain.OrderTypeLimit,
+			LimitPrice: &limit,
+			Status:     domain.OrderStatusNew,
+			CreatedAt:  time.Now().UTC().Add(-time.Minute),
+			UpdatedAt:  time.Now().UTC().Add(-time.Minute),
+		},
+	}
+	r.watchlist = []string{"AAPL"}
+	r.agent = &fakeAgent{
+		intents: []domain.TradeIntent{
+			{Symbol: "AAPL", Side: domain.SideBuy, Qty: 10, OrderType: domain.OrderTypeLimit, LimitPrice: &limit, Confidence: 0.8},
+		},
+	}
+
+	if err := r.runCycle(context.Background()); err != nil {
+		t.Fatalf("runCycle failed: %v", err)
+	}
+	if broker.cancelCalls != 0 {
+		t.Fatalf("expected no cancels for equivalent order, got %d", broker.cancelCalls)
+	}
+	if broker.placeCalls != 0 {
+		t.Fatalf("expected no new placement for equivalent order, got %d", broker.placeCalls)
+	}
+	events := r.engine.Snapshot().Events
+	if !hasEventType(events, "agent_intent_skipped") {
+		t.Fatalf("expected agent_intent_skipped event")
+	}
+	if hasEventType(events, "agent_intent_rejected") {
+		t.Fatalf("did not expect agent_intent_rejected for equivalent order skip")
+	}
+	if !hasEventDetailContains(events, "agent_cycle_complete", "skipped=1") {
+		t.Fatalf("expected cycle_complete skipped=1, events=%#v", events)
+	}
+}
+
 func TestHandleIntent_MinGainRejectsMissingExpectedGainForBuy(t *testing.T) {
 	r, _ := newRunnerTestHarness(domain.ModeAuto, false)
 	r.minGainPct = 1
@@ -403,17 +496,20 @@ func (a *fakeAgent) ProposeTrades(_ context.Context, input domain.AgentInput) ([
 }
 
 type fakeBroker struct {
-	account        domain.Account
-	positions      []domain.Position
-	openOrders     []domain.Order
-	quotes         map[string]domain.Quote
-	quoteErr       map[string]error
-	accountErr     error
-	positionsErr   error
-	ordersErr      error
-	placeErr       error
-	placeCalls     int
-	placedRequests []domain.OrderRequest
+	account          domain.Account
+	positions        []domain.Position
+	openOrders       []domain.Order
+	quotes           map[string]domain.Quote
+	quoteErr         map[string]error
+	accountErr       error
+	positionsErr     error
+	ordersErr        error
+	placeErr         error
+	cancelErr        error
+	placeCalls       int
+	cancelCalls      int
+	canceledOrderIDs []string
+	placedRequests   []domain.OrderRequest
 }
 
 func newRunnerTestHarness(mode domain.Mode, dryRun bool) (*Runner, *fakeBroker) {
@@ -497,7 +593,19 @@ func (b *fakeBroker) PlaceOrder(_ context.Context, req domain.OrderRequest) (dom
 	}, nil
 }
 
-func (b *fakeBroker) CancelOrder(context.Context, string) error { return nil }
+func (b *fakeBroker) CancelOrder(_ context.Context, orderID string) error {
+	if b.cancelErr != nil {
+		return b.cancelErr
+	}
+	b.cancelCalls++
+	b.canceledOrderIDs = append(b.canceledOrderIDs, orderID)
+	for i := range b.openOrders {
+		if b.openOrders[i].ID == orderID {
+			b.openOrders[i].Status = domain.OrderStatusCanceled
+		}
+	}
+	return nil
+}
 
 func (b *fakeBroker) StreamTradeUpdates(context.Context) (<-chan domain.TradeUpdate, error) {
 	ch := make(chan domain.TradeUpdate)
@@ -508,6 +616,18 @@ func (b *fakeBroker) StreamTradeUpdates(context.Context) (<-chan domain.TradeUpd
 func hasEventType(events []domain.Event, want string) bool {
 	for _, e := range events {
 		if e.Type == want {
+			return true
+		}
+	}
+	return false
+}
+
+func hasEventDetailContains(events []domain.Event, eventType, contains string) bool {
+	for _, e := range events {
+		if e.Type != eventType {
+			continue
+		}
+		if strings.Contains(e.Details, contains) {
 			return true
 		}
 	}

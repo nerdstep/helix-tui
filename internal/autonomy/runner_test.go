@@ -324,11 +324,79 @@ func TestSetWatchlist(t *testing.T) {
 	}
 }
 
+func TestRunCycle_UsesEventHistoryStoreForAgentContext(t *testing.T) {
+	r, _ := newRunnerTestHarness(domain.ModeAuto, false)
+	agent := &fakeAgent{}
+	r.agent = agent
+	store := &fakeEventHistoryStore{
+		listRecentOut: []domain.Event{
+			{Time: time.Now().UTC(), Type: "order_placed", Details: "buy AAPL 1"},
+		},
+	}
+	r.SetEventHistory(store)
+
+	if err := r.runCycle(context.Background()); err != nil {
+		t.Fatalf("runCycle failed: %v", err)
+	}
+	if len(agent.lastInput.Snapshot.Events) != 1 || agent.lastInput.Snapshot.Events[0].Type != "order_placed" {
+		t.Fatalf("expected DB-backed events in agent input, got %#v", agent.lastInput.Snapshot.Events)
+	}
+}
+
+func TestRunCycle_PersistsRelevantTradeEvents(t *testing.T) {
+	r, _ := newRunnerTestHarness(domain.ModeAuto, false)
+	agent := &fakeAgent{}
+	r.agent = agent
+	store := &fakeEventHistoryStore{}
+	r.SetEventHistory(store)
+
+	r.engine.AddEvent("order_placed", "buy AAPL 1")
+	r.engine.AddEvent("agent_cycle_start", "mode=auto watchlist=1")
+	r.engine.AddEvent("trade_update", "abc status=filled filled=1.00")
+
+	if err := r.runCycle(context.Background()); err != nil {
+		t.Fatalf("runCycle failed: %v", err)
+	}
+	if !hasEventType(store.appended, "order_placed") {
+		t.Fatalf("expected order_placed to be persisted, got %#v", store.appended)
+	}
+	if !hasEventType(store.appended, "trade_update") {
+		t.Fatalf("expected trade_update to be persisted, got %#v", store.appended)
+	}
+	if hasEventType(store.appended, "agent_cycle_start") {
+		t.Fatalf("did not expect agent_cycle_start to be persisted: %#v", store.appended)
+	}
+}
+
 type fakeAgent struct {
 	intents   []domain.TradeIntent
 	err       error
 	calls     int
 	lastInput domain.AgentInput
+}
+
+type fakeEventHistoryStore struct {
+	appended      []domain.Event
+	appendErr     error
+	listRecentOut []domain.Event
+	listRecentErr error
+}
+
+func (f *fakeEventHistoryStore) AppendMany(events []domain.Event) error {
+	if f.appendErr != nil {
+		return f.appendErr
+	}
+	f.appended = append(f.appended, events...)
+	return nil
+}
+
+func (f *fakeEventHistoryStore) ListRecent(_ int) ([]domain.Event, error) {
+	if f.listRecentErr != nil {
+		return nil, f.listRecentErr
+	}
+	out := make([]domain.Event, len(f.listRecentOut))
+	copy(out, f.listRecentOut)
+	return out, nil
 }
 
 func (a *fakeAgent) ProposeTrades(_ context.Context, input domain.AgentInput) ([]domain.TradeIntent, error) {

@@ -95,11 +95,14 @@ func ensureParentDir(path string) error {
 
 func writeBatch(logger zerolog.Logger, events []domain.Event) {
 	for _, event := range events {
-		logger.
+		entry := logger.
 			WithLevel(eventLogLevel(event.Type)).
 			Str("event_type", event.Type).
-			Time("event_time", event.Time.Local()).
-			Msg(event.Details)
+			Time("event_time", event.Time.Local())
+		if strings.TrimSpace(event.RejectionReason) != "" {
+			entry = entry.Str("rejection_reason", strings.TrimSpace(event.RejectionReason))
+		}
+		entry.Msg(event.Details)
 	}
 }
 
@@ -140,7 +143,10 @@ func advanceTail(state eventTailState, events []domain.Event) eventTailState {
 }
 
 func sameEvent(a, b domain.Event) bool {
-	return a.Time.Equal(b.Time) && a.Type == b.Type && a.Details == b.Details
+	return a.Time.Equal(b.Time) &&
+		a.Type == b.Type &&
+		a.Details == b.Details &&
+		a.RejectionReason == b.RejectionReason
 }
 
 func logFileOpenFlags(mode string) (int, error) {

@@ -99,9 +99,10 @@ type TradeIntent struct {
 }
 
 type Event struct {
-	Time    time.Time
-	Type    string
-	Details string
+	Time            time.Time
+	Type            string
+	Details         string
+	RejectionReason string
 }
 
 type Snapshot struct {

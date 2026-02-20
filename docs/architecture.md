@@ -131,6 +131,22 @@ flowchart TD
     FORCE -->|No| SKIP
 ```
 
+## Event Persistence + LLM Context
+
+```mermaid
+sequenceDiagram
+    participant E as Engine (in-memory events)
+    participant R as autonomy.Runner
+    participant DB as SQLite trade_events
+    participant L as LLM Agent
+
+    R->>E: Snapshot()
+    R->>DB: Append new relevant trade events
+    R->>DB: ListRecent(N)
+    DB-->>R: persisted recent events
+    R->>L: ProposeTrades(input with DB-backed recent_events)
+```
+
 ## Watchlist Flow
 
 ```mermaid

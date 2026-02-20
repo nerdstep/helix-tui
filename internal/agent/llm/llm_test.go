@@ -189,6 +189,57 @@ func TestProposeTradesIncludesRiskContextInPayload(t *testing.T) {
 	}
 }
 
+func TestProposeTradesIncludesRejectionReasonInRecentEvents(t *testing.T) {
+	capture := &captureChatClient{
+		content: `{"intents":[]}`,
+	}
+	agent, err := newWithClient(testBroker{
+		quotes: map[string]domain.Quote{
+			"AAPL": {Symbol: "AAPL", Last: 100, Bid: 99, Ask: 101, Time: time.Now().UTC()},
+		},
+	}, Config{
+		APIKey: "test-key",
+		Model:  "test-model",
+	}, capture)
+	if err != nil {
+		t.Fatalf("newWithClient failed: %v", err)
+	}
+
+	_, err = agent.ProposeTrades(context.Background(), domain.AgentInput{
+		Mode:      domain.ModeAuto,
+		Watchlist: []string{"AAPL"},
+		Snapshot: domain.Snapshot{
+			Events: []domain.Event{
+				{
+					Time:            time.Now().UTC(),
+					Type:            "agent_intent_rejected",
+					Details:         "sell AAPL qty=5.00 type=limit conf=0.30 gain=0.10%",
+					RejectionReason: "expected gain below minimum",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ProposeTrades failed: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(capture.userPrompt), &payload); err != nil {
+		t.Fatalf("expected JSON payload in user prompt, got error: %v", err)
+	}
+	rawEvents, ok := payload["recent_events"].([]any)
+	if !ok || len(rawEvents) == 0 {
+		t.Fatalf("expected recent_events in payload, got %#v", payload["recent_events"])
+	}
+	first, ok := rawEvents[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected event object, got %#v", rawEvents[0])
+	}
+	if got, _ := first["rejection_reason"].(string); got != "expected gain below minimum" {
+		t.Fatalf("unexpected rejection_reason: %#v", first["rejection_reason"])
+	}
+}
+
 func TestRecentEventsForPromptFiltersAndLimits(t *testing.T) {
 	base := time.Date(2026, 2, 20, 15, 0, 0, 0, time.UTC)
 	events := []domain.Event{

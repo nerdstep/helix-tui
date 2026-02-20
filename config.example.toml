@@ -51,4 +51,4 @@ mode = "append" # append | truncate (truncate resets file each app start)
 level = "info" # trace | debug | info | warn | error | fatal | panic | disabled
 
 [database]
-path = "logs/helix.db" # SQLite database for persistent app state (equity history and future storage)
+path = "logs/helix.db" # SQLite database for persistent app state (equity history + persisted trade events for LLM context)

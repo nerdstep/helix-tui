@@ -174,6 +174,7 @@ Agent tuning notes:
 - `[agent.llm].system_prompt`: primary instruction channel for LLM behavior and goals.
 - `[agent.llm].context_log`: request-context logging for LLM mode (`summary` recommended for debugging, `full` emits full JSON payload events).
 - LLM request context includes risk limits from `[risk]` (`max_trade_notional`, `max_day_notional`) so the model can size intents within policy.
+- Rejected intents are included in `recent_events` with a dedicated `rejection_reason` field (separate from event `details`).
 
 ## Safety Defaults
 
@@ -206,8 +207,9 @@ These checks are enforced in `internal/engine/risk.go`.
 - Set `[logging].level` to tune verbosity; default is `info`.
 - Event logs are emitted as structured JSON lines (`zerolog`) for easier filtering/analysis.
 - High-frequency loop events (`sync`, `agent_cycle_start`, `agent_proposal`, `agent_cycle_complete`, `agent_heartbeat`) are logged at `debug`.
-- Set `[database].path` to persist app state in SQLite; equity history is stored there and rendered as a session-spanning P/L trend chart in the TUI.
-- SQLite persistence runs startup migrations from `internal/storage` and tracks applied versions in `schema_migrations`.
+- Set `[database].path` to persist app state in SQLite; equity history and relevant trade/agent execution events are stored there.
+- In LLM mode, recent event context is sourced from persisted DB events (not only in-memory session events), so context survives restarts.
+- SQLite persistence auto-applies the current schema at startup from `internal/storage`.
 - The TUI includes watchlist quote rows, position P&L, and basic agent/system runtime stats.
 - Equity trend rendering uses `github.com/NimbleMarkets/ntcharts` (sparkline) for higher fidelity terminal charts.
 - Event history supports keyboard paging (`PgUp`, `PgDn`, `Home`, `End`) and retains a larger recent window for scrollback.

@@ -37,14 +37,29 @@ type Runner struct {
 	lastDecisionAt   time.Time
 	forceInvokeAfter time.Duration
 	contextLogMode   contextLogMode
+
+	eventHistory     eventHistoryStore
+	eventHistoryTail eventTailState
+	eventHistorySize int
 }
 
 type contextLogMode string
 
+type eventHistoryStore interface {
+	AppendMany(events []domain.Event) error
+	ListRecent(limit int) ([]domain.Event, error)
+}
+
+type eventTailState struct {
+	initialized bool
+	last        domain.Event
+}
+
 const (
-	contextLogOff     contextLogMode = "off"
-	contextLogSummary contextLogMode = "summary"
-	contextLogFull    contextLogMode = "full"
+	contextLogOff           contextLogMode = "off"
+	contextLogSummary       contextLogMode = "summary"
+	contextLogFull          contextLogMode = "full"
+	defaultEventHistorySize                = 200
 )
 
 type heartbeatStats struct {
@@ -115,7 +130,15 @@ func NewRunner(
 		heartbeatInterval: heartbeatIntervalForCycle(interval),
 		forceInvokeAfter:  forceInvokeAfterForCycle(interval),
 		contextLogMode:    normalizedContextLogMode(contextLog),
+		eventHistorySize:  defaultEventHistorySize,
 	}
+}
+
+func (r *Runner) SetEventHistory(store eventHistoryStore) {
+	r.mu.Lock()
+	r.eventHistory = store
+	r.eventHistoryTail = eventTailState{}
+	r.mu.Unlock()
 }
 
 func (r *Runner) Run(ctx context.Context) error {
@@ -157,6 +180,7 @@ func (r *Runner) runCycle(ctx context.Context) error {
 	}
 
 	snapshot := r.engine.Snapshot()
+	snapshot.Events = r.eventsForAgent(snapshot.Events)
 	quotes, quoteErrors := r.collectQuotes(syncCtx, watchlist)
 	input := domain.AgentInput{
 		Mode:        r.mode,
@@ -223,7 +247,7 @@ func (r *Runner) runCycle(ctx context.Context) error {
 	for _, intent := range intents {
 		if err := r.handleIntent(ctx, intent); err != nil {
 			rejected++
-			r.engine.AddEvent("agent_intent_rejected", fmt.Sprintf("%s: %v", summarizeIntent(intent), err))
+			r.engine.AddEvent("agent_intent_rejected", summarizeRejectedIntent(intent, err))
 			continue
 		}
 		switch r.mode {
@@ -254,6 +278,100 @@ func (r *Runner) runCycle(ctx context.Context) error {
 	)
 	r.recordHeartbeat(proposalLatencyMs, generated, executed, rejected, approvals, dryRun, skipped)
 	return nil
+}
+
+func (r *Runner) eventsForAgent(snapshotEvents []domain.Event) []domain.Event {
+	r.mu.RLock()
+	store := r.eventHistory
+	limit := r.eventHistorySize
+	r.mu.RUnlock()
+	if store == nil {
+		return snapshotEvents
+	}
+
+	r.persistEvents(store, snapshotEvents)
+	events, err := store.ListRecent(limit)
+	if err != nil {
+		r.engine.AddEvent("database_error", fmt.Sprintf("list trade events: %v", err))
+		return snapshotEvents
+	}
+	return events
+}
+
+func (r *Runner) persistEvents(store eventHistoryStore, snapshotEvents []domain.Event) {
+	if store == nil || len(snapshotEvents) == 0 {
+		return
+	}
+
+	r.mu.Lock()
+	newEvents := eventsSinceTail(r.eventHistoryTail, snapshotEvents)
+	r.eventHistoryTail = advanceEventTail(r.eventHistoryTail, snapshotEvents)
+	r.mu.Unlock()
+
+	relevant := make([]domain.Event, 0, len(newEvents))
+	for _, e := range newEvents {
+		if !isPersistedTradeEvent(e.Type) {
+			continue
+		}
+		relevant = append(relevant, e)
+	}
+	if len(relevant) == 0 {
+		return
+	}
+	if err := store.AppendMany(relevant); err != nil {
+		r.engine.AddEvent("database_error", fmt.Sprintf("append trade events: %v", err))
+	}
+}
+
+func isPersistedTradeEvent(eventType string) bool {
+	switch strings.ToLower(strings.TrimSpace(eventType)) {
+	case "order_placed", "order_canceled", "trade_update", "trade_update_unknown_order", "agent_intent_executed", "agent_intent_rejected":
+		return true
+	default:
+		return false
+	}
+}
+
+func eventsSinceTail(state eventTailState, events []domain.Event) []domain.Event {
+	if len(events) == 0 {
+		return nil
+	}
+	if !state.initialized {
+		out := make([]domain.Event, len(events))
+		copy(out, events)
+		return out
+	}
+
+	for i := len(events) - 1; i >= 0; i-- {
+		if sameEvent(events[i], state.last) {
+			if i+1 >= len(events) {
+				return nil
+			}
+			out := make([]domain.Event, len(events[i+1:]))
+			copy(out, events[i+1:])
+			return out
+		}
+	}
+
+	out := make([]domain.Event, len(events))
+	copy(out, events)
+	return out
+}
+
+func advanceEventTail(state eventTailState, events []domain.Event) eventTailState {
+	if len(events) == 0 {
+		return state
+	}
+	state.initialized = true
+	state.last = events[len(events)-1]
+	return state
+}
+
+func sameEvent(a, b domain.Event) bool {
+	return a.Time.Equal(b.Time) &&
+		a.Type == b.Type &&
+		a.Details == b.Details &&
+		a.RejectionReason == b.RejectionReason
 }
 
 func (r *Runner) handleIntent(ctx context.Context, intent domain.TradeIntent) error {
@@ -321,6 +439,19 @@ func summarizeIntent(i domain.TradeIntent) string {
 		i.Confidence,
 		i.ExpectedGainPct,
 		strings.TrimSpace(i.Rationale),
+	)
+}
+
+func summarizeRejectedIntent(i domain.TradeIntent, err error) string {
+	return fmt.Sprintf(
+		"%s %s qty=%.2f type=%s conf=%.2f gain=%.2f%% rejection=%s",
+		i.Side,
+		i.Symbol,
+		i.Qty,
+		i.OrderType,
+		i.Confidence,
+		i.ExpectedGainPct,
+		strings.TrimSpace(err.Error()),
 	)
 }
 

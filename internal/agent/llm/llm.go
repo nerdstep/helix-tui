@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	defaultMaxPromptEvents = 8
-	maxEventDetailChars    = 140
+	defaultMaxPromptEvents  = 8
+	maxEventDetailChars     = 140
+	maxRejectionReasonChars = 280
 )
 
 type Config struct {
@@ -247,9 +248,10 @@ type quoteInput struct {
 }
 
 type eventInput struct {
-	Time    string `json:"time"`
-	Type    string `json:"type"`
-	Details string `json:"details"`
+	Time            string `json:"time"`
+	Type            string `json:"type"`
+	Details         string `json:"details"`
+	RejectionReason string `json:"rejection_reason,omitempty"`
 }
 
 func openOrdersForPrompt(orders []domain.Order) []orderInput {
@@ -304,9 +306,10 @@ func toEventInputs(events []domain.Event) []eventInput {
 	out := make([]eventInput, 0, len(events))
 	for _, e := range events {
 		out = append(out, eventInput{
-			Time:    e.Time.UTC().Format(time.RFC3339),
-			Type:    e.Type,
-			Details: e.Details,
+			Time:            e.Time.UTC().Format(time.RFC3339),
+			Type:            e.Type,
+			Details:         e.Details,
+			RejectionReason: sanitizeRejectionReasonForLLM(e.RejectionReason),
 		})
 	}
 	return out
@@ -329,7 +332,7 @@ func isRelevantEventForLLM(e domain.Event) bool {
 }
 
 func eventFingerprintForLLM(e domain.Event) string {
-	return strings.ToLower(strings.TrimSpace(e.Type)) + "|" + e.Details
+	return strings.ToLower(strings.TrimSpace(e.Type)) + "|" + e.Details + "|" + strings.TrimSpace(e.RejectionReason)
 }
 
 func sanitizeEventDetailForLLM(detail string) string {
@@ -342,6 +345,18 @@ func sanitizeEventDetailForLLM(detail string) string {
 	}
 	runes := []rune(detail)
 	return string(runes[:maxEventDetailChars]) + "..."
+}
+
+func sanitizeRejectionReasonForLLM(reason string) string {
+	reason = strings.Join(strings.Fields(strings.TrimSpace(reason)), " ")
+	if reason == "" {
+		return ""
+	}
+	if len([]rune(reason)) <= maxRejectionReasonChars {
+		return reason
+	}
+	runes := []rune(reason)
+	return string(runes[:maxRejectionReasonChars]) + "..."
 }
 
 type llmOutput struct {

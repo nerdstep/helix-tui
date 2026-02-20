@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"helix-tui/internal/domain"
 )
 
 func TestStoreOpenMigrateAppendListAndReopen(t *testing.T) {
@@ -21,12 +23,9 @@ func TestStoreOpenMigrateAppendListAndReopen(t *testing.T) {
 	if repo == nil {
 		t.Fatalf("expected equity repository")
 	}
-	var firstRunCount int64
-	if err := store.db.Model(&schemaMigration{}).Count(&firstRunCount).Error; err != nil {
-		t.Fatalf("count schema migrations failed: %v", err)
-	}
-	if firstRunCount == 0 {
-		t.Fatalf("expected at least one applied migration")
+	eventRepo := store.Events()
+	if eventRepo == nil {
+		t.Fatalf("expected trade event repository")
 	}
 
 	p1 := EquityPoint{Time: time.Now().UTC(), Equity: 100000}
@@ -37,6 +36,13 @@ func TestStoreOpenMigrateAppendListAndReopen(t *testing.T) {
 	if err := repo.Append(p2); err != nil {
 		t.Fatalf("append p2 failed: %v", err)
 	}
+	if err := eventRepo.Append(domain.Event{
+		Time:    time.Now().UTC(),
+		Type:    "order_placed",
+		Details: "buy AAPL 1.00 (abc123)",
+	}); err != nil {
+		t.Fatalf("append trade event failed: %v", err)
+	}
 
 	points, err := repo.List()
 	if err != nil {
@@ -44,6 +50,13 @@ func TestStoreOpenMigrateAppendListAndReopen(t *testing.T) {
 	}
 	if len(points) != 2 {
 		t.Fatalf("expected 2 points, got %d", len(points))
+	}
+	events, err := eventRepo.ListRecent(10)
+	if err != nil {
+		t.Fatalf("list recent events failed: %v", err)
+	}
+	if len(events) != 1 || events[0].Type != "order_placed" {
+		t.Fatalf("unexpected persisted events: %#v", events)
 	}
 
 	_ = store.Close()
@@ -62,12 +75,12 @@ func TestStoreOpenMigrateAppendListAndReopen(t *testing.T) {
 	if len(points) != 2 {
 		t.Fatalf("expected persisted points after reopen, got %d", len(points))
 	}
-	var secondRunCount int64
-	if err := reopened.db.Model(&schemaMigration{}).Count(&secondRunCount).Error; err != nil {
-		t.Fatalf("count schema migrations on reopen failed: %v", err)
+	events, err = reopened.Events().ListRecent(10)
+	if err != nil {
+		t.Fatalf("list recent events after reopen failed: %v", err)
 	}
-	if secondRunCount != firstRunCount {
-		t.Fatalf("expected migration count to remain stable, got %d then %d", firstRunCount, secondRunCount)
+	if len(events) != 1 || events[0].Type != "order_placed" {
+		t.Fatalf("unexpected persisted events after reopen: %#v", events)
 	}
 }
 

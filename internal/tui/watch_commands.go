@@ -56,6 +56,7 @@ func (m *Model) handleWatchSync() tea.Cmd {
 	}
 	next = symbols.Normalize(next)
 	m.watchlist = next
+	m.pruneWatchlistQuoteState()
 	for _, symbol := range next {
 		m.engine.AllowSymbol(symbol)
 	}
@@ -84,6 +85,7 @@ func (m *Model) handleWatchAdd(symbol string) tea.Cmd {
 		}
 	}
 	m.watchlist = next
+	m.pruneWatchlistQuoteState()
 	m.engine.AllowSymbol(symbol)
 	m.syncWidgets()
 	m.setStatus(fmt.Sprintf("added %s to watchlist", symbol), false)
@@ -117,9 +119,37 @@ func (m *Model) handleWatchRemove(symbol string) tea.Cmd {
 	}
 	m.watchlist = next
 	delete(m.quotes, symbol)
+	delete(m.quoteSeenAt, symbol)
 	delete(m.prevLast, symbol)
 	delete(m.quoteErr, symbol)
 	m.syncWidgets()
 	m.setStatus(fmt.Sprintf("removed %s from watchlist", symbol), false)
 	return nil
+}
+
+func (m *Model) pruneWatchlistQuoteState() {
+	allow := make(map[string]struct{}, len(m.watchlist))
+	for _, symbol := range m.watchlist {
+		allow[symbol] = struct{}{}
+	}
+	for symbol := range m.quotes {
+		if _, ok := allow[symbol]; !ok {
+			delete(m.quotes, symbol)
+		}
+	}
+	for symbol := range m.quoteSeenAt {
+		if _, ok := allow[symbol]; !ok {
+			delete(m.quoteSeenAt, symbol)
+		}
+	}
+	for symbol := range m.prevLast {
+		if _, ok := allow[symbol]; !ok {
+			delete(m.prevLast, symbol)
+		}
+	}
+	for symbol := range m.quoteErr {
+		if _, ok := allow[symbol]; !ok {
+			delete(m.quoteErr, symbol)
+		}
+	}
 }

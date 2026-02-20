@@ -16,11 +16,13 @@ import (
 )
 
 type Config struct {
-	APIKey       string
-	BaseURL      string
-	Model        string
-	Timeout      time.Duration
-	SystemPrompt string
+	APIKey           string
+	BaseURL          string
+	Model            string
+	Timeout          time.Duration
+	SystemPrompt     string
+	MaxTradeNotional float64
+	MaxDayNotional   float64
 }
 
 type Agent struct {
@@ -29,6 +31,7 @@ type Agent struct {
 	model        string
 	timeout      time.Duration
 	systemPrompt string
+	risk         riskInput
 	maxWatchlist int
 	maxEvents    int
 }
@@ -68,6 +71,10 @@ func newWithClient(broker domain.Broker, cfg Config, client chatClient) (*Agent,
 		model:        model,
 		timeout:      timeout,
 		systemPrompt: systemPrompt,
+		risk: riskInput{
+			MaxTradeNotional: cfg.MaxTradeNotional,
+			MaxDayNotional:   cfg.MaxDayNotional,
+		},
 		maxWatchlist: 12,
 		maxEvents:    40,
 	}, nil
@@ -120,6 +127,7 @@ func (a *Agent) ProposeTrades(ctx context.Context, input domain.AgentInput) ([]d
 		OpenOrders:  openOrdersForPrompt(input.Snapshot.Orders),
 		Quotes:      quotes,
 		QuoteErrors: quoteErrors,
+		Risk:        a.risk,
 		RecentEvents: recentEventsForPrompt(
 			input.Snapshot.Events,
 			a.maxEvents,
@@ -144,6 +152,8 @@ const defaultSystemPrompt = "You are a conservative US equities trading research
 const forcedJSONInstruction = "Return strict JSON: {\"intents\":[{\"symbol\":\"AAPL\",\"side\":\"buy|sell\",\"qty\":1.0,\"order_type\":\"market|limit\",\"limit_price\":123.45,\"confidence\":0.0,\"expected_gain_pct\":1.5,\"rationale\":\"...\"}]}. " +
 	"Include expected_gain_pct for every intent. " +
 	"Avoid dust-sized orders when possible. " +
+	"Respect risk.max_trade_notional and risk.max_day_notional from the JSON input. " +
+	"For each intent, size qty so estimated notional stays within risk.max_trade_notional. " +
 	"Keep rationale concise and tied to the provided quote and position data." +
 	"Only propose watchlist symbols. Keep qty positive. " +
 	"Return {\"intents\":[]} when uncertain."
@@ -157,7 +167,13 @@ type llmInput struct {
 	OpenOrders   []orderInput      `json:"open_orders"`
 	Quotes       []quoteInput      `json:"quotes"`
 	QuoteErrors  []string          `json:"quote_errors"`
+	Risk         riskInput         `json:"risk"`
 	RecentEvents []eventInput      `json:"recent_events"`
+}
+
+type riskInput struct {
+	MaxTradeNotional float64 `json:"max_trade_notional"`
+	MaxDayNotional   float64 `json:"max_day_notional"`
 }
 
 type orderInput struct {

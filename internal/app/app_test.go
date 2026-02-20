@@ -262,6 +262,9 @@ func TestBuildBrokerPaper(t *testing.T) {
 	if spec.watchlistSyncBroker != nil {
 		t.Fatalf("paper broker should not expose watchlist sync broker")
 	}
+	if spec.quoteStreamer != nil {
+		t.Fatalf("paper broker should not expose quote streamer")
+	}
 }
 
 func TestBuildBrokerAlpacaWithDirectCredentials(t *testing.T) {
@@ -287,6 +290,9 @@ func TestBuildBrokerAlpacaWithDirectCredentials(t *testing.T) {
 	}
 	if spec.watchlistSyncBroker == nil {
 		t.Fatalf("expected watchlist sync broker for alpaca")
+	}
+	if spec.quoteStreamer == nil {
+		t.Fatalf("expected quote streamer for alpaca")
 	}
 	if spec.credentialSource == "" {
 		t.Fatalf("expected credential source")

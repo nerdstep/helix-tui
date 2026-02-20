@@ -24,6 +24,7 @@ Status values:
 
 | ID | Item | Priority | Status | Why | Exit Criteria |
 |---|---|---|---|---|---|
+| ALPACA-001 | Investigate error: {"level":"warn","component":"eventlog","event_type":"agent_intent_rejected","event_time":"2026-02-19T20:29:57-08:00","time":"2026-02-19T20:29:58-08:00","message":"buy RIVN qty=100.00 type=limit conf=0.00 gain=6.00% rationale=No existing position or open orders; last=15.415 — place a small limit buy (100 sh = ~$1.54k, ~1.5% cash) to establish exposure; targeting modest 6% gain.: invalid limit_price 15.415. sub-penny increment does not fulfill minimum pricing criteria (HTTP 422, Code 42210000)"} | high | next |
 | AGENT-005 | LLM research tool layer (news/fundamentals input before intent generation) | high | next | Improve decision quality vs quote-only context | Agent prompt includes research payload; tests cover empty/failure research cases; risk-gated execution unchanged |
 | AGENT-006 | Assist-mode approval workflow for agent intents in TUI | high | next | Turn `assist` mode into actionable human approval loop | TUI shows pending intents and supports approve/reject commands; events logged for every decision |
 

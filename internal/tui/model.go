@@ -83,6 +83,7 @@ type Model struct {
 	ordersTable        table.Model
 	watchlistTable     table.Model
 	quotes             map[string]domain.Quote
+	quoteSeenAt        map[string]time.Time
 	prevLast           map[string]float64
 	quoteErr           map[string]string
 	equityHistory      []EquityPoint
@@ -100,6 +101,7 @@ func New(engine *engine.Engine, watchlist ...string) Model {
 		engine:          engine,
 		watchlist:       symbols.Normalize(watchlist),
 		quotes:          map[string]domain.Quote{},
+		quoteSeenAt:     map[string]time.Time{},
 		prevLast:        map[string]float64{},
 		quoteErr:        map[string]string{},
 		equityMaxPoints: 1000,

@@ -173,6 +173,7 @@ Agent tuning notes:
 - LLM-specific TOML settings live under `[agent.llm]`.
 - `[agent.llm].system_prompt`: primary instruction channel for LLM behavior and goals.
 - `[agent.llm].context_log`: request-context logging for LLM mode (`summary` recommended for debugging, `full` emits full JSON payload events).
+- LLM request context includes risk limits from `[risk]` (`max_trade_notional`, `max_day_notional`) so the model can size intents within policy.
 
 ## Safety Defaults
 
@@ -185,7 +186,9 @@ These checks are enforced in `internal/engine/risk.go`.
 ## Notes
 
 - The paper broker fills immediately at the current mock quote.
-- The Alpaca adapter uses the official SDK client for account/positions/orders plus market data latest quote and trade update streaming.
+- The Alpaca adapter uses the official SDK client for account/positions/orders plus trade update streaming and websocket quote streaming.
+- In Alpaca mode, quotes are streamed independently from the agent interval into an engine quote cache.
+- Runner/TUI quote reads use the cached stream first and fall back to REST latest-quote lookup when cache is stale or missing.
 - Alpaca market data permissions/entitlements still apply to quote availability.
 - Use `[alpaca].env = "paper|live"` to choose trading environment; optional `[alpaca].base_url` overrides endpoint routing.
 - Alpaca quote feed defaults to `iex` (override via `[alpaca].feed`).

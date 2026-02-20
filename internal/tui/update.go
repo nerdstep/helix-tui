@@ -47,11 +47,13 @@ func (m Model) updateRefresh(msg refreshMsg) (tea.Model, tea.Cmd) {
 	m.snapshot = msg.snapshot
 	m.recordEquityPoint(msg.snapshot.Account.Equity, time.Now().UTC())
 	m.clampEventScroll()
+	now := time.Now().UTC()
 	for symbol, q := range msg.quotes {
 		if prev, ok := m.quotes[symbol]; ok {
 			m.prevLast[symbol] = prev.Last
 		}
 		m.quotes[symbol] = q
+		m.quoteSeenAt[symbol] = now
 		delete(m.quoteErr, symbol)
 	}
 	for symbol, errMsg := range msg.quoteErr {

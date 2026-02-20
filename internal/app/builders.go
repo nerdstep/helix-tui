@@ -21,6 +21,7 @@ type brokerSpec struct {
 	label               string
 	isAlpaca            bool
 	broker              domain.Broker
+	quoteStreamer       domain.QuoteStreamer
 	watchlistSyncBroker *alpaca.Broker
 	credentialSource    string
 }
@@ -57,6 +58,7 @@ func buildBroker(cfg Config) (brokerSpec, error) {
 
 	alpacaBroker := newAlpacaBroker(cfg, apiKey, apiSecret)
 	spec.broker = alpacaBroker
+	spec.quoteStreamer = alpacaBroker
 	spec.watchlistSyncBroker = alpacaBroker
 	spec.credentialSource = source
 	return spec, nil
@@ -183,11 +185,13 @@ func buildAgent(cfg Config, broker domain.Broker) (domain.Agent, string, error) 
 			return nil, "", err
 		}
 		agent, err := llm.New(broker, llm.Config{
-			APIKey:       llmKey,
-			BaseURL:      cfg.LLMBaseURL,
-			Model:        cfg.LLMModel,
-			Timeout:      cfg.LLMTimeout,
-			SystemPrompt: cfg.LLMSystemPrompt,
+			APIKey:           llmKey,
+			BaseURL:          cfg.LLMBaseURL,
+			Model:            cfg.LLMModel,
+			Timeout:          cfg.LLMTimeout,
+			SystemPrompt:     cfg.LLMSystemPrompt,
+			MaxTradeNotional: cfg.MaxNotionalPerTrade,
+			MaxDayNotional:   cfg.MaxNotionalPerDay,
 		})
 		if err != nil {
 			return nil, "", err

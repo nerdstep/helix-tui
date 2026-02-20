@@ -12,6 +12,10 @@ type Broker interface {
 	StreamTradeUpdates(ctx context.Context) (<-chan TradeUpdate, error)
 }
 
+type QuoteStreamer interface {
+	StreamQuotes(ctx context.Context, symbols []string) (<-chan Quote, <-chan error, error)
+}
+
 type Agent interface {
 	ProposeTrades(ctx context.Context, input AgentInput) ([]TradeIntent, error)
 }

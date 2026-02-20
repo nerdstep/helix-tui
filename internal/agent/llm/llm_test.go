@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -139,6 +140,53 @@ func TestParseIntentsFromRawArray(t *testing.T) {
 	}
 }
 
+func TestProposeTradesIncludesRiskContextInPayload(t *testing.T) {
+	capture := &captureChatClient{
+		content: `{"intents":[]}`,
+	}
+	agent, err := newWithClient(testBroker{
+		quotes: map[string]domain.Quote{
+			"AAPL": {Symbol: "AAPL", Last: 100, Bid: 99, Ask: 101, Time: time.Now().UTC()},
+		},
+	}, Config{
+		APIKey:           "test-key",
+		Model:            "test-model",
+		MaxTradeNotional: 5000,
+		MaxDayNotional:   20000,
+	}, capture)
+	if err != nil {
+		t.Fatalf("newWithClient failed: %v", err)
+	}
+
+	_, err = agent.ProposeTrades(context.Background(), domain.AgentInput{
+		Mode:      domain.ModeAuto,
+		Watchlist: []string{"AAPL"},
+		Snapshot:  domain.Snapshot{},
+	})
+	if err != nil {
+		t.Fatalf("ProposeTrades failed: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(capture.userPrompt), &payload); err != nil {
+		t.Fatalf("expected JSON payload in user prompt, got error: %v", err)
+	}
+	rawRisk, ok := payload["risk"]
+	if !ok {
+		t.Fatalf("expected risk section in payload")
+	}
+	risk, ok := rawRisk.(map[string]any)
+	if !ok {
+		t.Fatalf("expected risk object in payload, got %#v", rawRisk)
+	}
+	if got, ok := risk["max_trade_notional"].(float64); !ok || got != 5000 {
+		t.Fatalf("unexpected max_trade_notional: %#v", risk["max_trade_notional"])
+	}
+	if got, ok := risk["max_day_notional"].(float64); !ok || got != 20000 {
+		t.Fatalf("unexpected max_day_notional: %#v", risk["max_day_notional"])
+	}
+}
+
 type staticChatClient struct {
 	content string
 	err     error
@@ -149,6 +197,24 @@ func (s staticChatClient) Complete(context.Context, string, string, string) (str
 		return "", s.err
 	}
 	return s.content, nil
+}
+
+type captureChatClient struct {
+	content      string
+	err          error
+	model        string
+	systemPrompt string
+	userPrompt   string
+}
+
+func (c *captureChatClient) Complete(_ context.Context, model, systemPrompt, userPrompt string) (string, error) {
+	c.model = model
+	c.systemPrompt = systemPrompt
+	c.userPrompt = userPrompt
+	if c.err != nil {
+		return "", c.err
+	}
+	return c.content, nil
 }
 
 type testBroker struct {

@@ -12,6 +12,7 @@ import (
 )
 
 const maxSnapshotEvents = 500
+const cachedQuoteFreshFor = 20 * time.Second
 
 type Engine struct {
 	broker domain.Broker
@@ -21,6 +22,8 @@ type Engine struct {
 	account    domain.Account
 	positions  map[string]domain.Position
 	orders     map[string]domain.Order
+	quotes     map[string]domain.Quote
+	quoteSeen  map[string]time.Time
 	events     []domain.Event
 	eventStart int
 	eventCount int
@@ -32,6 +35,8 @@ func New(broker domain.Broker, gate *RiskGate) *Engine {
 		gate:      gate,
 		positions: map[string]domain.Position{},
 		orders:    map[string]domain.Order{},
+		quotes:    map[string]domain.Quote{},
+		quoteSeen: map[string]time.Time{},
 		events:    make([]domain.Event, maxSnapshotEvents),
 	}
 }
@@ -108,7 +113,41 @@ func (e *Engine) GetQuote(ctx context.Context, symbol string) (domain.Quote, err
 	if symbol == "" {
 		return domain.Quote{}, fmt.Errorf("symbol is required")
 	}
-	return e.broker.GetQuote(ctx, symbol)
+	e.mu.RLock()
+	if q, ok := e.quotes[symbol]; ok && quoteIsFresh(q, e.quoteSeen[symbol]) {
+		e.mu.RUnlock()
+		return q, nil
+	}
+	e.mu.RUnlock()
+
+	q, err := e.broker.GetQuote(ctx, symbol)
+	if err != nil {
+		return domain.Quote{}, err
+	}
+	e.UpsertQuote(q)
+	return q, nil
+}
+
+func (e *Engine) UpsertQuote(quote domain.Quote) {
+	symbol := strings.ToUpper(strings.TrimSpace(quote.Symbol))
+	if symbol == "" {
+		return
+	}
+	quote.Symbol = symbol
+	e.mu.Lock()
+	e.quotes[symbol] = quote
+	e.quoteSeen[symbol] = time.Now().UTC()
+	e.mu.Unlock()
+}
+
+func quoteIsFresh(q domain.Quote, seenAt time.Time) bool {
+	if q.Last <= 0 && q.Bid <= 0 && q.Ask <= 0 {
+		return false
+	}
+	if seenAt.IsZero() {
+		return false
+	}
+	return time.Since(seenAt) <= cachedQuoteFreshFor
 }
 
 func (e *Engine) CancelOrder(ctx context.Context, orderID string) error {

@@ -26,6 +26,7 @@ func Run(ctx context.Context, args []string, stderr io.Writer) error {
 	}
 	defer stopEventLogger()
 
+	updateQuoteStream := startQuoteStreaming(ctx, system)
 	startRunner(ctx, system)
 
 	if options.headless {
@@ -33,7 +34,7 @@ func Run(ctx context.Context, args []string, stderr io.Writer) error {
 		return nil
 	}
 
-	if err := runTUI(system, cfg); err != nil {
+	if err := runTUI(system, cfg, updateQuoteStream); err != nil {
 		return fmt.Errorf("runtime error: %w", err)
 	}
 	return nil

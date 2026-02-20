@@ -33,7 +33,10 @@ func startRunner(ctx context.Context, system *app.System) {
 	}()
 }
 
-func runTUI(system *app.System, cfg app.Config) error {
+func runTUI(system *app.System, cfg app.Config, updateQuoteStream func([]string)) error {
+	if updateQuoteStream == nil {
+		updateQuoteStream = func([]string) {}
+	}
 	onWatchlistChanged := func(nextWatchlist []string) error {
 		nextWatchlist = symbols.Normalize(nextWatchlist)
 		if system.SyncWatchlist != nil {
@@ -44,6 +47,7 @@ func runTUI(system *app.System, cfg app.Config) error {
 		if system.Runner != nil {
 			system.Runner.SetWatchlist(nextWatchlist)
 		}
+		updateQuoteStream(nextWatchlist)
 		return nil
 	}
 	onWatchlistSync := func(nextWatchlist []string) ([]string, error) {
@@ -58,6 +62,7 @@ func runTUI(system *app.System, cfg app.Config) error {
 		if system.Runner != nil {
 			system.Runner.SetWatchlist(nextWatchlist)
 		}
+		updateQuoteStream(nextWatchlist)
 		return nextWatchlist, nil
 	}
 

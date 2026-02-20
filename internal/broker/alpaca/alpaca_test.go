@@ -12,6 +12,7 @@ import (
 
 	sdkalpaca "github.com/alpacahq/alpaca-trade-api-go/v3/alpaca"
 	"github.com/alpacahq/alpaca-trade-api-go/v3/marketdata"
+	"github.com/alpacahq/alpaca-trade-api-go/v3/marketdata/stream"
 	"github.com/shopspring/decimal"
 
 	"helix-tui/internal/domain"
@@ -37,6 +38,29 @@ func TestNormalizeFeed(t *testing.T) {
 			got := normalizeFeed(tt.in)
 			if got != tt.want {
 				t.Fatalf("normalizeFeed(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStockStreamBaseURL(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "default", in: "", want: DataWSBase},
+		{name: "standard data host", in: "https://data.alpaca.markets", want: "https://stream.data.alpaca.markets/v2"},
+		{name: "already stream host", in: "https://stream.data.alpaca.markets/v2", want: "https://stream.data.alpaca.markets/v2"},
+		{name: "custom host", in: "https://proxy.local", want: "https://proxy.local/v2"},
+		{name: "invalid", in: "://bad", want: DataWSBase},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stockStreamBaseURL(tt.in)
+			if got != tt.want {
+				t.Fatalf("stockStreamBaseURL(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
 	}
@@ -253,6 +277,32 @@ func TestToDomainOrderAndTradeUpdate(t *testing.T) {
 	}
 	if du2.Time.IsZero() {
 		t.Fatalf("expected non-zero fallback time")
+	}
+}
+
+func TestToDomainStreamQuote(t *testing.T) {
+	q := toDomainStreamQuote(stream.Quote{
+		Symbol:    "aapl",
+		BidPrice:  99.5,
+		AskPrice:  100.5,
+		Timestamp: time.Now().UTC(),
+	})
+	if q.Symbol != "AAPL" || q.Bid != 99.5 || q.Ask != 100.5 || q.Last != 100 {
+		t.Fatalf("unexpected quote mapping: %#v", q)
+	}
+}
+
+func TestStreamQuotesEmptySymbols(t *testing.T) {
+	b := &Broker{}
+	qch, ech, err := b.StreamQuotes(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("StreamQuotes failed: %v", err)
+	}
+	if _, ok := <-qch; ok {
+		t.Fatalf("expected closed quote channel")
+	}
+	if _, ok := <-ech; ok {
+		t.Fatalf("expected closed error channel")
 	}
 }
 

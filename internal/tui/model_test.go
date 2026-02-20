@@ -425,6 +425,51 @@ func TestRenderTwoColumnPanelsWidthAlignment(t *testing.T) {
 	}
 }
 
+func TestWatchlistStateUsesSeenTime(t *testing.T) {
+	m := New(newTestEngine(), "AAPL")
+	m.quotes["AAPL"] = domain.Quote{
+		Symbol: "AAPL",
+		Last:   100,
+		Bid:    99.5,
+		Ask:    100.5,
+		Time:   time.Now().UTC().Add(-10 * time.Minute),
+	}
+	m.quoteSeenAt["AAPL"] = time.Now().UTC()
+	rows := m.watchlistTableRows()
+	if len(rows) != 1 {
+		t.Fatalf("expected one row, got %d", len(rows))
+	}
+	if got := rows[0][6]; !strings.Contains(got, "ok") {
+		t.Fatalf("expected ok state for recently seen quote, got %q", got)
+	}
+
+	m.quoteSeenAt["AAPL"] = time.Now().UTC().Add(-(watchlistStateStaleAfter + time.Second))
+	rows = m.watchlistTableRows()
+	if got := rows[0][6]; !strings.Contains(got, "stale") {
+		t.Fatalf("expected stale state for old seen quote, got %q", got)
+	}
+}
+
+func TestWatchlistChangeCellIncludesPct(t *testing.T) {
+	m := New(newTestEngine(), "AAPL")
+	m.prevLast["AAPL"] = 100
+	m.quotes["AAPL"] = domain.Quote{
+		Symbol: "AAPL",
+		Last:   101,
+		Bid:    100.5,
+		Ask:    101.5,
+		Time:   time.Now().UTC(),
+	}
+	m.quoteSeenAt["AAPL"] = time.Now().UTC()
+	rows := m.watchlistTableRows()
+	if len(rows) != 1 {
+		t.Fatalf("expected one row, got %d", len(rows))
+	}
+	if got := rows[0][5]; !strings.Contains(got, "+1.00%") {
+		t.Fatalf("expected pct change cell, got %q", got)
+	}
+}
+
 func newTestEngine() *engine.Engine {
 	b := paper.New(10000)
 	gate := engine.NewRiskGate(engine.Policy{

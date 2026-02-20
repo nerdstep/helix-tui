@@ -12,6 +12,10 @@ import (
 	"helix-tui/internal/domain"
 )
 
+const (
+	watchlistStateStaleAfter = 20 * time.Second
+)
+
 type layoutSpec struct {
 	usableWidth int
 	twoColumn   bool
@@ -167,7 +171,7 @@ func newWatchlistTable() table.Model {
 func newPanelTableStyles() table.Styles {
 	styles := table.DefaultStyles()
 	styles.Header = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("159"))
-	styles.Cell = lipgloss.NewStyle()
+	styles.Cell = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	styles.Selected = lipgloss.NewStyle()
 	return styles
 }
@@ -299,11 +303,20 @@ func columnWidthSum(widths []int) int {
 func positionTableRows(positions []domain.Position) []table.Row {
 	rows := make([]table.Row, 0, len(positions))
 	for _, p := range positions {
+		last := fmt.Sprintf("%.2f", p.LastPrice)
+		switch {
+		case p.AvgCost > 0 && p.LastPrice > p.AvgCost:
+			last = positiveStyle.Render(last)
+		case p.AvgCost > 0 && p.LastPrice < p.AvgCost:
+			last = negativeStyle.Render(last)
+		default:
+			last = mutedStyle.Render(last)
+		}
 		rows = append(rows, table.Row{
 			runewidth.Truncate(p.Symbol, 8, ""),
 			fmt.Sprintf("%.2f", p.Qty),
 			fmt.Sprintf("%.2f", p.AvgCost),
-			fmt.Sprintf("%.2f", p.LastPrice),
+			last,
 		})
 	}
 	return rows
@@ -312,13 +325,32 @@ func positionTableRows(positions []domain.Position) []table.Row {
 func orderTableRows(orders []domain.Order) []table.Row {
 	rows := make([]table.Row, 0, len(orders))
 	for i, o := range orders {
+		side := strings.ToUpper(string(o.Side))
+		if o.Side == domain.SideBuy {
+			side = positiveStyle.Render(side)
+		} else if o.Side == domain.SideSell {
+			side = negativeStyle.Render(side)
+		}
+
+		statusText := runewidth.Truncate(string(o.Status), 16, "")
+		switch o.Status {
+		case domain.OrderStatusFilled:
+			statusText = positiveStyle.Render(statusText)
+		case domain.OrderStatusRejected, domain.OrderStatusCanceled:
+			statusText = warnStyle.Render(statusText)
+		case domain.OrderStatusPartially:
+			statusText = lipgloss.NewStyle().Foreground(lipgloss.Color("111")).Render(statusText)
+		default:
+			statusText = mutedStyle.Render(statusText)
+		}
+
 		rows = append(rows, table.Row{
 			fmt.Sprintf("%d", i+1),
 			runewidth.Truncate(o.ID, 16, ""),
-			strings.ToUpper(string(o.Side)),
+			side,
 			runewidth.Truncate(o.Symbol, 8, ""),
 			fmt.Sprintf("%.2f", o.Qty),
-			runewidth.Truncate(string(o.Status), 16, ""),
+			statusText,
 		})
 	}
 	return rows
@@ -330,12 +362,12 @@ func (m Model) watchlistTableRows() []table.Row {
 		if errMsg, ok := m.quoteErr[symbol]; ok {
 			rows = append(rows, table.Row{
 				runewidth.Truncate(symbol, 8, ""),
-				"-",
-				"-",
-				"-",
-				"-",
-				"-",
-				"error: " + runewidth.Truncate(errMsg, 32, ""),
+				mutedStyle.Render("-"),
+				mutedStyle.Render("-"),
+				mutedStyle.Render("-"),
+				mutedStyle.Render("-"),
+				mutedStyle.Render("-"),
+				errStyle.Render("error: " + runewidth.Truncate(errMsg, 24, "")),
 			})
 			continue
 		}
@@ -343,23 +375,29 @@ func (m Model) watchlistTableRows() []table.Row {
 		if !ok {
 			rows = append(rows, table.Row{
 				runewidth.Truncate(symbol, 8, ""),
-				"-",
-				"-",
-				"-",
-				"-",
-				"-",
-				"pending",
+				mutedStyle.Render("-"),
+				mutedStyle.Render("-"),
+				mutedStyle.Render("-"),
+				mutedStyle.Render("-"),
+				mutedStyle.Render("-"),
+				mutedStyle.Render("pending"),
 			})
 			continue
 		}
-		change := "n/a"
+		change := mutedStyle.Render("n/a")
 		if prev, ok := m.prevLast[symbol]; ok && prev > 0 {
-			change = formatSignedPctPlain(((q.Last - prev) / prev) * 100)
+			changePct := ((q.Last - prev) / prev) * 100
+			raw := formatSignedPctPlain(changePct)
+			switch {
+			case changePct > 0:
+				change = positiveStyle.Render(raw)
+			case changePct < 0:
+				change = negativeStyle.Render(raw)
+			default:
+				change = mutedStyle.Render(raw)
+			}
 		}
-		state := "ok"
-		if !q.Time.IsZero() && time.Since(q.Time) > 15*time.Second {
-			state = "stale"
-		}
+		state := m.watchlistStateCell(symbol, q)
 		rows = append(rows, table.Row{
 			runewidth.Truncate(symbol, 8, ""),
 			fmt.Sprintf("%.2f", q.Last),
@@ -371,6 +409,18 @@ func (m Model) watchlistTableRows() []table.Row {
 		})
 	}
 	return rows
+}
+
+func (m Model) watchlistStateCell(symbol string, quote domain.Quote) string {
+	seenAt := m.quoteSeenAt[symbol]
+	switch {
+	case seenAt.IsZero() && quote.Time.IsZero():
+		return mutedStyle.Render("pending")
+	case !seenAt.IsZero() && time.Since(seenAt) > watchlistStateStaleAfter:
+		return warnStyle.Render("stale")
+	default:
+		return okStyle.Render("ok")
+	}
 }
 
 func formatSignedPctPlain(v float64) string {

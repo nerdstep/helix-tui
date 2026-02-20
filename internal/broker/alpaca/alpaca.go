@@ -3,12 +3,14 @@ package alpaca
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"time"
 
 	sdkalpaca "github.com/alpacahq/alpaca-trade-api-go/v3/alpaca"
 	"github.com/alpacahq/alpaca-trade-api-go/v3/marketdata"
+	"github.com/alpacahq/alpaca-trade-api-go/v3/marketdata/stream"
 	"github.com/shopspring/decimal"
 
 	"helix-tui/internal/domain"
@@ -19,6 +21,7 @@ const (
 	PaperAPIBase = "https://paper-api.alpaca.markets"
 	LiveAPIBase  = "https://api.alpaca.markets"
 	DataAPIBase  = "https://data.alpaca.markets"
+	DataWSBase   = "https://stream.data.alpaca.markets/v2"
 	EnvPaper     = "paper"
 	EnvLive      = "live"
 )
@@ -27,6 +30,9 @@ type Broker struct {
 	tradeClient *sdkalpaca.Client
 	dataClient  *marketdata.Client
 	feed        marketdata.Feed
+	apiKey      string
+	apiSecret   string
+	streamBase  string
 }
 
 type Config struct {
@@ -49,21 +55,26 @@ func New(cfg Config) *Broker {
 	if dataBaseURL == "" {
 		dataBaseURL = DataAPIBase
 	}
+	apiKey := strings.TrimSpace(cfg.APIKey)
+	apiSecret := strings.TrimSpace(cfg.APISecret)
 	feed := normalizeFeed(cfg.Feed)
 
 	return &Broker{
 		tradeClient: sdkalpaca.NewClient(sdkalpaca.ClientOpts{
 			BaseURL:   baseURL,
-			APIKey:    cfg.APIKey,
-			APISecret: cfg.APISecret,
+			APIKey:    apiKey,
+			APISecret: apiSecret,
 		}),
 		dataClient: marketdata.NewClient(marketdata.ClientOpts{
 			BaseURL:   dataBaseURL,
-			APIKey:    cfg.APIKey,
-			APISecret: cfg.APISecret,
+			APIKey:    apiKey,
+			APISecret: apiSecret,
 			Feed:      feed,
 		}),
-		feed: feed,
+		feed:       feed,
+		apiKey:     apiKey,
+		apiSecret:  apiSecret,
+		streamBase: stockStreamBaseURL(dataBaseURL),
 	}
 }
 
@@ -269,6 +280,58 @@ func (b *Broker) StreamTradeUpdates(ctx context.Context) (<-chan domain.TradeUpd
 	return out, nil
 }
 
+func (b *Broker) StreamQuotes(ctx context.Context, symbols []string) (<-chan domain.Quote, <-chan error, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	normalized := normalizeSymbols(symbols)
+	quotes := make(chan domain.Quote, 1024)
+	errs := make(chan error, 16)
+	if len(normalized) == 0 {
+		close(quotes)
+		close(errs)
+		return quotes, errs, nil
+	}
+
+	client := stream.NewStocksClient(
+		b.feed,
+		stream.WithCredentials(b.apiKey, b.apiSecret),
+		stream.WithBaseURL(b.streamBase),
+		stream.WithReconnectSettings(0, 250*time.Millisecond),
+		stream.WithQuotes(func(q stream.Quote) {
+			dq := toDomainStreamQuote(q)
+			select {
+			case <-ctx.Done():
+				return
+			case quotes <- dq:
+			default:
+			}
+		}, normalized...),
+	)
+
+	go func() {
+		defer close(quotes)
+		defer close(errs)
+		if err := client.Connect(ctx); err != nil {
+			if ctx.Err() == nil {
+				errs <- fmt.Errorf("connect quote stream: %w", err)
+			}
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case err, ok := <-client.Terminated():
+			if !ok || err == nil || ctx.Err() != nil {
+				return
+			}
+			errs <- fmt.Errorf("quote stream terminated: %w", err)
+		}
+	}()
+	return quotes, errs, nil
+}
+
 func (b *Broker) GetWatchlistSymbols(name string) ([]string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -344,6 +407,24 @@ func toDomainTradeUpdate(u sdkalpaca.TradeUpdate) domain.TradeUpdate {
 		FillQty:   u.Order.FilledQty.InexactFloat64(),
 		FillPrice: fillPrice,
 		Time:      nonZeroTime(u.At, time.Now().UTC()),
+	}
+}
+
+func toDomainStreamQuote(q stream.Quote) domain.Quote {
+	last := 0.0
+	if q.BidPrice > 0 && q.AskPrice > 0 {
+		last = (q.BidPrice + q.AskPrice) / 2
+	} else if q.AskPrice > 0 {
+		last = q.AskPrice
+	} else {
+		last = q.BidPrice
+	}
+	return domain.Quote{
+		Symbol: strings.ToUpper(strings.TrimSpace(q.Symbol)),
+		Bid:    q.BidPrice,
+		Ask:    q.AskPrice,
+		Last:   last,
+		Time:   q.Timestamp,
 	}
 }
 
@@ -445,6 +526,34 @@ func normalizeFeed(raw string) marketdata.Feed {
 	default:
 		return marketdata.IEX
 	}
+}
+
+func stockStreamBaseURL(dataBaseURL string) string {
+	dataBaseURL = strings.TrimSpace(dataBaseURL)
+	if dataBaseURL == "" {
+		return DataWSBase
+	}
+	parsed, err := url.Parse(dataBaseURL)
+	if err != nil || strings.TrimSpace(parsed.Host) == "" {
+		return DataWSBase
+	}
+	host := parsed.Host
+	lowerHost := strings.ToLower(host)
+	switch {
+	case strings.HasPrefix(lowerHost, "stream.data."):
+	case strings.HasPrefix(lowerHost, "data."):
+		host = "stream." + host
+	default:
+	}
+	parsed.Host = host
+	parsed.Path = "/v2"
+	parsed.RawPath = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	if parsed.Scheme == "" {
+		parsed.Scheme = "https"
+	}
+	return strings.TrimRight(parsed.String(), "/")
 }
 
 func normalizeSymbols(raw []string) []string {

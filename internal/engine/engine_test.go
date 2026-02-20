@@ -346,6 +346,72 @@ func TestSnapshot_TrimsEventsAndSortsPositions(t *testing.T) {
 	}
 }
 
+func TestGetQuote_UsesCacheAndUpsert(t *testing.T) {
+	b := &engineStubBroker{
+		quotes: map[string]domain.Quote{
+			"AAPL": {Symbol: "AAPL", Last: 100, Time: time.Now().UTC()},
+		},
+	}
+	e := New(b, NewRiskGate(Policy{AllowMarketOrders: true}))
+
+	q1, err := e.GetQuote(context.Background(), "aapl")
+	if err != nil {
+		t.Fatalf("GetQuote failed: %v", err)
+	}
+	if q1.Symbol != "AAPL" || q1.Last != 100 {
+		t.Fatalf("unexpected first quote: %#v", q1)
+	}
+	if b.quoteCalls != 1 {
+		t.Fatalf("expected first call to hit broker, got %d", b.quoteCalls)
+	}
+
+	b.quotes["AAPL"] = domain.Quote{Symbol: "AAPL", Last: 101, Time: time.Now().UTC()}
+	q2, err := e.GetQuote(context.Background(), "AAPL")
+	if err != nil {
+		t.Fatalf("GetQuote failed: %v", err)
+	}
+	if q2.Last != 100 {
+		t.Fatalf("expected cached quote last=100, got %#v", q2)
+	}
+	if b.quoteCalls != 1 {
+		t.Fatalf("expected cached quote to avoid broker call, got %d", b.quoteCalls)
+	}
+
+	e.UpsertQuote(domain.Quote{Symbol: "aapl", Last: 102, Time: time.Now().UTC()})
+	q3, err := e.GetQuote(context.Background(), "AAPL")
+	if err != nil {
+		t.Fatalf("GetQuote failed: %v", err)
+	}
+	if q3.Last != 102 {
+		t.Fatalf("expected upserted quote last=102, got %#v", q3)
+	}
+	if b.quoteCalls != 1 {
+		t.Fatalf("expected no extra broker calls after upsert, got %d", b.quoteCalls)
+	}
+}
+
+func TestGetQuote_StaleCacheFallsBackToBroker(t *testing.T) {
+	b := &engineStubBroker{
+		quotes: map[string]domain.Quote{
+			"AAPL": {Symbol: "AAPL", Last: 101, Time: time.Now().UTC()},
+		},
+	}
+	e := New(b, NewRiskGate(Policy{AllowMarketOrders: true}))
+	e.UpsertQuote(domain.Quote{Symbol: "AAPL", Last: 100, Time: time.Now().UTC()})
+	e.quoteSeen["AAPL"] = time.Now().UTC().Add(-(cachedQuoteFreshFor + 100*time.Millisecond))
+
+	q, err := e.GetQuote(context.Background(), "AAPL")
+	if err != nil {
+		t.Fatalf("GetQuote failed: %v", err)
+	}
+	if q.Last != 101 {
+		t.Fatalf("expected broker quote to replace stale cache, got %#v", q)
+	}
+	if b.quoteCalls != 1 {
+		t.Fatalf("expected broker to be called once, got %d", b.quoteCalls)
+	}
+}
+
 type engineStubBroker struct {
 	account      domain.Account
 	positions    []domain.Position
@@ -359,6 +425,7 @@ type engineStubBroker struct {
 	cancelErr    error
 	streamErr    error
 	streamCh     chan domain.TradeUpdate
+	quoteCalls   int
 
 	placedRequests []domain.OrderRequest
 }
@@ -389,6 +456,7 @@ func (b *engineStubBroker) GetOpenOrders(context.Context) ([]domain.Order, error
 }
 
 func (b *engineStubBroker) GetQuote(_ context.Context, symbol string) (domain.Quote, error) {
+	b.quoteCalls++
 	if err := b.quoteErr[symbol]; err != nil {
 		return domain.Quote{}, err
 	}

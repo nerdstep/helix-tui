@@ -11,6 +11,7 @@ flowchart LR
     TUI[internal/tui]
     RUNNER[autonomy.Runner]
     CTX[Decision Context Gate<br/>hash + change detection]
+    QSC[runtime quote stream controller]
     AGENT[agent/heuristic.Agent]
     ENGINE[engine.Engine]
     RISK[engine.RiskGate]
@@ -27,10 +28,13 @@ flowchart LR
     APP --> ENGINE
     APP --> TUI
     APP --> RUNNER
+    APP --> QSC
     RUNNER --> CTX
     CTX --> AGENT
     AGENT --> ENGINE
     TUI --> ENGINE
+    QSC --> ENGINE
+    QSC --> ABRK
     ENGINE --> RISK
     ENGINE --> AB
     AB --> PBRK
@@ -82,6 +86,28 @@ sequenceDiagram
         R-->>E: policy violation
         E-->>T: agent_intent_rejected / error event
     end
+```
+
+## Quote Data Flow
+
+```mermaid
+sequenceDiagram
+    participant W as Runtime
+    participant Q as Quote Stream Controller
+    participant E as Engine quote cache
+    participant B as Alpaca Broker
+    participant S as Alpaca WS feed
+    participant R as Runner/TUI
+
+    W->>Q: Start with watchlist symbols
+    Q->>B: StreamQuotes(symbols)
+    B->>S: Subscribe quotes via websocket
+    S-->>B: Quote updates
+    B-->>Q: domain.Quote channel
+    Q->>E: UpsertQuote(quote)
+    R->>E: GetQuote(symbol)
+    E-->>R: Fresh cached quote (fallback to REST when stale/missing)
+    Q->>Q: On watchlist change: cancel + resubscribe
 ```
 
 ## Autonomous Decision Loop

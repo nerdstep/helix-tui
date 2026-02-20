@@ -56,6 +56,7 @@ type System struct {
 	Watchlist          []string
 	PullWatchlist      func() ([]string, error)
 	SyncWatchlist      func([]string) error
+	QuoteStreamer      domain.QuoteStreamer
 	DefaultBrokerLabel string
 }
 
@@ -113,6 +114,7 @@ func NewSystem(cfg Config) (*System, error) {
 	system := &System{
 		Engine:             e,
 		Watchlist:          watchlist,
+		QuoteStreamer:      brokerSpec.quoteStreamer,
 		DefaultBrokerLabel: brokerSpec.label,
 	}
 	system.PullWatchlist, system.SyncWatchlist = buildWatchlistHandlers(brokerSpec.watchlistSyncBroker)

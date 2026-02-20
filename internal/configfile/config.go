@@ -71,6 +71,7 @@ type LLMConfig struct {
 	Model        string        `koanf:"model"`
 	Timeout      time.Duration `koanf:"timeout"`
 	SystemPrompt string        `koanf:"system_prompt"`
+	ContextLog   string        `koanf:"context_log"`
 }
 
 type Logging struct {
@@ -123,6 +124,7 @@ func Default() Config {
 				Model:        d.LLMModel,
 				Timeout:      d.LLMTimeout,
 				SystemPrompt: d.LLMSystemPrompt,
+				ContextLog:   d.LLMContextLog,
 			},
 		},
 		Logging: Logging{
@@ -171,6 +173,7 @@ func (c Config) ToAppConfig() app.Config {
 		LLMModel:            c.Agent.LLM.Model,
 		LLMTimeout:          c.Agent.LLM.Timeout,
 		LLMSystemPrompt:     c.Agent.LLM.SystemPrompt,
+		LLMContextLog:       c.Agent.LLM.ContextLog,
 	}
 }
 
@@ -194,6 +197,7 @@ func (c *Config) Normalize() {
 	c.Agent.LLM.BaseURL = strings.TrimSpace(c.Agent.LLM.BaseURL)
 	c.Agent.LLM.Model = strings.TrimSpace(c.Agent.LLM.Model)
 	c.Agent.LLM.SystemPrompt = strings.TrimSpace(c.Agent.LLM.SystemPrompt)
+	c.Agent.LLM.ContextLog = strings.ToLower(strings.TrimSpace(c.Agent.LLM.ContextLog))
 
 	c.Logging.File = strings.TrimSpace(c.Logging.File)
 	c.Logging.Mode = strings.ToLower(strings.TrimSpace(c.Logging.Mode))

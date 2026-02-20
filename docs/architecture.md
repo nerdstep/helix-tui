@@ -10,6 +10,7 @@ flowchart LR
     APP[internal/app.NewSystem]
     TUI[internal/tui]
     RUNNER[autonomy.Runner]
+    CTX[Decision Context Gate<br/>hash + change detection]
     AGENT[agent/heuristic.Agent]
     ENGINE[engine.Engine]
     RISK[engine.RiskGate]
@@ -26,7 +27,8 @@ flowchart LR
     APP --> ENGINE
     APP --> TUI
     APP --> RUNNER
-    RUNNER --> AGENT
+    RUNNER --> CTX
+    CTX --> AGENT
     AGENT --> ENGINE
     TUI --> ENGINE
     ENGINE --> RISK
@@ -53,7 +55,14 @@ sequenceDiagram
         Op->>T: buy/sell command
         T->>E: PlaceOrder(request)
     else Autonomous Cycle
-        A->>E: ExecuteIntent(intent)
+        A->>E: Sync snapshot + quotes
+        A->>A: Build context hash
+        alt Context changed (or force window reached)
+            A->>A: Invoke agent
+            A->>E: ExecuteIntent(intent)
+        else Context unchanged
+            A->>E: Record skip event
+        end
     end
 
     E->>B: GetQuote(symbol)
@@ -73,6 +82,27 @@ sequenceDiagram
         R-->>E: policy violation
         E-->>T: agent_intent_rejected / error event
     end
+```
+
+## Autonomous Decision Loop
+
+```mermaid
+flowchart TD
+    TICK[Interval tick]
+    SYNC[Engine.SyncQuiet]
+    BUILD[Build decision context<br/>watchlist/account/positions/orders/quotes]
+    HASH[Hash context]
+    CHANGED{Changed since last successful<br/>agent call?}
+    FORCE{Force refresh window reached?}
+    CALL[Invoke agent ProposeTrades]
+    SKIP[Skip agent call<br/>emit agent_context_unchanged]
+    EXEC[Risk-gated execution path]
+
+    TICK --> SYNC --> BUILD --> HASH --> CHANGED
+    CHANGED -->|Yes| CALL --> EXEC
+    CHANGED -->|No| FORCE
+    FORCE -->|Yes| CALL --> EXEC
+    FORCE -->|No| SKIP
 ```
 
 ## Watchlist Flow

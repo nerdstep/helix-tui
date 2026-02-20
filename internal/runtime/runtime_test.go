@@ -106,6 +106,7 @@ func TestNormalizeAndValidateConfig(t *testing.T) {
 	cfg.Mode = " AUTO "
 	cfg.Agent.Type = " LLM "
 	cfg.Agent.Watchlist = []string{"tsla", " TSLA ", "nvda"}
+	cfg.Agent.LLM.ContextLog = " SUMMARY "
 	cfg.Logging.Mode = " APPEND "
 	cfg.Logging.Level = " DEBUG "
 
@@ -126,6 +127,9 @@ func TestNormalizeAndValidateConfig(t *testing.T) {
 	}
 	if got := strings.Join(cfg.Agent.Watchlist, ","); got != "TSLA,NVDA" {
 		t.Fatalf("unexpected watchlist: %q", got)
+	}
+	if cfg.Agent.LLM.ContextLog != "summary" {
+		t.Fatalf("unexpected context log mode: %q", cfg.Agent.LLM.ContextLog)
 	}
 }
 
@@ -150,6 +154,14 @@ func TestNormalizeAndValidateConfig_InvalidMinGainPct(t *testing.T) {
 	cfg.Agent.MinGainPct = -1
 	if err := normalizeAndValidateConfig(&cfg); err == nil {
 		t.Fatalf("expected invalid min gain pct error")
+	}
+}
+
+func TestNormalizeAndValidateConfig_InvalidLLMContextLog(t *testing.T) {
+	cfg := configfile.Default()
+	cfg.Agent.LLM.ContextLog = "verbose"
+	if err := normalizeAndValidateConfig(&cfg); err == nil {
+		t.Fatalf("expected invalid llm context log error")
 	}
 }
 

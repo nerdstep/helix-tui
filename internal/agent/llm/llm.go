@@ -82,13 +82,25 @@ func (a *Agent) ProposeTrades(ctx context.Context, input domain.AgentInput) ([]d
 		watchlist = watchlist[:a.maxWatchlist]
 	}
 
-	quotes := make([]quoteInput, 0, len(watchlist))
-	quoteErrors := make([]string, 0)
-	for _, symbol := range watchlist {
-		q, err := a.broker.GetQuote(ctx, symbol)
-		if err != nil {
-			quoteErrors = append(quoteErrors, fmt.Sprintf("%s: %v", symbol, err))
+	quotesBySymbol := make(map[string]domain.Quote, len(input.Quotes))
+	for _, q := range input.Quotes {
+		symbol := strings.ToUpper(strings.TrimSpace(q.Symbol))
+		if symbol == "" {
 			continue
+		}
+		quotesBySymbol[symbol] = q
+	}
+	quotes := make([]quoteInput, 0, len(watchlist))
+	quoteErrors := append([]string{}, input.QuoteErrors...)
+	for _, symbol := range watchlist {
+		q, ok := quotesBySymbol[symbol]
+		if !ok {
+			var err error
+			q, err = a.broker.GetQuote(ctx, symbol)
+			if err != nil {
+				quoteErrors = append(quoteErrors, fmt.Sprintf("%s: %v", symbol, err))
+				continue
+			}
 		}
 		quotes = append(quotes, quoteInput{
 			Symbol: q.Symbol,
@@ -129,11 +141,12 @@ func (a *Agent) ProposeTrades(ctx context.Context, input domain.AgentInput) ([]d
 
 const defaultSystemPrompt = "You are a conservative US equities trading research assistant. "
 
-const forcedJSONInstruction = "Use only the provided JSON context. " +
-	"Return strict JSON: {\"intents\":[{\"symbol\":\"AAPL\",\"side\":\"buy|sell\",\"qty\":1.0,\"order_type\":\"market|limit\",\"limit_price\":123.45,\"confidence\":0.0,\"expected_gain_pct\":1.5,\"rationale\":\"...\"}]}. " +
+const forcedJSONInstruction = "Return strict JSON: {\"intents\":[{\"symbol\":\"AAPL\",\"side\":\"buy|sell\",\"qty\":1.0,\"order_type\":\"market|limit\",\"limit_price\":123.45,\"confidence\":0.0,\"expected_gain_pct\":1.5,\"rationale\":\"...\"}]}. " +
 	"Include expected_gain_pct for every intent. " +
 	"Avoid dust-sized orders when possible. " +
-	"Only propose watchlist symbols. Keep qty positive. Return {\"intents\":[]} when uncertain."
+	"Keep rationale concise and tied to the provided quote and position data." +
+	"Only propose watchlist symbols. Keep qty positive. " +
+	"Return {\"intents\":[]} when uncertain."
 
 type llmInput struct {
 	GeneratedAt  string            `json:"generated_at"`

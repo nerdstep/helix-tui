@@ -2,7 +2,11 @@ package autonomy
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -28,7 +32,20 @@ type Runner struct {
 	heartbeatInterval    time.Duration
 	heartbeatWindowStart time.Time
 	heartbeat            heartbeatStats
+
+	lastDecisionHash string
+	lastDecisionAt   time.Time
+	forceInvokeAfter time.Duration
+	contextLogMode   contextLogMode
 }
+
+type contextLogMode string
+
+const (
+	contextLogOff     contextLogMode = "off"
+	contextLogSummary contextLogMode = "summary"
+	contextLogFull    contextLogMode = "full"
+)
 
 type heartbeatStats struct {
 	cycles         int
@@ -67,6 +84,7 @@ func NewRunner(
 	maxPerCycle int,
 	minGainPct float64,
 	dryRun bool,
+	contextLog string,
 ) *Runner {
 	if interval <= 0 {
 		interval = 10 * time.Second
@@ -95,6 +113,8 @@ func NewRunner(
 		minGainPct:        minGainPct,
 		dryRun:            dryRun,
 		heartbeatInterval: heartbeatIntervalForCycle(interval),
+		forceInvokeAfter:  forceInvokeAfterForCycle(interval),
+		contextLogMode:    normalizedContextLogMode(contextLog),
 	}
 }
 
@@ -137,14 +157,42 @@ func (r *Runner) runCycle(ctx context.Context) error {
 	}
 
 	snapshot := r.engine.Snapshot()
-	intents, err := r.agent.ProposeTrades(ctx, domain.AgentInput{
-		Mode:      r.mode,
-		Watchlist: watchlist,
-		Snapshot:  snapshot,
-	})
+	quotes, quoteErrors := r.collectQuotes(syncCtx, watchlist)
+	input := domain.AgentInput{
+		Mode:        r.mode,
+		Watchlist:   watchlist,
+		Snapshot:    snapshot,
+		Quotes:      quotes,
+		QuoteErrors: quoteErrors,
+	}
+	contextHash, payloadBytes, err := hashDecisionContext(input)
+	if err != nil {
+		return fmt.Errorf("hash decision context: %w", err)
+	}
+	if r.shouldSkipAgentCall(contextHash, cycleStartedAt) {
+		r.logContext(input, contextHash, payloadBytes, false)
+		r.engine.AddEvent(
+			"agent_context_unchanged",
+			fmt.Sprintf(
+				"hash=%s age=%s force_after=%s",
+				shortHash(contextHash),
+				time.Since(r.lastDecisionAt).Round(time.Second),
+				r.forceInvokeAfter.Round(time.Second),
+			),
+		)
+		r.engine.AddEvent("agent_cycle_complete", "generated=0 attempted=0 executed=0 rejected=0 approvals=0 dry_run=0 skipped=0 reason=context_unchanged")
+		r.recordHeartbeat(0, 0, 0, 0, 0, 0, 0)
+		return nil
+	}
+	r.logContext(input, contextHash, payloadBytes, true)
+	r.engine.AddEvent("agent_context_changed", fmt.Sprintf("hash=%s", shortHash(contextHash)))
+
+	intents, err := r.agent.ProposeTrades(ctx, input)
 	if err != nil {
 		return fmt.Errorf("propose trades: %w", err)
 	}
+	r.lastDecisionHash = contextHash
+	r.lastDecisionAt = cycleStartedAt
 	proposalLatencyMs := time.Since(cycleStartedAt).Milliseconds()
 	generated := len(intents)
 	r.engine.AddEvent(
@@ -276,6 +324,142 @@ func summarizeIntent(i domain.TradeIntent) string {
 	)
 }
 
+type decisionContextDigest struct {
+	Mode        domain.Mode          `json:"mode"`
+	Watchlist   []string             `json:"watchlist"`
+	Account     domain.Account       `json:"account"`
+	Positions   []domain.Position    `json:"positions"`
+	OpenOrders  []decisionOrderInput `json:"open_orders"`
+	Quotes      []domain.Quote       `json:"quotes"`
+	QuoteErrors []string             `json:"quote_errors"`
+}
+
+type decisionOrderInput struct {
+	Symbol string             `json:"symbol"`
+	Side   domain.Side        `json:"side"`
+	Qty    float64            `json:"qty"`
+	Status domain.OrderStatus `json:"status"`
+	Type   domain.OrderType   `json:"type"`
+}
+
+func hashDecisionContext(input domain.AgentInput) (string, int, error) {
+	digest := decisionContextDigest{
+		Mode:        input.Mode,
+		Watchlist:   append([]string{}, input.Watchlist...),
+		Account:     input.Snapshot.Account,
+		Positions:   append([]domain.Position{}, input.Snapshot.Positions...),
+		OpenOrders:  make([]decisionOrderInput, 0, len(input.Snapshot.Orders)),
+		Quotes:      append([]domain.Quote{}, input.Quotes...),
+		QuoteErrors: append([]string{}, input.QuoteErrors...),
+	}
+	for _, o := range input.Snapshot.Orders {
+		digest.OpenOrders = append(digest.OpenOrders, decisionOrderInput{
+			Symbol: strings.ToUpper(strings.TrimSpace(o.Symbol)),
+			Side:   o.Side,
+			Qty:    o.Qty,
+			Status: o.Status,
+			Type:   o.Type,
+		})
+	}
+	sort.Strings(digest.Watchlist)
+	sort.Slice(digest.Positions, func(i, j int) bool {
+		return digest.Positions[i].Symbol < digest.Positions[j].Symbol
+	})
+	sort.Slice(digest.OpenOrders, func(i, j int) bool {
+		if digest.OpenOrders[i].Symbol == digest.OpenOrders[j].Symbol {
+			if digest.OpenOrders[i].Side == digest.OpenOrders[j].Side {
+				return digest.OpenOrders[i].Qty < digest.OpenOrders[j].Qty
+			}
+			return digest.OpenOrders[i].Side < digest.OpenOrders[j].Side
+		}
+		return digest.OpenOrders[i].Symbol < digest.OpenOrders[j].Symbol
+	})
+	sort.Slice(digest.Quotes, func(i, j int) bool {
+		return digest.Quotes[i].Symbol < digest.Quotes[j].Symbol
+	})
+	sort.Strings(digest.QuoteErrors)
+
+	payload, err := json.Marshal(digest)
+	if err != nil {
+		return "", 0, err
+	}
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:]), len(payload), nil
+}
+
+func (r *Runner) collectQuotes(ctx context.Context, watchlist []string) ([]domain.Quote, []string) {
+	quotes := make([]domain.Quote, 0, len(watchlist))
+	quoteErrors := make([]string, 0)
+	for _, symbol := range watchlist {
+		q, err := r.engine.GetQuote(ctx, symbol)
+		if err != nil {
+			quoteErrors = append(quoteErrors, fmt.Sprintf("%s: %v", symbol, err))
+			continue
+		}
+		quotes = append(quotes, q)
+	}
+	return quotes, quoteErrors
+}
+
+func (r *Runner) shouldSkipAgentCall(contextHash string, now time.Time) bool {
+	if contextHash == "" {
+		return false
+	}
+	if r.lastDecisionHash == "" {
+		return false
+	}
+	if r.lastDecisionHash != contextHash {
+		return false
+	}
+	if r.forceInvokeAfter <= 0 {
+		return true
+	}
+	if r.lastDecisionAt.IsZero() {
+		return false
+	}
+	return now.Sub(r.lastDecisionAt) < r.forceInvokeAfter
+}
+
+func (r *Runner) logContext(input domain.AgentInput, contextHash string, payloadBytes int, changed bool) {
+	if r.contextLogMode == contextLogOff {
+		return
+	}
+	action := "unchanged"
+	if changed {
+		action = "changed"
+	}
+	r.engine.AddEvent(
+		"agent_context_summary",
+		fmt.Sprintf(
+			"hash=%s action=%s payload_bytes=%d watchlist=%d positions=%d open_orders=%d quotes=%d quote_errors=%d",
+			shortHash(contextHash),
+			action,
+			payloadBytes,
+			len(input.Watchlist),
+			len(input.Snapshot.Positions),
+			len(input.Snapshot.Orders),
+			len(input.Quotes),
+			len(input.QuoteErrors),
+		),
+	)
+	if r.contextLogMode != contextLogFull {
+		return
+	}
+	payload, err := json.Marshal(input)
+	if err != nil {
+		r.engine.AddEvent("agent_context_payload_error", err.Error())
+		return
+	}
+	r.engine.AddEvent("agent_context_payload", string(payload))
+}
+
+func shortHash(s string) string {
+	if len(s) <= 12 {
+		return s
+	}
+	return s[:12]
+}
+
 func heartbeatIntervalForCycle(cycleInterval time.Duration) time.Duration {
 	const minHeartbeat = 30 * time.Second
 	derived := cycleInterval * 6
@@ -283,6 +467,28 @@ func heartbeatIntervalForCycle(cycleInterval time.Duration) time.Duration {
 		return derived
 	}
 	return minHeartbeat
+}
+
+func forceInvokeAfterForCycle(cycleInterval time.Duration) time.Duration {
+	const minForceInvoke = 2 * time.Minute
+	derived := cycleInterval * 12
+	if derived > minForceInvoke {
+		return derived
+	}
+	return minForceInvoke
+}
+
+func normalizedContextLogMode(raw string) contextLogMode {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", string(contextLogOff):
+		return contextLogOff
+	case string(contextLogSummary):
+		return contextLogSummary
+	case string(contextLogFull):
+		return contextLogFull
+	default:
+		return contextLogOff
+	}
 }
 
 func (r *Runner) recordHeartbeat(proposalLatencyMs int64, generated, executed, rejected, approvals, dryRun, skipped int) {

@@ -161,6 +161,7 @@ func buildRunner(cfg Config, broker domain.Broker, e *engine.Engine, watchlist [
 		cfg.MaxAgentIntents,
 		cfg.AgentMinGainPct,
 		cfg.AgentDryRun,
+		contextLogModeForAgent(cfg, agentType),
 	)
 	return runner, mode, agentType, nil
 }
@@ -206,4 +207,11 @@ func normalizeAgentType(raw string) string {
 	default:
 		return strings.ToLower(strings.TrimSpace(raw))
 	}
+}
+
+func contextLogModeForAgent(cfg Config, agentType string) string {
+	if agentType != "llm" {
+		return "off"
+	}
+	return cfg.LLMContextLog
 }

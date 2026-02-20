@@ -47,6 +47,7 @@ type Config struct {
 	LLMModel            string
 	LLMTimeout          time.Duration
 	LLMSystemPrompt     string
+	LLMContextLog       string
 }
 
 type System struct {
@@ -87,6 +88,7 @@ func DefaultConfig() Config {
 		LLMBaseURL:          "https://api.openai.com/v1",
 		LLMModel:            "gpt-4.1-mini",
 		LLMTimeout:          20 * time.Second,
+		LLMContextLog:       "off",
 	}
 }
 

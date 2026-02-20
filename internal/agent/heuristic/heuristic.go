@@ -49,6 +49,15 @@ func (a *Agent) ProposeTrades(ctx context.Context, input domain.AgentInput) ([]d
 		}
 	}
 
+	quotesBySymbol := make(map[string]domain.Quote, len(input.Quotes))
+	for _, q := range input.Quotes {
+		symbol := strings.ToUpper(strings.TrimSpace(q.Symbol))
+		if symbol == "" {
+			continue
+		}
+		quotesBySymbol[symbol] = q
+	}
+
 	type scoredIntent struct {
 		intent domain.TradeIntent
 		score  float64
@@ -69,9 +78,13 @@ func (a *Agent) ProposeTrades(ctx context.Context, input domain.AgentInput) ([]d
 			continue
 		}
 
-		quote, err := a.broker.GetQuote(ctx, symbol)
-		if err != nil {
-			continue
+		quote, ok := quotesBySymbol[symbol]
+		if !ok {
+			q, err := a.broker.GetQuote(ctx, symbol)
+			if err != nil {
+				continue
+			}
+			quote = q
 		}
 		if quote.Last <= 0 {
 			continue

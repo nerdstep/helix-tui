@@ -54,6 +54,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.LLMModel == "" || cfg.LLMBaseURL == "" || cfg.LLMTimeout <= 0 {
 		t.Fatalf("unexpected llm defaults: model=%q base=%q timeout=%s", cfg.LLMModel, cfg.LLMBaseURL, cfg.LLMTimeout)
 	}
+	if cfg.LLMContextLog != "off" {
+		t.Fatalf("unexpected llm context log default: %q", cfg.LLMContextLog)
+	}
 }
 
 func TestNewSystem_PaperManual(t *testing.T) {

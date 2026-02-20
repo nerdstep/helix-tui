@@ -13,7 +13,7 @@ import (
 )
 
 func TestNewRunnerDefaults(t *testing.T) {
-	r := NewRunner(nil, nil, domain.ModeAuto, nil, 0, 0, 0, 0, 0, false)
+	r := NewRunner(nil, nil, domain.ModeAuto, nil, 0, 0, 0, 0, 0, false, "")
 	if r.interval != 10*time.Second {
 		t.Fatalf("unexpected default interval: %s", r.interval)
 	}
@@ -263,6 +263,58 @@ func TestRunCycle_ProposeError(t *testing.T) {
 	}
 }
 
+func TestRunCycle_SkipsWhenContextUnchanged(t *testing.T) {
+	r, _ := newRunnerTestHarness(domain.ModeAuto, false)
+	agent := &fakeAgent{}
+	r.agent = agent
+	r.forceInvokeAfter = time.Minute
+
+	if err := r.runCycle(context.Background()); err != nil {
+		t.Fatalf("first runCycle failed: %v", err)
+	}
+	r.lastDecisionAt = r.lastDecisionAt.Add(-time.Second)
+	if err := r.runCycle(context.Background()); err != nil {
+		t.Fatalf("second runCycle failed: %v", err)
+	}
+	if agent.calls != 1 {
+		t.Fatalf("expected second cycle to skip propose call, got %d calls", agent.calls)
+	}
+	if !hasEventType(r.engine.Snapshot().Events, "agent_context_unchanged") {
+		t.Fatalf("expected agent_context_unchanged event")
+	}
+}
+
+func TestRunCycle_ForceInvokesAfterWindow(t *testing.T) {
+	r, _ := newRunnerTestHarness(domain.ModeAuto, false)
+	agent := &fakeAgent{}
+	r.agent = agent
+	r.forceInvokeAfter = time.Nanosecond
+
+	if err := r.runCycle(context.Background()); err != nil {
+		t.Fatalf("first runCycle failed: %v", err)
+	}
+	r.lastDecisionAt = r.lastDecisionAt.Add(-time.Second)
+	if err := r.runCycle(context.Background()); err != nil {
+		t.Fatalf("second runCycle failed: %v", err)
+	}
+	if agent.calls != 2 {
+		t.Fatalf("expected force window to trigger second propose call, got %d calls", agent.calls)
+	}
+}
+
+func TestRunCycle_ContextSummaryLog(t *testing.T) {
+	r, _ := newRunnerTestHarness(domain.ModeAuto, false)
+	r.agent = &fakeAgent{}
+	r.contextLogMode = contextLogSummary
+
+	if err := r.runCycle(context.Background()); err != nil {
+		t.Fatalf("runCycle failed: %v", err)
+	}
+	if !hasEventType(r.engine.Snapshot().Events, "agent_context_summary") {
+		t.Fatalf("expected agent_context_summary event")
+	}
+}
+
 func TestSetWatchlist(t *testing.T) {
 	r, _ := newRunnerTestHarness(domain.ModeAuto, false)
 	r.SetWatchlist([]string{"aapl", " AAPL ", "msft"})
@@ -327,6 +379,7 @@ func newRunnerTestHarness(mode domain.Mode, dryRun bool) (*Runner, *fakeBroker) 
 		2,
 		0,
 		dryRun,
+		"",
 	)
 	return r, b
 }

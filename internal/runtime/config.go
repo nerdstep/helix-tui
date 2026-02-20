@@ -66,5 +66,10 @@ func validateConfig(cfg configfile.Config) error {
 	if cfg.Agent.MinGainPct < 0 {
 		return fmt.Errorf("agent.min_gain_pct must be >= 0")
 	}
+	switch cfg.Agent.LLM.ContextLog {
+	case "", "off", "summary", "full":
+	default:
+		return fmt.Errorf("agent.llm.context_log must be one of off|summary|full")
+	}
 	return nil
 }

@@ -26,6 +26,9 @@ func TestDefaultAndToAppConfig(t *testing.T) {
 	if appCfg.LLMTimeout != cfg.Agent.LLM.Timeout {
 		t.Fatalf("llm timeout mismatch: app=%s cfg=%s", appCfg.LLMTimeout, cfg.Agent.LLM.Timeout)
 	}
+	if appCfg.LLMContextLog != cfg.Agent.LLM.ContextLog {
+		t.Fatalf("llm context log mismatch: app=%q cfg=%q", appCfg.LLMContextLog, cfg.Agent.LLM.ContextLog)
+	}
 }
 
 func TestLoad_MissingOptionalFile(t *testing.T) {
@@ -95,6 +98,7 @@ base_url = "https://api.openai.com/v1"
 model = "gpt-4.1-mini"
 timeout = "30s"
 system_prompt = "be conservative"
+context_log = "summary"
 
 [logging]
 file = "logs/helix-debug.log"
@@ -174,6 +178,9 @@ path = "data/helix.db"
 	}
 	if cfg.Agent.LLM.SystemPrompt != "be conservative" {
 		t.Fatalf("unexpected llm system prompt: %q", cfg.Agent.LLM.SystemPrompt)
+	}
+	if cfg.Agent.LLM.ContextLog != "summary" {
+		t.Fatalf("unexpected llm context log mode: %q", cfg.Agent.LLM.ContextLog)
 	}
 	if cfg.Logging.File != "logs/helix-debug.log" {
 		t.Fatalf("unexpected log file: %q", cfg.Logging.File)

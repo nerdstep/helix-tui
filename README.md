@@ -60,6 +60,7 @@ The app can load runtime settings from a TOML file.
   - `[agent.llm].base_url`
   - `[agent.llm].model`
   - `[agent.llm].timeout`
+  - `[agent.llm].context_log` (`off|summary|full`)
   - `[agent.llm].system_prompt`
   - `[logging].file` (optional event log path)
   - `[logging].mode` (`append` or `truncate`)
@@ -158,6 +159,7 @@ go run ./cmd/helix \
 
 `[agent].dry_run` works with autonomous modes and logs intents without submitting orders.
 `[agent].min_gain_pct` enforces a minimum expected gain percent per intent (0 disables).
+Autonomous cycles run on the configured interval, but agent invocation is skipped when the decision context is unchanged (with periodic forced refresh).
 
 Agent implementations:
 
@@ -170,6 +172,7 @@ Agent tuning notes:
 - `[agent].move_pct`: heuristic agent only; absolute sampled price-move threshold (`0.01` = `1%`) before signaling.
 - LLM-specific TOML settings live under `[agent.llm]`.
 - `[agent.llm].system_prompt`: primary instruction channel for LLM behavior and goals.
+- `[agent.llm].context_log`: request-context logging for LLM mode (`summary` recommended for debugging, `full` emits full JSON payload events).
 
 ## Safety Defaults
 

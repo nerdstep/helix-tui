@@ -171,7 +171,7 @@ func newWatchlistTable() table.Model {
 func newPanelTableStyles() table.Styles {
 	styles := table.DefaultStyles()
 	styles.Header = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("159"))
-	styles.Cell = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	styles.Cell = lipgloss.NewStyle()
 	styles.Selected = lipgloss.NewStyle()
 	return styles
 }
@@ -225,8 +225,8 @@ func positionTableColumns(totalWidth int) []table.Column {
 }
 
 func orderTableColumns(totalWidth int) []table.Column {
-	minWidths := []int{2, 8, 4, 4, 5, 6}
-	targetWidths := []int{4, 16, 6, 8, 10, 12}
+	minWidths := []int{2, 9, 4, 4, 5, 6}
+	targetWidths := []int{4, 9, 6, 8, 10, 12}
 	widths := fitColumnWidths(totalWidth, minWidths, targetWidths)
 	return []table.Column{
 		{Title: "#", Width: widths[0]},
@@ -303,20 +303,11 @@ func columnWidthSum(widths []int) int {
 func positionTableRows(positions []domain.Position) []table.Row {
 	rows := make([]table.Row, 0, len(positions))
 	for _, p := range positions {
-		last := fmt.Sprintf("%.2f", p.LastPrice)
-		switch {
-		case p.AvgCost > 0 && p.LastPrice > p.AvgCost:
-			last = positiveStyle.Render(last)
-		case p.AvgCost > 0 && p.LastPrice < p.AvgCost:
-			last = negativeStyle.Render(last)
-		default:
-			last = mutedStyle.Render(last)
-		}
 		rows = append(rows, table.Row{
 			runewidth.Truncate(p.Symbol, 8, ""),
 			fmt.Sprintf("%.2f", p.Qty),
 			fmt.Sprintf("%.2f", p.AvgCost),
-			last,
+			fmt.Sprintf("%.2f", p.LastPrice),
 		})
 	}
 	return rows
@@ -325,32 +316,13 @@ func positionTableRows(positions []domain.Position) []table.Row {
 func orderTableRows(orders []domain.Order) []table.Row {
 	rows := make([]table.Row, 0, len(orders))
 	for i, o := range orders {
-		side := strings.ToUpper(string(o.Side))
-		if o.Side == domain.SideBuy {
-			side = positiveStyle.Render(side)
-		} else if o.Side == domain.SideSell {
-			side = negativeStyle.Render(side)
-		}
-
-		statusText := runewidth.Truncate(string(o.Status), 16, "")
-		switch o.Status {
-		case domain.OrderStatusFilled:
-			statusText = positiveStyle.Render(statusText)
-		case domain.OrderStatusRejected, domain.OrderStatusCanceled:
-			statusText = warnStyle.Render(statusText)
-		case domain.OrderStatusPartially:
-			statusText = lipgloss.NewStyle().Foreground(lipgloss.Color("111")).Render(statusText)
-		default:
-			statusText = mutedStyle.Render(statusText)
-		}
-
 		rows = append(rows, table.Row{
 			fmt.Sprintf("%d", i+1),
-			runewidth.Truncate(o.ID, 16, ""),
-			side,
+			runewidth.Truncate(o.ID, 8, ""),
+			strings.ToUpper(string(o.Side)),
 			runewidth.Truncate(o.Symbol, 8, ""),
 			fmt.Sprintf("%.2f", o.Qty),
-			statusText,
+			runewidth.Truncate(string(o.Status), 16, ""),
 		})
 	}
 	return rows
@@ -362,12 +334,12 @@ func (m Model) watchlistTableRows() []table.Row {
 		if errMsg, ok := m.quoteErr[symbol]; ok {
 			rows = append(rows, table.Row{
 				runewidth.Truncate(symbol, 8, ""),
-				mutedStyle.Render("-"),
-				mutedStyle.Render("-"),
-				mutedStyle.Render("-"),
-				mutedStyle.Render("-"),
-				mutedStyle.Render("-"),
-				errStyle.Render("error: " + runewidth.Truncate(errMsg, 24, "")),
+				"-",
+				"-",
+				"-",
+				"-",
+				"-",
+				"error: " + runewidth.Truncate(errMsg, 24, ""),
 			})
 			continue
 		}
@@ -375,27 +347,18 @@ func (m Model) watchlistTableRows() []table.Row {
 		if !ok {
 			rows = append(rows, table.Row{
 				runewidth.Truncate(symbol, 8, ""),
-				mutedStyle.Render("-"),
-				mutedStyle.Render("-"),
-				mutedStyle.Render("-"),
-				mutedStyle.Render("-"),
-				mutedStyle.Render("-"),
-				mutedStyle.Render("pending"),
+				"-",
+				"-",
+				"-",
+				"-",
+				"-",
+				"pending",
 			})
 			continue
 		}
-		change := mutedStyle.Render("n/a")
+		change := "n/a"
 		if prev, ok := m.prevLast[symbol]; ok && prev > 0 {
-			changePct := ((q.Last - prev) / prev) * 100
-			raw := formatSignedPctPlain(changePct)
-			switch {
-			case changePct > 0:
-				change = positiveStyle.Render(raw)
-			case changePct < 0:
-				change = negativeStyle.Render(raw)
-			default:
-				change = mutedStyle.Render(raw)
-			}
+			change = formatSignedPctPlain(((q.Last - prev) / prev) * 100)
 		}
 		state := m.watchlistStateCell(symbol, q)
 		rows = append(rows, table.Row{
@@ -415,14 +378,71 @@ func (m Model) watchlistStateCell(symbol string, quote domain.Quote) string {
 	seenAt := m.quoteSeenAt[symbol]
 	switch {
 	case seenAt.IsZero() && quote.Time.IsZero():
-		return mutedStyle.Render("pending")
+		return "pending"
 	case !seenAt.IsZero() && time.Since(seenAt) > watchlistStateStaleAfter:
-		return warnStyle.Render("stale")
+		return "stale"
 	default:
-		return okStyle.Render("ok")
+		return "ok"
 	}
 }
 
 func formatSignedPctPlain(v float64) string {
 	return fmt.Sprintf("%+.2f%%", v)
+}
+
+func colorizeTableColumns(view string, cols []table.Column, colorizers map[int]func(string) string) string {
+	if view == "" || len(cols) == 0 || len(colorizers) == 0 {
+		return view
+	}
+	widths := make([]int, 0, len(cols))
+	for _, c := range cols {
+		if c.Width > 0 {
+			widths = append(widths, c.Width)
+		}
+	}
+	if len(widths) == 0 {
+		return view
+	}
+
+	lines := strings.Split(view, "\n")
+	for i := 1; i < len(lines); i++ { // keep header untouched
+		line := lines[i]
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		segments := splitFixedWidthColumns(line, widths)
+		if len(segments) == 0 {
+			continue
+		}
+		for colIdx, colorize := range colorizers {
+			if colorize == nil || colIdx < 0 || colIdx >= len(segments) {
+				continue
+			}
+			segments[colIdx] = colorize(segments[colIdx])
+		}
+		lines[i] = strings.Join(segments, "")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func splitFixedWidthColumns(line string, widths []int) []string {
+	runes := []rune(line)
+	segments := make([]string, 0, len(widths))
+	pos := 0
+	for _, w := range widths {
+		if w <= 0 {
+			continue
+		}
+		if pos >= len(runes) {
+			segments = append(segments, "")
+			continue
+		}
+		end := pos + w
+		if end > len(runes) {
+			end = len(runes)
+		}
+		segments = append(segments, string(runes[pos:end]))
+		pos = end
+	}
+	return segments
 }

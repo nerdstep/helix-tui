@@ -53,6 +53,7 @@ func (m *Model) toggleTab() {
 
 func (m *Model) setActiveTab(tab uiTab) {
 	m.activeTab = tab
+	m.syncEventsViewport()
 	m.setStatus("tab: "+string(tab), false)
 }
 

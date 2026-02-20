@@ -3,6 +3,8 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -187,6 +189,118 @@ func TestProposeTradesIncludesRiskContextInPayload(t *testing.T) {
 	}
 }
 
+func TestRecentEventsForPromptFiltersAndLimits(t *testing.T) {
+	base := time.Date(2026, 2, 20, 15, 0, 0, 0, time.UTC)
+	events := []domain.Event{
+		{Time: base.Add(1 * time.Second), Type: "agent_cycle_start", Details: "mode=auto watchlist=3"},
+		{Time: base.Add(2 * time.Second), Type: "agent_context_summary", Details: "hash=abc"},
+		{Time: base.Add(3 * time.Second), Type: "order_placed", Details: "buy RIVN 100"},
+		{Time: base.Add(4 * time.Second), Type: "trade_update", Details: "123 status=new filled=0.00"},
+		{Time: base.Add(5 * time.Second), Type: "trade_update", Details: "123 status=filled filled=100.00"},
+		{Time: base.Add(6 * time.Second), Type: "agent_intent_executed", Details: "buy RIVN qty=100"},
+		{Time: base.Add(7 * time.Second), Type: "agent_intent_executed", Details: "buy RIVN qty=100"},
+		{Time: base.Add(8 * time.Second), Type: "agent_cycle_error", Details: "openai request failed: timeout"},
+	}
+
+	got := recentEventsForPrompt(events, 3)
+	if len(got) != 3 {
+		t.Fatalf("expected 3 events, got %#v", got)
+	}
+	if got[0].Type != "order_placed" {
+		t.Fatalf("expected first event to be order_placed, got %#v", got[0])
+	}
+	if got[1].Type != "trade_update" || !strings.Contains(got[1].Details, "status=filled") {
+		t.Fatalf("expected second event to be filled trade_update, got %#v", got[1])
+	}
+	if got[2].Type != "agent_intent_executed" {
+		t.Fatalf("expected third event to be agent_intent_executed, got %#v", got[2])
+	}
+}
+
+func TestRecentEventsForPromptTruncatesDetails(t *testing.T) {
+	long := strings.Repeat("verylongdetail ", 40)
+	events := []domain.Event{
+		{Time: time.Now().UTC(), Type: "agent_intent_rejected", Details: long},
+	}
+
+	got := recentEventsForPrompt(events, 4)
+	if len(got) != 1 {
+		t.Fatalf("expected one event, got %#v", got)
+	}
+	if len(got[0].Details) > maxEventDetailChars+3 {
+		t.Fatalf("expected truncated detail, got len=%d", len(got[0].Details))
+	}
+	if !strings.HasSuffix(got[0].Details, "...") {
+		t.Fatalf("expected ellipsis suffix, got %#v", got[0].Details)
+	}
+}
+
+func TestProposeTradesRetriesDeadlineExceeded(t *testing.T) {
+	client := &sequenceChatClient{
+		responses: []chatResponse{
+			{err: fmt.Errorf("openai request failed: %w", context.DeadlineExceeded)},
+			{content: `{"intents":[{"symbol":"AAPL","side":"buy","qty":1,"order_type":"market","expected_gain_pct":1.2}]}`},
+		},
+	}
+	agent, err := newWithClient(testBroker{
+		quotes: map[string]domain.Quote{
+			"AAPL": {Symbol: "AAPL", Last: 100, Bid: 99, Ask: 101, Time: time.Now().UTC()},
+		},
+	}, Config{
+		APIKey:  "test-key",
+		Model:   "test-model",
+		Timeout: 20 * time.Second,
+	}, client)
+	if err != nil {
+		t.Fatalf("newWithClient failed: %v", err)
+	}
+
+	intents, err := agent.ProposeTrades(context.Background(), domain.AgentInput{
+		Mode:      domain.ModeAuto,
+		Watchlist: []string{"AAPL"},
+	})
+	if err != nil {
+		t.Fatalf("ProposeTrades failed: %v", err)
+	}
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %#v", intents)
+	}
+	if client.calls() != 2 {
+		t.Fatalf("expected retry to call client twice, got %d", client.calls())
+	}
+}
+
+func TestProposeTradesNoRetryOnNonRetryableError(t *testing.T) {
+	client := &sequenceChatClient{
+		responses: []chatResponse{
+			{err: errors.New("openai request failed: 400 bad request")},
+		},
+	}
+	agent, err := newWithClient(testBroker{
+		quotes: map[string]domain.Quote{
+			"AAPL": {Symbol: "AAPL", Last: 100, Bid: 99, Ask: 101, Time: time.Now().UTC()},
+		},
+	}, Config{
+		APIKey:  "test-key",
+		Model:   "test-model",
+		Timeout: 20 * time.Second,
+	}, client)
+	if err != nil {
+		t.Fatalf("newWithClient failed: %v", err)
+	}
+
+	_, err = agent.ProposeTrades(context.Background(), domain.AgentInput{
+		Mode:      domain.ModeAuto,
+		Watchlist: []string{"AAPL"},
+	})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if client.calls() != 1 {
+		t.Fatalf("expected non-retryable error to call client once, got %d", client.calls())
+	}
+}
+
 type staticChatClient struct {
 	content string
 	err     error
@@ -205,6 +319,30 @@ type captureChatClient struct {
 	model        string
 	systemPrompt string
 	userPrompt   string
+}
+
+type chatResponse struct {
+	content string
+	err     error
+}
+
+type sequenceChatClient struct {
+	responses []chatResponse
+	callCount int
+}
+
+func (c *sequenceChatClient) Complete(_ context.Context, _, _, _ string) (string, error) {
+	c.callCount++
+	idx := c.callCount - 1
+	if idx < 0 || idx >= len(c.responses) {
+		return "", errors.New("unexpected extra call")
+	}
+	resp := c.responses[idx]
+	return resp.content, resp.err
+}
+
+func (c *sequenceChatClient) calls() int {
+	return c.callCount
 }
 
 func (c *captureChatClient) Complete(_ context.Context, model, systemPrompt, userPrompt string) (string, error) {

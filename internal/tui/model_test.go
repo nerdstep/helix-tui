@@ -2,11 +2,13 @@ package tui
 
 import (
 	"context"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -468,6 +470,54 @@ func TestWatchlistChangeCellIncludesPct(t *testing.T) {
 	if got := rows[0][5]; !strings.Contains(got, "+1.00%") {
 		t.Fatalf("expected pct change cell, got %q", got)
 	}
+}
+
+func TestEventPageSizeExpandsOnLogsTab(t *testing.T) {
+	m := New(newTestEngine())
+	m.height = 40
+	m.activeTab = tabOverview
+	if got := m.eventPageSize(); got != 8 {
+		t.Fatalf("expected overview page size 8, got %d", got)
+	}
+	m.activeTab = tabLogs
+	if got := m.eventPageSize(); got <= 8 {
+		t.Fatalf("expected expanded logs page size, got %d", got)
+	}
+}
+
+func TestOrderTableColumnsLeaveGapAfterOrderID(t *testing.T) {
+	cols := orderTableColumns(40)
+	if len(cols) < 2 {
+		t.Fatalf("unexpected columns: %#v", cols)
+	}
+	if cols[1].Width <= 8 {
+		t.Fatalf("expected Order ID column width > 8 for spacing, got %d", cols[1].Width)
+	}
+}
+
+func TestColorizeTableColumnsPreservesLayout(t *testing.T) {
+	view := strings.Join([]string{
+		"Side  Chg    State   ",
+		"BUY   +1.00% ok      ",
+	}, "\n")
+	cols := []table.Column{
+		{Title: "Side", Width: 6},
+		{Title: "Chg", Width: 7},
+		{Title: "State", Width: 8},
+	}
+	colored := colorizeTableColumns(view, cols, map[int]func(string) string{
+		0: colorizeOrderSideCell,
+		1: colorizeWatchChangeCell,
+		2: colorizeWatchStateCell,
+	})
+	if stripANSI(colored) != view {
+		t.Fatalf("colorized table should preserve printable layout\nwant:\n%q\ngot:\n%q", view, stripANSI(colored))
+	}
+}
+
+func stripANSI(s string) string {
+	re := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	return re.ReplaceAllString(s, "")
 }
 
 func newTestEngine() *engine.Engine {

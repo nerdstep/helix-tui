@@ -40,7 +40,7 @@ func (m Model) buildViewModel() viewModel {
 		status:      m.status,
 		statusError: m.statusError,
 		input:       m.input,
-		footer:      footerStyle.Render("Commands: buy/sell/cancel/flatten/sync/watch/events/tab/help/q | tabs: Tab key (overview/logs/system) | log scroll: Up/Down/PgUp/PgDn/Home/End"),
+		footer:      footerStyle.Render("Commands: buy/sell/cancel/flatten/sync/watch/events/tab/help/q | tabs: Tab key (overview/logs/system)"),
 	}
 }
 
@@ -72,6 +72,9 @@ func (m Model) buildOrderRows() []string {
 		}
 		return rows
 	}
+	view = colorizeTableColumns(view, m.ordersTable.Columns(), map[int]func(string) string{
+		2: colorizeOrderSideCell,
+	})
 	rows = append(rows, strings.Split(view, "\n")...)
 	rows = append(rows, mutedStyle.Render("cancel: cancel #<row> or cancel <id-prefix>"))
 	return rows
@@ -86,8 +89,53 @@ func (m Model) buildWatchRows() []string {
 	if view == "" {
 		return append(rows, mutedStyle.Render("(loading...)"))
 	}
+	view = colorizeTableColumns(view, m.watchlistTable.Columns(), map[int]func(string) string{
+		5: colorizeWatchChangeCell,
+		6: colorizeWatchStateCell,
+	})
 	rows = append(rows, strings.Split(view, "\n")...)
 	return rows
+}
+
+func colorizeOrderSideCell(cell string) string {
+	switch strings.ToUpper(strings.TrimSpace(cell)) {
+	case "BUY":
+		return positiveStyle.Render(cell)
+	case "SELL":
+		return negativeStyle.Render(cell)
+	default:
+		return cell
+	}
+}
+
+func colorizeWatchChangeCell(cell string) string {
+	v := strings.TrimSpace(cell)
+	switch {
+	case strings.HasPrefix(v, "+") && v != "+0.00%":
+		return positiveStyle.Render(cell)
+	case strings.HasPrefix(v, "-"):
+		return negativeStyle.Render(cell)
+	case v == "n/a" || v == "+0.00%":
+		return mutedStyle.Render(cell)
+	default:
+		return cell
+	}
+}
+
+func colorizeWatchStateCell(cell string) string {
+	v := strings.ToLower(strings.TrimSpace(cell))
+	switch {
+	case strings.HasPrefix(v, "ok"):
+		return positiveStyle.Render(cell)
+	case strings.HasPrefix(v, "stale"):
+		return warnStyle.Render(cell)
+	case strings.HasPrefix(v, "pending"):
+		return mutedStyle.Render(cell)
+	case strings.HasPrefix(v, "error"):
+		return errStyle.Render(cell)
+	default:
+		return cell
+	}
 }
 
 func (m Model) buildPnlRows() []string {
@@ -222,7 +270,7 @@ func (m Model) buildEventRows() []string {
 		rows = append(rows, strings.Split(view, "\n")...)
 	}
 	start, end, total := m.eventWindow()
-	rows = append(rows, mutedStyle.Render(fmt.Sprintf("showing %d-%d of %d (events up/down/top/tail, PgUp/PgDn)", start+1, end, total)))
+	rows = append(rows, mutedStyle.Render(fmt.Sprintf("showing %d-%d of %d (events up/down/top/tail [N], Up/Down/PgUp/PgDn/Home/End)", start+1, end, total)))
 	return rows
 }
 

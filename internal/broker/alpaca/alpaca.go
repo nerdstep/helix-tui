@@ -35,6 +35,12 @@ type Broker struct {
 	streamBase  string
 }
 
+type silentStreamLogger struct{}
+
+func (silentStreamLogger) Infof(string, ...interface{})  {}
+func (silentStreamLogger) Warnf(string, ...interface{})  {}
+func (silentStreamLogger) Errorf(string, ...interface{}) {}
+
 type Config struct {
 	BaseURL     string
 	DataBaseURL string
@@ -296,6 +302,7 @@ func (b *Broker) StreamQuotes(ctx context.Context, symbols []string) (<-chan dom
 
 	client := stream.NewStocksClient(
 		b.feed,
+		stream.WithLogger(silentStreamLogger{}),
 		stream.WithCredentials(b.apiKey, b.apiSecret),
 		stream.WithBaseURL(b.streamBase),
 		stream.WithReconnectSettings(0, 250*time.Millisecond),

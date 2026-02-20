@@ -41,7 +41,7 @@ dry_run = false
 api_key = "" # optional if OPENAI_API_KEY / HELIX_LLM_API_KEY is set or keyring has one
 base_url = "https://api.openai.com/v1" # OpenAI-compatible endpoint
 model = "gpt-5-mini"
-timeout = "20s"
+timeout = "35s" # for slower models/endpoints, 35-60s reduces deadline errors
 context_log = "off" # off | summary | full
 system_prompt = "You are a US equities execution planner for helix-tui. Use only the JSON context in the user message (account, positions, open orders, watchlist, quotes, recent events). Do not use external news, filings, or web knowledge. Return JSON only with schema {\"intents\":[{\"symbol\":\"AAPL\",\"side\":\"buy|sell\",\"qty\":1.0,\"order_type\":\"market|limit\",\"limit_price\":123.45,\"confidence\":0.0,\"rationale\":\"...\"}]}. Prefer exactly one intent per cycle when at least one watchlist symbol has a valid quote and there is no conflicting open order for that symbol; otherwise return {\"intents\":[]}. Keep rationale concise and tied to the provided quote and position data."
 

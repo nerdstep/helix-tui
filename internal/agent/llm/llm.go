@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -13,6 +14,11 @@ import (
 
 	"helix-tui/internal/domain"
 	"helix-tui/internal/symbols"
+)
+
+const (
+	defaultMaxPromptEvents = 8
+	maxEventDetailChars    = 140
 )
 
 type Config struct {
@@ -76,7 +82,7 @@ func newWithClient(broker domain.Broker, cfg Config, client chatClient) (*Agent,
 			MaxDayNotional:   cfg.MaxDayNotional,
 		},
 		maxWatchlist: 12,
-		maxEvents:    40,
+		maxEvents:    defaultMaxPromptEvents,
 	}, nil
 }
 
@@ -138,13 +144,61 @@ func (a *Agent) ProposeTrades(ctx context.Context, input domain.AgentInput) ([]d
 		return nil, fmt.Errorf("marshal llm input: %w", err)
 	}
 
-	callCtx, cancel := context.WithTimeout(ctx, a.timeout)
-	defer cancel()
-	content, err := a.client.Complete(callCtx, a.model, a.systemPrompt, string(body))
+	content, err := a.completeWithRetry(ctx, string(body))
 	if err != nil {
 		return nil, err
 	}
 	return parseIntents(content, watchlist)
+}
+
+func (a *Agent) completeWithRetry(ctx context.Context, userPrompt string) (string, error) {
+	maxAttempts := 2
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		attemptTimeout := timeoutForAttempt(a.timeout, attempt)
+		callCtx, cancel := context.WithTimeout(ctx, attemptTimeout)
+		content, err := a.client.Complete(callCtx, a.model, a.systemPrompt, userPrompt)
+		cancel()
+		if err == nil {
+			return content, nil
+		}
+		lastErr = err
+		if !shouldRetryLLMError(ctx, err) || attempt == maxAttempts {
+			break
+		}
+	}
+	return "", lastErr
+}
+
+func timeoutForAttempt(base time.Duration, attempt int) time.Duration {
+	if base <= 0 {
+		base = 20 * time.Second
+	}
+	if attempt <= 1 {
+		return base
+	}
+	minRetry := 35 * time.Second
+	if base >= minRetry {
+		return base
+	}
+	return minRetry
+}
+
+func shouldRetryLLMError(ctx context.Context, err error) bool {
+	if err == nil {
+		return false
+	}
+	if ctx.Err() != nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "timeout") || strings.Contains(msg, "temporarily unavailable") {
+		return true
+	}
+	return false
 }
 
 const defaultSystemPrompt = "You are a conservative US equities trading research assistant. "
@@ -213,10 +267,37 @@ func openOrdersForPrompt(orders []domain.Order) []orderInput {
 }
 
 func recentEventsForPrompt(events []domain.Event, limit int) []eventInput {
-	if limit <= 0 || len(events) <= limit {
-		return toEventInputs(events)
+	if limit <= 0 || len(events) == 0 {
+		return nil
 	}
-	return toEventInputs(events[len(events)-limit:])
+
+	filtered := make([]domain.Event, 0, limit)
+	seen := make(map[string]struct{}, limit)
+	for i := len(events) - 1; i >= 0; i-- {
+		e := events[i]
+		if !isRelevantEventForLLM(e) {
+			continue
+		}
+		e.Details = sanitizeEventDetailForLLM(e.Details)
+		fingerprint := eventFingerprintForLLM(e)
+		if _, ok := seen[fingerprint]; ok {
+			continue
+		}
+		seen[fingerprint] = struct{}{}
+		filtered = append(filtered, e)
+		if len(filtered) >= limit {
+			break
+		}
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+
+	// Preserve chronological order after backward scan.
+	for left, right := 0, len(filtered)-1; left < right; left, right = left+1, right-1 {
+		filtered[left], filtered[right] = filtered[right], filtered[left]
+	}
+	return toEventInputs(filtered)
 }
 
 func toEventInputs(events []domain.Event) []eventInput {
@@ -229,6 +310,38 @@ func toEventInputs(events []domain.Event) []eventInput {
 		})
 	}
 	return out
+}
+
+func isRelevantEventForLLM(e domain.Event) bool {
+	t := strings.ToLower(strings.TrimSpace(e.Type))
+	switch t {
+	case "order_placed", "order_canceled", "agent_intent_executed", "agent_intent_rejected":
+		return true
+	case "trade_update":
+		d := strings.ToLower(e.Details)
+		return strings.Contains(d, "status=filled") ||
+			strings.Contains(d, "status=canceled") ||
+			strings.Contains(d, "status=cancelled") ||
+			strings.Contains(d, "status=rejected")
+	default:
+		return false
+	}
+}
+
+func eventFingerprintForLLM(e domain.Event) string {
+	return strings.ToLower(strings.TrimSpace(e.Type)) + "|" + e.Details
+}
+
+func sanitizeEventDetailForLLM(detail string) string {
+	detail = strings.Join(strings.Fields(strings.TrimSpace(detail)), " ")
+	if detail == "" {
+		return detail
+	}
+	if len([]rune(detail)) <= maxEventDetailChars {
+		return detail
+	}
+	runes := []rune(detail)
+	return string(runes[:maxEventDetailChars]) + "..."
 }
 
 type llmOutput struct {

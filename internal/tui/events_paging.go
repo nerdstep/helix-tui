@@ -3,6 +3,11 @@ package tui
 import "fmt"
 
 func (m Model) eventPageSize() int {
+	if m.activeTab == tabLogs && m.height > 0 {
+		// Approximate visible lines after header/tab/status/input/footer and panel chrome.
+		const reserved = 8
+		return maxInt(8, m.height-reserved)
+	}
 	return 8
 }
 

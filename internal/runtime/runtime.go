@@ -6,12 +6,17 @@ import (
 	"io"
 
 	"helix-tui/internal/storage"
+	"helix-tui/internal/version"
 )
 
 func Run(ctx context.Context, args []string, stderr io.Writer) error {
 	options, err := parseRunOptions(args, stderr)
 	if err != nil {
 		return err
+	}
+	if options.version {
+		_, _ = fmt.Fprintln(stderr, version.String())
+		return nil
 	}
 	cfg, err := loadConfig(options.configPath, options.configExplicit)
 	if err != nil {

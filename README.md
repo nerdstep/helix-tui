@@ -8,7 +8,11 @@ Go CLI + TUI trading app scaffold with a safety-first architecture:
 - Autonomous agent runtime modes (`manual`, `assist`, `auto`)
 - Terminal UI command cockpit (Bubble Tea)
 
-This repo is a foundation for the architecture discussed in your shared thread, not a production bot.
+## Disclaimer
+
+This project is an AI-generated, experimental toy project provided for educational and development purposes only.
+It is not investment advice, not production-ready trading software, and not a recommendation to buy or sell any security.
+Use it at your own risk. You are solely responsible for all configuration, operation, losses, and compliance outcomes.
 
 ## Architecture
 
@@ -111,6 +115,12 @@ Runtime flags (minimal):
 go run ./cmd/helix \
   -config=config.toml \
   -headless
+```
+
+Print version info:
+
+```bash
+go run ./cmd/helix -version
 ```
 
 Windows (PowerShell) credential setup:

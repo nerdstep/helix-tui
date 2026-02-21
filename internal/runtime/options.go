@@ -13,15 +13,18 @@ type runOptions struct {
 	configPath     string
 	configExplicit bool
 	headless       bool
+	version        bool
 }
 
 func parseRunOptions(args []string, stderr io.Writer) (runOptions, error) {
 	configPath := configfile.DefaultPath
 
 	headless := false
+	version := false
 	fs := newFlagSet(stderr)
 	fs.StringVar(&configPath, "config", configPath, "path to TOML config file")
 	fs.BoolVar(&headless, "headless", false, "run without TUI; useful for autonomous mode")
+	fs.BoolVar(&version, "version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		return runOptions{}, err
 	}
@@ -44,6 +47,7 @@ func parseRunOptions(args []string, stderr io.Writer) (runOptions, error) {
 		configPath:     configPath,
 		configExplicit: explicit,
 		headless:       headless,
+		version:        version,
 	}, nil
 }
 

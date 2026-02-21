@@ -456,10 +456,23 @@ func (m Model) systemRuntimeData() []systemKV {
 	if e := latestEventByType(m.snapshot.Events, "agent_cycle_complete"); e != nil {
 		lastCycleAge = time.Since(e.Time).Round(time.Second).String()
 	}
+	power := "active"
+	if e := latestEventByType(m.snapshot.Events, "agent_power_state"); e != nil {
+		fields := parseEventFields(e.Details)
+		state := strings.TrimSpace(fields["state"])
+		reason := strings.TrimSpace(fields["reason"])
+		if state != "" {
+			power = state
+		}
+		if reason != "" && reason != "market_open" {
+			power = fmt.Sprintf("%s (%s)", power, reason)
+		}
+	}
 	return []systemKV{
 		{key: "watchlist", value: fmt.Sprintf("%d symbols", len(m.watchlist))},
 		{key: "events", value: fmt.Sprintf("%d in-memory", len(m.snapshot.Events))},
 		{key: "mode", value: mode},
+		{key: "power", value: power},
 		{key: "last sync", value: lastSync},
 		{key: "cycle start", value: cycleStart},
 		{key: "cycle age", value: lastCycleAge},

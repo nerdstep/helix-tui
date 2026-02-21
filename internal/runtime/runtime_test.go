@@ -29,6 +29,16 @@ func TestParseRunOptions_DefaultPath(t *testing.T) {
 	}
 }
 
+func TestParseRunOptions_VersionFlag(t *testing.T) {
+	opts, err := parseRunOptions([]string{"-version"}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("parseRunOptions failed: %v", err)
+	}
+	if !opts.version {
+		t.Fatalf("expected version option")
+	}
+}
+
 func TestParseRunOptions_ExplicitConfig(t *testing.T) {
 	tests := [][]string{
 		{"-config=custom.toml"},
@@ -315,6 +325,17 @@ func TestRunErrors(t *testing.T) {
 	err = Run(ctx, []string{"-config=does-not-exist.toml"}, stderr)
 	if err == nil || !strings.Contains(err.Error(), "failed to load config") {
 		t.Fatalf("expected config load error, got %v", err)
+	}
+}
+
+func TestRunVersion(t *testing.T) {
+	stderr := &bytes.Buffer{}
+	err := Run(context.Background(), []string{"-version"}, stderr)
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	if strings.TrimSpace(stderr.String()) == "" {
+		t.Fatalf("expected version output")
 	}
 }
 

@@ -239,6 +239,8 @@ These checks are enforced in `internal/engine/risk.go` and `internal/engine/comp
 - SQLite persistence auto-applies the current schema at startup from `internal/storage`.
 - The TUI includes watchlist quote rows, position P&L, and basic agent/system runtime stats.
 - The TUI now includes a dedicated `Strategy` tab for active plan, recommendations, recent plan history, and strategy health/staleness status.
+- Strategy runner skips scheduled/startup analysis when the latest stored plan is still within `[strategy].interval`; use `strategy run` to force an immediate cycle.
+- Strategy analyst supports a no-change outcome (`strategy_plan_unchanged`) to retain the current plan instead of creating a new plan record.
 - Equity trend rendering uses `github.com/NimbleMarkets/ntcharts` (sparkline) for higher fidelity terminal charts.
 - Event history supports keyboard paging (`PgUp`, `PgDn`, `Home`, `End`) and retains a larger recent window for scrollback.
 - Autonomous mode emits periodic `agent_heartbeat` summary events so idle-but-healthy loops are visible in logs.

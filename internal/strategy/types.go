@@ -12,9 +12,19 @@ type Input struct {
 	Objective          string
 	MaxRecommendations int
 	Watchlist          []string
+	CurrentPlan        *CurrentPlan
 	Snapshot           domain.Snapshot
 	Quotes             []domain.Quote
 	RecentEvents       []domain.Event
+}
+
+type CurrentPlan struct {
+	ID              uint
+	GeneratedAt     time.Time
+	Status          string
+	Summary         string
+	Confidence      float64
+	Recommendations []Recommendation
 }
 
 type Recommendation struct {
@@ -32,6 +42,7 @@ type Recommendation struct {
 }
 
 type Plan struct {
+	NoChange        bool
 	Summary         string
 	Confidence      float64
 	Recommendations []Recommendation

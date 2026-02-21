@@ -205,3 +205,43 @@ func TestStrategyRepositoryGetActivePlan_NoActivePlanReturnsNil(t *testing.T) {
 		t.Fatalf("expected nil active plan when none exists, got %#v", active)
 	}
 }
+
+func TestStrategyRepositoryGetLatestPlan(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "strategy-latest.db")
+	store, err := Open(Config{Path: path})
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+
+	repo := store.Strategy()
+	first, err := repo.CreatePlan(StrategyPlan{
+		GeneratedAt: time.Now().UTC().Add(-2 * time.Hour),
+		Status:      StrategyPlanStatusDraft,
+		Objective:   "first",
+	}, nil)
+	if err != nil {
+		t.Fatalf("CreatePlan first failed: %v", err)
+	}
+	second, err := repo.CreatePlan(StrategyPlan{
+		GeneratedAt: time.Now().UTC().Add(-time.Hour),
+		Status:      StrategyPlanStatusDraft,
+		Objective:   "second",
+	}, nil)
+	if err != nil {
+		t.Fatalf("CreatePlan second failed: %v", err)
+	}
+
+	latest, err := repo.GetLatestPlan()
+	if err != nil {
+		t.Fatalf("GetLatestPlan failed: %v", err)
+	}
+	if latest == nil {
+		t.Fatalf("expected latest strategy plan")
+	}
+	if latest.Plan.ID != second.Plan.ID {
+		t.Fatalf("expected latest plan id %d, got %d (first=%d)", second.Plan.ID, latest.Plan.ID, first.Plan.ID)
+	}
+}

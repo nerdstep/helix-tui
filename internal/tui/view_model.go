@@ -132,27 +132,32 @@ func (m Model) buildStrategyHealthRows() []string {
 
 	lastStart := latestEventByType(m.snapshot.Events, "strategy_cycle_start")
 	lastCreated := latestEventByType(m.snapshot.Events, "strategy_plan_created")
+	lastUnchanged := latestEventByType(m.snapshot.Events, "strategy_plan_unchanged")
 	lastErr := latestEventByType(m.snapshot.Events, "strategy_cycle_error")
 	lastRunnerErr := latestEventByType(m.snapshot.Events, "strategy_runner_error")
+	lastSuccess := lastCreated
+	if newerEvent(lastUnchanged, lastSuccess) {
+		lastSuccess = lastUnchanged
+	}
 
 	status := "ok"
 	statusStyle := positiveStyle
-	if lastCreated == nil {
+	if lastSuccess == nil {
 		status = "waiting_for_first_plan"
 		statusStyle = warnStyle
 	}
-	if newerEvent(lastErr, lastCreated) || lastRunnerErr != nil {
+	if newerEvent(lastErr, lastSuccess) || lastRunnerErr != nil {
 		status = "error"
 		statusStyle = errStyle
 	}
 
 	stale := false
 	if interval > 0 {
-		if lastCreated == nil {
+		if lastSuccess == nil {
 			if lastStart != nil && time.Since(lastStart.Time) > interval {
 				stale = true
 			}
-		} else if time.Since(lastCreated.Time) > interval*2 {
+		} else if time.Since(lastSuccess.Time) > interval*2 {
 			stale = true
 		}
 	}
@@ -160,7 +165,7 @@ func (m Model) buildStrategyHealthRows() []string {
 	rows = append(rows, fmt.Sprintf("interval: %s", intervalString(interval)))
 	rows = append(rows, fmt.Sprintf("stale: %t", stale))
 	rows = append(rows, "last cycle: "+eventClock(lastStart))
-	rows = append(rows, "last success: "+eventClock(lastCreated))
+	rows = append(rows, "last success: "+eventClock(lastSuccess))
 	if lastErr != nil {
 		rows = append(rows, "last error: "+fmt.Sprintf("%s %s", formatLocalClock(lastErr.Time), strings.TrimSpace(lastErr.Details)))
 	} else if lastRunnerErr != nil {

@@ -175,6 +175,35 @@ func (r *StrategyRepository) GetActivePlan() (*StrategyPlanWithRecommendations, 
 	return r.getSinglePlanByStatus(string(StrategyPlanStatusActive))
 }
 
+func (r *StrategyRepository) GetLatestPlan() (*StrategyPlanWithRecommendations, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("strategy repository is not initialized")
+	}
+	var record strategyPlanRecord
+	result := r.db.
+		Order("generated_at desc, id desc").
+		Limit(1).
+		Find(&record)
+	if result.Error != nil {
+		return nil, fmt.Errorf("query latest strategy plan: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	plan, err := fromStrategyPlanRecord(record)
+	if err != nil {
+		return nil, err
+	}
+	recs, err := r.ListRecommendations(record.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &StrategyPlanWithRecommendations{
+		Plan:            plan,
+		Recommendations: recs,
+	}, nil
+}
+
 func (r *StrategyRepository) ListRecentPlans(limit int) ([]StrategyPlan, error) {
 	if r == nil || r.db == nil {
 		return nil, fmt.Errorf("strategy repository is not initialized")

@@ -16,6 +16,8 @@ import (
 type planStore interface {
 	CreatePlan(plan storage.StrategyPlan, recommendations []storage.StrategyRecommendation) (storage.StrategyPlanWithRecommendations, error)
 	SetPlanStatus(planID uint, status storage.StrategyPlanStatus) error
+	GetActivePlan() (*storage.StrategyPlanWithRecommendations, error)
+	GetLatestPlan() (*storage.StrategyPlanWithRecommendations, error)
 }
 
 type eventHistoryStore interface {
@@ -128,7 +130,7 @@ func (r *Runner) Run(ctx context.Context) error {
 	}
 
 	r.engine.AddEvent("strategy_runner_start", fmt.Sprintf("interval=%s max_recommendations=%d", r.interval, r.maxRecommendations))
-	if err := r.runCycle(ctx); err != nil {
+	if err := r.runCycle(ctx, false, "startup"); err != nil {
 		r.engine.AddEvent("strategy_cycle_error", err.Error())
 	}
 
@@ -140,24 +142,59 @@ func (r *Runner) Run(ctx context.Context) error {
 			r.engine.AddEvent("strategy_runner_stop", "context canceled")
 			return ctx.Err()
 		case <-ticker.C:
-			if err := r.runCycle(ctx); err != nil {
+			if err := r.runCycle(ctx, false, "interval"); err != nil {
 				r.engine.AddEvent("strategy_cycle_error", err.Error())
 			}
 		case <-r.triggerCh:
-			if err := r.runCycle(ctx); err != nil {
+			if err := r.runCycle(ctx, true, "manual"); err != nil {
 				r.engine.AddEvent("strategy_cycle_error", err.Error())
 			}
 		}
 	}
 }
 
-func (r *Runner) runCycle(ctx context.Context) error {
+func (r *Runner) runCycle(ctx context.Context, force bool, reason string) error {
 	store := r.getStore()
 	if store == nil {
 		return fmt.Errorf("strategy store not configured")
 	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "unknown"
+	}
+
+	latestPlan, err := store.GetLatestPlan()
+	if err != nil {
+		return fmt.Errorf("load latest strategy plan: %w", err)
+	}
+	if !force && latestPlan != nil {
+		age := time.Since(latestPlan.Plan.GeneratedAt)
+		if age < 0 {
+			age = 0
+		}
+		if age < r.interval {
+			r.engine.AddEvent(
+				"strategy_cycle_skipped",
+				fmt.Sprintf(
+					"reason=fresh_plan trigger=%s id=%d status=%s age=%s interval=%s",
+					reason,
+					latestPlan.Plan.ID,
+					latestPlan.Plan.Status,
+					age.Round(time.Second),
+					r.interval,
+				),
+			)
+			return nil
+		}
+	}
+
+	currentPlan, err := r.resolveCurrentPlan(store, latestPlan)
+	if err != nil {
+		return fmt.Errorf("load current strategy plan: %w", err)
+	}
+
 	watchlist := r.watchlistSnapshot()
-	r.engine.AddEvent("strategy_cycle_start", fmt.Sprintf("watchlist=%d", len(watchlist)))
+	r.engine.AddEvent("strategy_cycle_start", fmt.Sprintf("watchlist=%d trigger=%s force=%t", len(watchlist), reason, force))
 
 	syncCtx, cancel := context.WithTimeout(ctx, r.syncTimeout)
 	defer cancel()
@@ -171,6 +208,7 @@ func (r *Runner) runCycle(ctx context.Context) error {
 		Objective:          r.objective,
 		MaxRecommendations: r.maxRecommendations,
 		Watchlist:          watchlist,
+		CurrentPlan:        toCurrentPlanInput(currentPlan),
 		Snapshot:           snapshot,
 		Quotes:             r.collectQuotes(syncCtx, watchlist),
 		RecentEvents:       r.recentEvents(snapshot.Events),
@@ -178,6 +216,18 @@ func (r *Runner) runCycle(ctx context.Context) error {
 	plan, err := r.analyst.BuildPlan(ctx, input)
 	if err != nil {
 		return fmt.Errorf("build strategy plan: %w", err)
+	}
+	if plan.NoChange {
+		if currentPlan == nil {
+			r.engine.AddEvent("strategy_plan_empty", "analyst returned no_change but no existing plan")
+			return nil
+		}
+		msg := fmt.Sprintf("id=%d status=%s", currentPlan.Plan.ID, currentPlan.Plan.Status)
+		if reason := strings.TrimSpace(plan.Summary); reason != "" {
+			msg += " reason=" + reason
+		}
+		r.engine.AddEvent("strategy_plan_unchanged", msg)
+		return nil
 	}
 	if strings.TrimSpace(plan.Summary) == "" && len(plan.Recommendations) == 0 {
 		r.engine.AddEvent("strategy_plan_empty", "analyst returned no strategy output")
@@ -234,6 +284,47 @@ func (r *Runner) runCycle(ctx context.Context) error {
 		fmt.Sprintf("id=%d status=%s recs=%d conf=%.2f model=%s", bundle.Plan.ID, status, len(bundle.Recommendations), bundle.Plan.Confidence, bundle.Plan.AnalystModel),
 	)
 	return nil
+}
+
+func (r *Runner) resolveCurrentPlan(store planStore, latest *storage.StrategyPlanWithRecommendations) (*storage.StrategyPlanWithRecommendations, error) {
+	active, err := store.GetActivePlan()
+	if err != nil {
+		return nil, err
+	}
+	if active != nil {
+		return active, nil
+	}
+	return latest, nil
+}
+
+func toCurrentPlanInput(bundle *storage.StrategyPlanWithRecommendations) *CurrentPlan {
+	if bundle == nil {
+		return nil
+	}
+	recs := make([]Recommendation, 0, len(bundle.Recommendations))
+	for _, rec := range bundle.Recommendations {
+		recs = append(recs, Recommendation{
+			Symbol:       rec.Symbol,
+			Bias:         rec.Bias,
+			Confidence:   rec.Confidence,
+			EntryMin:     rec.EntryMin,
+			EntryMax:     rec.EntryMax,
+			TargetPrice:  rec.TargetPrice,
+			StopPrice:    rec.StopPrice,
+			MaxNotional:  rec.MaxNotional,
+			Thesis:       rec.Thesis,
+			Invalidation: rec.Invalidation,
+			Priority:     rec.Priority,
+		})
+	}
+	return &CurrentPlan{
+		ID:              bundle.Plan.ID,
+		GeneratedAt:     bundle.Plan.GeneratedAt,
+		Status:          strings.TrimSpace(string(bundle.Plan.Status)),
+		Summary:         bundle.Plan.Summary,
+		Confidence:      bundle.Plan.Confidence,
+		Recommendations: recs,
+	}
 }
 
 func (r *Runner) collectQuotes(ctx context.Context, watchlist []string) []domain.Quote {

@@ -16,7 +16,8 @@ import (
 
 const defaultStrategySystemPrompt = "You are a senior US equities strategy analyst for helix-tui. Build a concise, risk-aware strategy plan from the provided JSON context."
 
-const forcedStrategyJSONInstruction = "Return strict JSON: {\"summary\":\"...\",\"confidence\":0.0,\"recommendations\":[{\"symbol\":\"AAPL\",\"bias\":\"buy|sell|hold\",\"confidence\":0.0,\"entry_min\":0,\"entry_max\":0,\"target_price\":0,\"stop_price\":0,\"max_notional\":0,\"thesis\":\"...\",\"invalidation\":\"...\",\"priority\":1}]}. " +
+const forcedStrategyJSONInstruction = "Return strict JSON: {\"no_change\":false,\"summary\":\"...\",\"confidence\":0.0,\"recommendations\":[{\"symbol\":\"AAPL\",\"bias\":\"buy|sell|hold\",\"confidence\":0.0,\"entry_min\":0,\"entry_max\":0,\"target_price\":0,\"stop_price\":0,\"max_notional\":0,\"thesis\":\"...\",\"invalidation\":\"...\",\"priority\":1}]}. " +
+	"If current_plan is still valid with no material updates, set no_change=true and return an empty recommendations array. " +
 	"Prefer at most the requested max_recommendations and keep recommendations actionable."
 
 type LLMAnalystConfig struct {
@@ -75,6 +76,7 @@ type llmStrategyInput struct {
 	Objective          string            `json:"objective"`
 	MaxRecommendations int               `json:"max_recommendations"`
 	Watchlist          []string          `json:"watchlist"`
+	CurrentPlan        *llmCurrentPlan   `json:"current_plan,omitempty"`
 	Account            domain.Account    `json:"account"`
 	Positions          []domain.Position `json:"positions"`
 	OpenOrders         []domain.Order    `json:"open_orders"`
@@ -83,6 +85,7 @@ type llmStrategyInput struct {
 }
 
 type llmStrategyOutput struct {
+	NoChange        bool                        `json:"no_change"`
 	Summary         string                      `json:"summary"`
 	Confidence      float64                     `json:"confidence"`
 	Recommendations []llmStrategyRecommendation `json:"recommendations"`
@@ -102,6 +105,15 @@ type llmStrategyRecommendation struct {
 	Priority     int     `json:"priority"`
 }
 
+type llmCurrentPlan struct {
+	ID              uint                        `json:"id"`
+	GeneratedAt     string                      `json:"generated_at"`
+	Status          string                      `json:"status"`
+	Summary         string                      `json:"summary"`
+	Confidence      float64                     `json:"confidence"`
+	Recommendations []llmStrategyRecommendation `json:"recommendations"`
+}
+
 func (a *LLMAnalyst) BuildPlan(ctx context.Context, input Input) (Plan, error) {
 	if a == nil {
 		return Plan{}, fmt.Errorf("strategy analyst is not initialized")
@@ -111,6 +123,7 @@ func (a *LLMAnalyst) BuildPlan(ctx context.Context, input Input) (Plan, error) {
 		Objective:          strings.TrimSpace(input.Objective),
 		MaxRecommendations: minInt(a.maxRecommendations, maxInt(1, input.MaxRecommendations)),
 		Watchlist:          symbols.Normalize(input.Watchlist),
+		CurrentPlan:        toLLMCurrentPlan(input.CurrentPlan),
 		Account:            input.Snapshot.Account,
 		Positions:          input.Snapshot.Positions,
 		OpenOrders:         input.Snapshot.Orders,
@@ -156,8 +169,13 @@ func (a *LLMAnalyst) BuildPlan(ctx context.Context, input Input) (Plan, error) {
 	}
 
 	out := Plan{
+		NoChange:   parsed.NoChange,
 		Summary:    strings.TrimSpace(parsed.Summary),
 		Confidence: clamp01(parsed.Confidence),
+	}
+	if out.NoChange {
+		out.Recommendations = nil
+		return out, nil
 	}
 	allowed := map[string]struct{}{}
 	for _, symbol := range payload.Watchlist {
@@ -202,6 +220,36 @@ func (a *LLMAnalyst) BuildPlan(ctx context.Context, input Input) (Plan, error) {
 	}
 	out.Recommendations = recs
 	return out, nil
+}
+
+func toLLMCurrentPlan(current *CurrentPlan) *llmCurrentPlan {
+	if current == nil {
+		return nil
+	}
+	recs := make([]llmStrategyRecommendation, 0, len(current.Recommendations))
+	for _, rec := range current.Recommendations {
+		recs = append(recs, llmStrategyRecommendation{
+			Symbol:       rec.Symbol,
+			Bias:         rec.Bias,
+			Confidence:   rec.Confidence,
+			EntryMin:     rec.EntryMin,
+			EntryMax:     rec.EntryMax,
+			TargetPrice:  rec.TargetPrice,
+			StopPrice:    rec.StopPrice,
+			MaxNotional:  rec.MaxNotional,
+			Thesis:       rec.Thesis,
+			Invalidation: rec.Invalidation,
+			Priority:     rec.Priority,
+		})
+	}
+	return &llmCurrentPlan{
+		ID:              current.ID,
+		GeneratedAt:     current.GeneratedAt.UTC().Format(time.RFC3339),
+		Status:          strings.TrimSpace(current.Status),
+		Summary:         strings.TrimSpace(current.Summary),
+		Confidence:      current.Confidence,
+		Recommendations: recs,
+	}
 }
 
 func trimRecentEvents(events []domain.Event, limit int) []domain.Event {

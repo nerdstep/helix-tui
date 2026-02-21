@@ -504,6 +504,29 @@ func TestStrategyRunLoadingCompletesOnPlanCreatedEvent(t *testing.T) {
 	}
 }
 
+func TestStrategyRunLoadingCompletesOnPlanUnchangedEvent(t *testing.T) {
+	m := New(newTestEngine()).WithStrategyRunHandler(func() error { return nil })
+	m.input = "strategy run"
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m1 := model.(Model)
+	if !m1.strategyBusy {
+		t.Fatalf("expected strategy busy state after run request")
+	}
+	m1.snapshot.Events = append(m1.snapshot.Events, domain.Event{
+		Time:    time.Now().UTC(),
+		Type:    "strategy_plan_unchanged",
+		Details: "id=7",
+	})
+	model, _ = m1.Update(refreshMsg{snapshot: m1.snapshot})
+	m2 := model.(Model)
+	if m2.strategyBusy {
+		t.Fatalf("expected strategy busy state to clear after unchanged event")
+	}
+	if m2.statusError || !strings.Contains(m2.status, "no changes") {
+		t.Fatalf("unexpected status after unchanged completion: %q", m2.status)
+	}
+}
+
 func TestRenderTwoColumnPanelsWidthAlignment(t *testing.T) {
 	total := 120
 	row := renderTwoColumnPanels([]string{"L"}, []string{"R"}, 59, 60, total, 1)

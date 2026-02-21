@@ -57,6 +57,7 @@ func (m *Model) reconcileStrategyLoading(now time.Time) {
 	threshold := m.strategyBusySince.Add(-2 * time.Second)
 	terminal := latestEventAfterAny(m.snapshot.Events, []string{
 		"strategy_plan_created",
+		"strategy_plan_unchanged",
 		"strategy_plan_empty",
 		"strategy_cycle_error",
 	}, threshold)
@@ -64,6 +65,9 @@ func (m *Model) reconcileStrategyLoading(now time.Time) {
 		switch terminal.Type {
 		case "strategy_plan_created":
 			m.status = "strategy run complete: plan created"
+			m.statusError = false
+		case "strategy_plan_unchanged":
+			m.status = "strategy run complete: no changes"
 			m.statusError = false
 		case "strategy_plan_empty":
 			m.status = "strategy run complete: no new plan"

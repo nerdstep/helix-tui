@@ -191,7 +191,7 @@ func eventLogLevel(eventType string) zerolog.Level {
 	switch eventType {
 	case "agent_intent_rejected", "trade_update_unknown_order", "watchlist_sync_error", "compliance_rejected":
 		return zerolog.WarnLevel
-	case "sync", "trade_update", "agent_cycle_start", "agent_proposal", "agent_cycle_complete", "agent_heartbeat", "agent_context_changed", "agent_context_unchanged", "agent_context_summary", "quote_stream_start", "quote_stream_stop", "event_persist_stats":
+	case "sync", "trade_update", "agent_cycle_start", "agent_proposal", "agent_cycle_complete", "agent_heartbeat", "agent_context_changed", "agent_context_unchanged", "agent_context_summary", "quote_stream_start", "quote_stream_stop", "event_persist_stats", "strategy_cycle_skipped":
 		return zerolog.DebugLevel
 	case "agent_context_payload":
 		return zerolog.TraceLevel

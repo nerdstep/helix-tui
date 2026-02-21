@@ -16,11 +16,11 @@ Use at your own risk.
 
 ## Documentation Map
 
-- Architecture: `docs/architecture.md`
-- New user onboarding: `docs/onboarding.md`
-- Operator playbook: `docs/operator-playbook.md`
-- Implementation roadmap: `docs/implementation-plan.md`
-- Template config: `config.example.toml`
+- [Architecture](./docs/architecture.md)
+- [New user onboarding](./docs/onboarding.md)
+- [Operator playbook](./docs/operator-playbook.md)
+- [Implementation roadmap](./docs/implementation-plan.md)
+- [Config template](./config.example.toml)
 
 ## Runtime Model (Important)
 

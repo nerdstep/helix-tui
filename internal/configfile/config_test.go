@@ -29,6 +29,15 @@ func TestDefaultAndToAppConfig(t *testing.T) {
 	if appCfg.LLMContextLog != cfg.Agent.LLM.ContextLog {
 		t.Fatalf("llm context log mismatch: app=%q cfg=%q", appCfg.LLMContextLog, cfg.Agent.LLM.ContextLog)
 	}
+	if appCfg.AgentLowPowerEnabled != cfg.Agent.LowPower.Enabled {
+		t.Fatalf("agent low power enabled mismatch: app=%t cfg=%t", appCfg.AgentLowPowerEnabled, cfg.Agent.LowPower.Enabled)
+	}
+	if appCfg.AgentClosedPollInterval != cfg.Agent.LowPower.ClosedPollInterval {
+		t.Fatalf("agent low power closed poll interval mismatch: app=%s cfg=%s", appCfg.AgentClosedPollInterval, cfg.Agent.LowPower.ClosedPollInterval)
+	}
+	if appCfg.AgentPreOpenWarmup != cfg.Agent.LowPower.PreOpenWarmup {
+		t.Fatalf("agent low power pre-open warmup mismatch: app=%s cfg=%s", appCfg.AgentPreOpenWarmup, cfg.Agent.LowPower.PreOpenWarmup)
+	}
 	if appCfg.ComplianceEnabled != cfg.Compliance.Enabled {
 		t.Fatalf("compliance enabled mismatch: app=%t cfg=%t", appCfg.ComplianceEnabled, cfg.Compliance.Enabled)
 	}
@@ -106,6 +115,12 @@ move_pct = 0.03
 min_gain_pct = 1.25
 max_intents = 4
 dry_run = true
+
+[agent.low_power]
+enabled = true
+allow_after_hours = false
+closed_poll_interval = "2m"
+pre_open_warmup = "12m"
 
 [agent.llm]
 api_key = "llm-key"
@@ -197,6 +212,15 @@ path = "data/helix.db"
 	}
 	if !cfg.Agent.DryRun {
 		t.Fatalf("expected dry run to be true")
+	}
+	if !cfg.Agent.LowPower.Enabled || cfg.Agent.LowPower.AllowAfterHours {
+		t.Fatalf("unexpected low power enabled/after-hours values: %#v", cfg.Agent.LowPower)
+	}
+	if cfg.Agent.LowPower.ClosedPollInterval != 2*time.Minute {
+		t.Fatalf("unexpected low power closed poll interval: %s", cfg.Agent.LowPower.ClosedPollInterval)
+	}
+	if cfg.Agent.LowPower.PreOpenWarmup != 12*time.Minute {
+		t.Fatalf("unexpected low power pre-open warmup: %s", cfg.Agent.LowPower.PreOpenWarmup)
 	}
 	if cfg.Agent.Type != "llm" {
 		t.Fatalf("unexpected agent type: %q", cfg.Agent.Type)

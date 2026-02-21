@@ -191,6 +191,12 @@ func buildRunner(cfg Config, broker domain.Broker, e *engine.Engine, watchlist [
 		cfg.AgentDryRun,
 		contextLogModeForAgent(cfg, agentType),
 	)
+	runner.SetLowPower(autonomy.LowPowerConfig{
+		Enabled:            cfg.AgentLowPowerEnabled,
+		AllowAfterHours:    cfg.AgentAllowAfterHours,
+		ClosedPollInterval: cfg.AgentClosedPollInterval,
+		PreOpenWarmup:      cfg.AgentPreOpenWarmup,
+	})
 	return runner, mode, agentType, nil
 }
 

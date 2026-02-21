@@ -39,6 +39,18 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.AgentMinGainPct != 0 {
 		t.Fatalf("unexpected default min gain pct: %f", cfg.AgentMinGainPct)
 	}
+	if !cfg.AgentLowPowerEnabled {
+		t.Fatalf("expected low power enabled by default")
+	}
+	if cfg.AgentAllowAfterHours {
+		t.Fatalf("expected low power allow_after_hours default false")
+	}
+	if cfg.AgentClosedPollInterval <= 0 {
+		t.Fatalf("expected positive low power closed poll interval")
+	}
+	if cfg.AgentPreOpenWarmup < 0 {
+		t.Fatalf("expected non-negative pre-open warmup")
+	}
 	if cfg.SyncTimeout <= 0 || cfg.OrderTimeout <= 0 {
 		t.Fatalf("unexpected runtime timeout defaults: sync=%s order=%s", cfg.SyncTimeout, cfg.OrderTimeout)
 	}

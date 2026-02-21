@@ -74,7 +74,15 @@ type AgentConfig struct {
 	MinGainPct   float64       `koanf:"min_gain_pct"`
 	MaxIntents   int           `koanf:"max_intents"`
 	DryRun       bool          `koanf:"dry_run"`
+	LowPower     LowPower      `koanf:"low_power"`
 	LLM          LLMConfig     `koanf:"llm"`
+}
+
+type LowPower struct {
+	Enabled            bool          `koanf:"enabled"`
+	AllowAfterHours    bool          `koanf:"allow_after_hours"`
+	ClosedPollInterval time.Duration `koanf:"closed_poll_interval"`
+	PreOpenWarmup      time.Duration `koanf:"pre_open_warmup"`
 }
 
 type LLMConfig struct {
@@ -155,6 +163,12 @@ func Default() Config {
 			MinGainPct:   d.AgentMinGainPct,
 			MaxIntents:   d.MaxAgentIntents,
 			DryRun:       d.AgentDryRun,
+			LowPower: LowPower{
+				Enabled:            d.AgentLowPowerEnabled,
+				AllowAfterHours:    d.AgentAllowAfterHours,
+				ClosedPollInterval: d.AgentClosedPollInterval,
+				PreOpenWarmup:      d.AgentPreOpenWarmup,
+			},
 			LLM: LLMConfig{
 				APIKey:       d.LLMAPIKey,
 				BaseURL:      d.LLMBaseURL,
@@ -219,6 +233,10 @@ func (c Config) ToAppConfig() app.Config {
 		AgentMinGainPct:            c.Agent.MinGainPct,
 		MaxAgentIntents:            c.Agent.MaxIntents,
 		AgentDryRun:                c.Agent.DryRun,
+		AgentLowPowerEnabled:       c.Agent.LowPower.Enabled,
+		AgentAllowAfterHours:       c.Agent.LowPower.AllowAfterHours,
+		AgentClosedPollInterval:    c.Agent.LowPower.ClosedPollInterval,
+		AgentPreOpenWarmup:         c.Agent.LowPower.PreOpenWarmup,
 		SyncTimeout:                c.Agent.SyncTimeout,
 		OrderTimeout:               c.Agent.OrderTimeout,
 		LogFile:                    c.Logging.File,

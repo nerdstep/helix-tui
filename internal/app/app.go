@@ -44,6 +44,10 @@ type Config struct {
 	AgentMinGainPct            float64
 	MaxAgentIntents            int
 	AgentDryRun                bool
+	AgentLowPowerEnabled       bool
+	AgentAllowAfterHours       bool
+	AgentClosedPollInterval    time.Duration
+	AgentPreOpenWarmup         time.Duration
 	SyncTimeout                time.Duration
 	OrderTimeout               time.Duration
 	LogFile                    string
@@ -107,6 +111,10 @@ func DefaultConfig() Config {
 		AgentMovePct:               0.01,
 		AgentMinGainPct:            0,
 		MaxAgentIntents:            1,
+		AgentLowPowerEnabled:       true,
+		AgentAllowAfterHours:       false,
+		AgentClosedPollInterval:    5 * time.Minute,
+		AgentPreOpenWarmup:         15 * time.Minute,
 		SyncTimeout:                15 * time.Second,
 		OrderTimeout:               15 * time.Second,
 		LogMode:                    "append",

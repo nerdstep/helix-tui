@@ -178,7 +178,7 @@ func TestRefreshCmdAndView(t *testing.T) {
 		Details: "generated=1 attempted=1 executed=1 rejected=0 approvals=0 dry_run=0 skipped=0",
 	})
 	view := m.View()
-	if !strings.Contains(view, "Cash:") || !strings.Contains(view, "buy <sym> <qty>") {
+	if !strings.Contains(view, "Cash:") || !strings.Contains(view, "? toggle help") {
 		t.Fatalf("unexpected view output: %q", view)
 	}
 	if !strings.Contains(view, "Overview") || !strings.Contains(view, "Logs") || !strings.Contains(view, "Strategy") || !strings.Contains(view, "System") {

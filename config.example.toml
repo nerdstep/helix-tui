@@ -45,6 +45,12 @@ min_gain_pct = 1.0 # minimum expected gain percent per intent; 0 disables
 max_intents = 1
 dry_run = false
 
+[agent.low_power]
+enabled = true # when true, autonomous cycles idle outside regular market hours
+allow_after_hours = false # when true, keep agent active during pre/after-market sessions
+closed_poll_interval = "5m" # cycle interval while idle outside market hours
+pre_open_warmup = "15m" # switch to normal cadence this long before 09:30 ET
+
 [agent.llm]
 api_key = "" # optional if OPENAI_API_KEY is set or keyring has one
 base_url = "https://api.openai.com/v1" # OpenAI-compatible endpoint

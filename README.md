@@ -67,6 +67,10 @@ The app can load runtime settings from a TOML file.
   - `[agent].sync_timeout`
   - `[agent].order_timeout`
   - `[agent].min_gain_pct`
+  - `[agent.low_power].enabled`
+  - `[agent.low_power].allow_after_hours`
+  - `[agent.low_power].closed_poll_interval`
+  - `[agent.low_power].pre_open_warmup`
   - `[agent.llm].api_key`
   - `[agent.llm].base_url`
   - `[agent.llm].model`
@@ -173,8 +177,8 @@ go run ./cmd/helix \
 - `strategy approve <PLAN_ID>` (promote to active)
 - `strategy reject <PLAN_ID>` (mark superseded)
 - `strategy archive <PLAN_ID>`
-- `help`
 - `q`
+- `?` (toggle compact/full help menu)
 
 ## Runtime Modes
 
@@ -185,6 +189,7 @@ go run ./cmd/helix \
 `[agent].dry_run` works with autonomous modes and logs intents without submitting orders.
 `[agent].min_gain_pct` enforces a minimum expected gain percent per intent (0 disables).
 Autonomous cycles run on the configured interval, but agent invocation is skipped when the decision context is unchanged (with periodic forced refresh).
+When `[agent.low_power].enabled = true`, autonomous cycles switch to idle outside regular market hours to reduce LLM/API usage.
 
 Agent implementations:
 

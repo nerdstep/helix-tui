@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"helix-tui/internal/configfile"
 	"helix-tui/internal/domain"
@@ -166,6 +167,24 @@ func TestNormalizeAndValidateConfig_InvalidLLMContextLog(t *testing.T) {
 	cfg.Agent.LLM.ContextLog = "verbose"
 	if err := normalizeAndValidateConfig(&cfg); err == nil {
 		t.Fatalf("expected invalid llm context log error")
+	}
+}
+
+func TestNormalizeAndValidateConfig_InvalidLowPowerClosedPollInterval(t *testing.T) {
+	cfg := configfile.Default()
+	cfg.Agent.LowPower.Enabled = true
+	cfg.Agent.LowPower.ClosedPollInterval = 0
+	if err := normalizeAndValidateConfig(&cfg); err == nil {
+		t.Fatalf("expected invalid low power closed poll interval error")
+	}
+}
+
+func TestNormalizeAndValidateConfig_InvalidLowPowerPreOpenWarmup(t *testing.T) {
+	cfg := configfile.Default()
+	cfg.Agent.LowPower.Enabled = true
+	cfg.Agent.LowPower.PreOpenWarmup = -1 * time.Minute
+	if err := normalizeAndValidateConfig(&cfg); err == nil {
+		t.Fatalf("expected invalid low power pre-open warmup error")
 	}
 }
 

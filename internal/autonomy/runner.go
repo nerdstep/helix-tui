@@ -39,10 +39,13 @@ type Runner struct {
 	lastDecisionAt   time.Time
 	forceInvokeAfter time.Duration
 	contextLogMode   contextLogMode
+	lowPower         lowPowerConfig
+	powerState       powerState
 
 	eventHistory     eventHistoryStore
 	eventHistorySize int
 	strategyPolicy   strategyPolicyProvider
+	nowFn            func() time.Time
 }
 
 type contextLogMode string
@@ -57,6 +60,22 @@ type StrategyConstraint struct {
 	MaxNotional float64
 }
 
+type LowPowerConfig struct {
+	Enabled            bool
+	AllowAfterHours    bool
+	ClosedPollInterval time.Duration
+	PreOpenWarmup      time.Duration
+}
+
+type lowPowerConfig struct {
+	Enabled            bool
+	AllowAfterHours    bool
+	ClosedPollInterval time.Duration
+	PreOpenWarmup      time.Duration
+}
+
+type powerState string
+
 type ActiveStrategyPolicy struct {
 	PlanID          uint
 	GeneratedAt     time.Time
@@ -68,10 +87,16 @@ type strategyPolicyProvider interface {
 }
 
 const (
-	contextLogOff           contextLogMode = "off"
-	contextLogSummary       contextLogMode = "summary"
-	contextLogFull          contextLogMode = "full"
-	defaultEventHistorySize                = 200
+	contextLogOff             contextLogMode = "off"
+	contextLogSummary         contextLogMode = "summary"
+	contextLogFull            contextLogMode = "full"
+	defaultEventHistorySize                  = 200
+	defaultClosedPollInterval                = 2 * time.Minute
+	defaultPreOpenWarmup                     = 15 * time.Minute
+
+	powerStateActive powerState = "active"
+	powerStateWarmup powerState = "warmup"
+	powerStateIdle   powerState = "idle"
 )
 
 var errEquivalentOpenOrder = errors.New("equivalent open order already exists")
@@ -144,8 +169,18 @@ func NewRunner(
 		heartbeatInterval: heartbeatIntervalForCycle(interval),
 		forceInvokeAfter:  forceInvokeAfterForCycle(interval),
 		contextLogMode:    normalizedContextLogMode(contextLog),
-		eventHistorySize:  defaultEventHistorySize,
+		lowPower: lowPowerConfig{
+			Enabled: false,
+		},
+		eventHistorySize: defaultEventHistorySize,
+		nowFn:            time.Now,
 	}
+}
+
+func (r *Runner) SetLowPower(cfg LowPowerConfig) {
+	r.mu.Lock()
+	r.lowPower = normalizeLowPowerConfig(cfg)
+	r.mu.Unlock()
 }
 
 func (r *Runner) SetEventHistory(store eventHistoryStore) {
@@ -164,38 +199,62 @@ func (r *Runner) Run(ctx context.Context) error {
 	if r.agent == nil {
 		return fmt.Errorf("runner requires an agent")
 	}
-	r.engine.AddEvent("agent_runner_start", fmt.Sprintf("mode=%s interval=%s", r.mode, r.interval))
+	lowPower := r.lowPowerSnapshot()
+	r.engine.AddEvent(
+		"agent_runner_start",
+		fmt.Sprintf(
+			"mode=%s interval=%s low_power=%t closed_poll=%s after_hours=%t warmup=%s",
+			r.mode,
+			r.interval,
+			lowPower.Enabled,
+			lowPower.ClosedPollInterval,
+			lowPower.AllowAfterHours,
+			lowPower.PreOpenWarmup,
+		),
+	)
 	if err := r.runCycle(ctx); err != nil {
 		r.engine.AddEvent("agent_cycle_error", err.Error())
 	}
 
-	ticker := time.NewTicker(r.interval)
-	defer ticker.Stop()
+	timer := time.NewTimer(r.nextCycleInterval(r.currentTime()))
+	defer timer.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			r.engine.AddEvent("agent_runner_stop", "context canceled")
 			return ctx.Err()
-		case <-ticker.C:
+		case <-timer.C:
 			if err := r.runCycle(ctx); err != nil {
 				r.engine.AddEvent("agent_cycle_error", err.Error())
 			}
+			timer.Reset(r.nextCycleInterval(r.currentTime()))
 		}
 	}
 }
 
 func (r *Runner) runCycle(ctx context.Context) error {
-	cycleStartedAt := time.Now()
+	cycleStartedAt := r.currentTime()
 	watchlist := r.watchlistSnapshot()
+	state, reason := r.powerStateForTime(cycleStartedAt)
+	r.transitionPowerState(state, reason)
 	r.engine.AddEvent(
 		"agent_cycle_start",
-		fmt.Sprintf("mode=%s watchlist=%d", r.mode, len(watchlist)),
+		fmt.Sprintf("mode=%s watchlist=%d power_state=%s", r.mode, len(watchlist), state),
 	)
 
 	syncCtx, cancel := context.WithTimeout(ctx, r.syncTimeout)
 	defer cancel()
 	if err := r.engine.SyncQuiet(syncCtx); err != nil {
 		return fmt.Errorf("sync: %w", err)
+	}
+	if state == powerStateIdle {
+		r.engine.AddEvent(
+			"agent_cycle_idle",
+			fmt.Sprintf("state=%s reason=%s", state, reason),
+		)
+		r.engine.AddEvent("agent_cycle_complete", "generated=0 attempted=0 executed=0 rejected=0 approvals=0 dry_run=0 skipped=0 reason=low_power_state")
+		r.recordHeartbeat(0, 0, 0, 0, 0, 0, 0)
+		return nil
 	}
 
 	snapshot := r.engine.Snapshot()
@@ -726,6 +785,186 @@ func shortHash(s string) string {
 		return s
 	}
 	return s[:12]
+}
+
+func (r *Runner) currentTime() time.Time {
+	if r.nowFn == nil {
+		return time.Now()
+	}
+	return r.nowFn()
+}
+
+func normalizeLowPowerConfig(cfg LowPowerConfig) lowPowerConfig {
+	closedPoll := cfg.ClosedPollInterval
+	if closedPoll <= 0 {
+		closedPoll = defaultClosedPollInterval
+	}
+	preOpenWarmup := cfg.PreOpenWarmup
+	if preOpenWarmup < 0 {
+		preOpenWarmup = 0
+	}
+	if preOpenWarmup == 0 && cfg.Enabled {
+		preOpenWarmup = defaultPreOpenWarmup
+	}
+	return lowPowerConfig{
+		Enabled:            cfg.Enabled,
+		AllowAfterHours:    cfg.AllowAfterHours,
+		ClosedPollInterval: closedPoll,
+		PreOpenWarmup:      preOpenWarmup,
+	}
+}
+
+func (r *Runner) lowPowerSnapshot() lowPowerConfig {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.lowPower
+}
+
+func (r *Runner) powerStateSnapshot() powerState {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.powerState
+}
+
+func (r *Runner) nextCycleInterval(now time.Time) time.Duration {
+	state := r.powerStateSnapshot()
+	if state == "" {
+		computed, _ := r.powerStateForTime(now)
+		state = computed
+	}
+	return r.intervalForPowerState(state)
+}
+
+func (r *Runner) intervalForPowerState(state powerState) time.Duration {
+	lowPower := r.lowPowerSnapshot()
+	if state != powerStateIdle || !lowPower.Enabled {
+		return r.interval
+	}
+	if lowPower.ClosedPollInterval > r.interval {
+		return lowPower.ClosedPollInterval
+	}
+	return r.interval
+}
+
+func (r *Runner) transitionPowerState(next powerState, reason string) {
+	r.mu.Lock()
+	prev := r.powerState
+	if prev == next {
+		r.mu.Unlock()
+		return
+	}
+	r.powerState = next
+	r.mu.Unlock()
+	if next == "" {
+		return
+	}
+	details := fmt.Sprintf(
+		"state=%s prev=%s reason=%s next_interval=%s",
+		next,
+		normalizePowerState(prev),
+		normalizePowerReason(reason),
+		r.intervalForPowerState(next).Round(time.Second),
+	)
+	r.engine.AddEvent("agent_power_state", details)
+}
+
+func normalizePowerState(state powerState) powerState {
+	if state == "" {
+		return "unknown"
+	}
+	return state
+}
+
+func normalizePowerReason(reason string) string {
+	reason = strings.ToLower(strings.TrimSpace(reason))
+	if reason == "" {
+		return "unspecified"
+	}
+	return strings.ReplaceAll(reason, " ", "_")
+}
+
+func (r *Runner) powerStateForTime(now time.Time) (powerState, string) {
+	lowPower := r.lowPowerSnapshot()
+	if !lowPower.Enabled {
+		return powerStateActive, "disabled"
+	}
+	phase := marketPhaseAt(now)
+	switch phase {
+	case marketPhaseRegular:
+		return powerStateActive, "market_open"
+	case marketPhasePremarket:
+		if lowPower.AllowAfterHours {
+			return powerStateActive, "after_hours_allowed"
+		}
+		if lowPower.PreOpenWarmup > 0 && inPreOpenWarmup(now, lowPower.PreOpenWarmup) {
+			return powerStateWarmup, "pre_open_warmup"
+		}
+		return powerStateIdle, "outside_market_hours"
+	case marketPhaseAfterHours:
+		if lowPower.AllowAfterHours {
+			return powerStateActive, "after_hours_allowed"
+		}
+		return powerStateIdle, "outside_market_hours"
+	default:
+		return powerStateIdle, "outside_market_hours"
+	}
+}
+
+type marketPhase string
+
+const (
+	marketPhaseClosed     marketPhase = "closed"
+	marketPhasePremarket  marketPhase = "pre"
+	marketPhaseRegular    marketPhase = "regular"
+	marketPhaseAfterHours marketPhase = "after"
+)
+
+var (
+	newYorkOnce sync.Once
+	newYorkLoc  *time.Location
+)
+
+func marketPhaseAt(now time.Time) marketPhase {
+	ny := now.In(newYorkLocation())
+	if ny.Weekday() == time.Saturday || ny.Weekday() == time.Sunday {
+		return marketPhaseClosed
+	}
+	minuteOfDay := ny.Hour()*60 + ny.Minute()
+	switch {
+	case minuteOfDay >= 9*60+30 && minuteOfDay < 16*60:
+		return marketPhaseRegular
+	case minuteOfDay >= 4*60 && minuteOfDay < 9*60+30:
+		return marketPhasePremarket
+	case minuteOfDay >= 16*60 && minuteOfDay < 20*60:
+		return marketPhaseAfterHours
+	default:
+		return marketPhaseClosed
+	}
+}
+
+func inPreOpenWarmup(now time.Time, warmup time.Duration) bool {
+	if warmup <= 0 {
+		return false
+	}
+	ny := now.In(newYorkLocation())
+	if ny.Weekday() == time.Saturday || ny.Weekday() == time.Sunday {
+		return false
+	}
+	openTime := time.Date(ny.Year(), ny.Month(), ny.Day(), 9, 30, 0, 0, ny.Location())
+	warmupStart := openTime.Add(-warmup)
+	return !ny.Before(warmupStart) && ny.Before(openTime)
+}
+
+func newYorkLocation() *time.Location {
+	newYorkOnce.Do(func() {
+		loc, err := time.LoadLocation("America/New_York")
+		if err != nil {
+			newYorkLoc = time.Local
+			return
+		}
+		newYorkLoc = loc
+	})
+	return newYorkLoc
 }
 
 func heartbeatIntervalForCycle(cycleInterval time.Duration) time.Duration {

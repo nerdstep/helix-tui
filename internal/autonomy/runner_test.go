@@ -525,6 +525,85 @@ func TestSetWatchlist(t *testing.T) {
 	}
 }
 
+func TestPowerStateForTime(t *testing.T) {
+	r, _ := newRunnerTestHarness(domain.ModeAuto, false)
+
+	r.SetLowPower(LowPowerConfig{Enabled: false})
+	state, reason := r.powerStateForTime(time.Date(2026, time.February, 21, 15, 0, 0, 0, time.UTC)) // Saturday
+	if state != powerStateActive || reason != "disabled" {
+		t.Fatalf("expected disabled low power to keep active, got state=%s reason=%s", state, reason)
+	}
+
+	r.SetLowPower(LowPowerConfig{
+		Enabled:            true,
+		AllowAfterHours:    false,
+		ClosedPollInterval: 2 * time.Minute,
+		PreOpenWarmup:      15 * time.Minute,
+	})
+	state, reason = r.powerStateForTime(time.Date(2026, time.February, 21, 15, 0, 0, 0, time.UTC)) // Saturday
+	if state != powerStateIdle || reason != "outside_market_hours" {
+		t.Fatalf("expected weekend idle state, got state=%s reason=%s", state, reason)
+	}
+
+	state, reason = r.powerStateForTime(time.Date(2026, time.February, 23, 14, 20, 0, 0, time.UTC)) // 09:20 ET Monday
+	if state != powerStateWarmup || reason != "pre_open_warmup" {
+		t.Fatalf("expected pre-open warmup state, got state=%s reason=%s", state, reason)
+	}
+
+	r.SetLowPower(LowPowerConfig{
+		Enabled:            true,
+		AllowAfterHours:    true,
+		ClosedPollInterval: 2 * time.Minute,
+		PreOpenWarmup:      15 * time.Minute,
+	})
+	state, reason = r.powerStateForTime(time.Date(2026, time.February, 23, 22, 30, 0, 0, time.UTC)) // 17:30 ET Monday
+	if state != powerStateActive || reason != "after_hours_allowed" {
+		t.Fatalf("expected after-hours active state, got state=%s reason=%s", state, reason)
+	}
+}
+
+func TestRunCycle_LowPowerIdleSkipsAgentInvocation(t *testing.T) {
+	r, broker := newRunnerTestHarness(domain.ModeAuto, false)
+	agent := &fakeAgent{
+		intents: []domain.TradeIntent{
+			{Symbol: "AAPL", Side: domain.SideBuy, Qty: 1},
+		},
+	}
+	r.agent = agent
+	r.SetLowPower(LowPowerConfig{
+		Enabled:            true,
+		AllowAfterHours:    false,
+		ClosedPollInterval: 2 * time.Minute,
+		PreOpenWarmup:      15 * time.Minute,
+	})
+	r.nowFn = func() time.Time {
+		return time.Date(2026, time.February, 21, 15, 0, 0, 0, time.UTC) // Saturday -> closed
+	}
+
+	if err := r.runCycle(context.Background()); err != nil {
+		t.Fatalf("runCycle failed: %v", err)
+	}
+	if agent.calls != 0 {
+		t.Fatalf("expected no propose call while idle, got %d", agent.calls)
+	}
+	if broker.placeCalls != 0 {
+		t.Fatalf("expected no orders while idle, got %d", broker.placeCalls)
+	}
+	events := r.engine.Snapshot().Events
+	if !hasEventType(events, "agent_power_state") {
+		t.Fatalf("expected power state transition event")
+	}
+	if !hasEventDetailContains(events, "agent_power_state", "state=idle") {
+		t.Fatalf("expected idle power state details")
+	}
+	if !hasEventType(events, "agent_cycle_idle") {
+		t.Fatalf("expected agent_cycle_idle event")
+	}
+	if !hasEventDetailContains(events, "agent_cycle_complete", "reason=low_power_state") {
+		t.Fatalf("expected low-power cycle completion reason")
+	}
+}
+
 func TestRunCycle_UsesEventHistoryStoreForAgentContext(t *testing.T) {
 	r, _ := newRunnerTestHarness(domain.ModeAuto, false)
 	agent := &fakeAgent{}

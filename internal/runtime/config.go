@@ -69,6 +69,14 @@ func validateConfig(cfg configfile.Config) error {
 	if cfg.Agent.MinGainPct < 0 {
 		return fmt.Errorf("agent.min_gain_pct must be >= 0")
 	}
+	if cfg.Agent.LowPower.Enabled {
+		if cfg.Agent.LowPower.ClosedPollInterval <= 0 {
+			return fmt.Errorf("agent.low_power.closed_poll_interval must be > 0 when agent.low_power.enabled=true")
+		}
+		if cfg.Agent.LowPower.PreOpenWarmup < 0 {
+			return fmt.Errorf("agent.low_power.pre_open_warmup must be >= 0")
+		}
+	}
 	switch cfg.Compliance.AccountType {
 	case "", "auto", "margin", "cash":
 	default:

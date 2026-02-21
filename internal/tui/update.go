@@ -62,6 +62,12 @@ func (m Model) updateRefresh(msg refreshMsg) (tea.Model, tea.Cmd) {
 		}
 		m.quoteErr[symbol] = errMsg
 	}
+	m.strategy = msg.strategy
+	if msg.strategyErr != nil {
+		m.strategyLoadError = msg.strategyErr.Error()
+	} else {
+		m.strategyLoadError = ""
+	}
 	m.syncWidgets()
 	return m, nil
 }

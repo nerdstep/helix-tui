@@ -14,6 +14,7 @@ import (
 	"helix-tui/internal/credentials"
 	"helix-tui/internal/domain"
 	"helix-tui/internal/engine"
+	"helix-tui/internal/strategy"
 	"helix-tui/internal/symbols"
 )
 
@@ -244,4 +245,43 @@ func contextLogModeForAgent(cfg Config, agentType string) string {
 		return "off"
 	}
 	return cfg.LLMContextLog
+}
+
+func buildStrategyRunner(cfg Config, e *engine.Engine, watchlist []string) (*strategy.Runner, error) {
+	if !cfg.StrategyEnabled {
+		return nil, nil
+	}
+	keyringCfg := credentials.KeyringConfig{
+		Enabled: cfg.UseKeyring,
+		Save:    cfg.SaveToKeyring,
+		Service: cfg.KeyringService,
+		User:    cfg.KeyringUser,
+	}
+	llmKey, _, err := credentials.ResolveOpenAICredentials(cfg.LLMAPIKey, keyringCfg)
+	if err != nil {
+		return nil, err
+	}
+	analyst, err := strategy.NewLLMAnalyst(strategy.LLMAnalystConfig{
+		APIKey:             llmKey,
+		BaseURL:            cfg.LLMBaseURL,
+		Model:              cfg.StrategyModel,
+		Timeout:            cfg.StrategyTimeout,
+		SystemPrompt:       cfg.StrategySystemPrompt,
+		MaxRecommendations: cfg.StrategyMaxRecommendations,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return strategy.NewRunner(
+		e,
+		analyst,
+		watchlist,
+		cfg.StrategyInterval,
+		cfg.SyncTimeout,
+		cfg.StrategyObjective,
+		cfg.StrategyModel,
+		cfg.StrategyPromptVersion,
+		cfg.StrategyMaxRecommendations,
+		cfg.StrategyAutoActivate,
+	), nil
 }

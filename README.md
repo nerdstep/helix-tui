@@ -73,6 +73,15 @@ The app can load runtime settings from a TOML file.
   - `[agent.llm].timeout`
   - `[agent.llm].context_log` (`off|summary|full`)
   - `[agent.llm].system_prompt`
+  - `[strategy].enabled` (low-frequency strategy analyst overseer)
+  - `[strategy].interval`
+  - `[strategy].auto_activate`
+  - `[strategy].max_recommendations`
+  - `[strategy].objective`
+  - `[strategy.llm].model`
+  - `[strategy.llm].timeout`
+  - `[strategy.llm].prompt_version`
+  - `[strategy.llm].system_prompt`
   - `[logging].file` (optional event log path)
   - `[logging].mode` (`append` or `truncate`)
   - `[logging].level` (`trace|debug|info|warn|error|fatal|panic|disabled`)
@@ -222,11 +231,12 @@ These checks are enforced in `internal/engine/risk.go` and `internal/engine/comp
 - Set `[logging].level` to tune verbosity; default is `info`.
 - Event logs are emitted as structured JSON lines (`zerolog`) for easier filtering/analysis.
 - High-frequency loop events (`sync`, `agent_cycle_start`, `agent_proposal`, `agent_cycle_complete`, `agent_heartbeat`) are logged at `debug`.
-- Set `[database].path` to persist app state in SQLite; equity history and relevant trade/agent execution events are stored there.
+- Set `[database].path` to persist app state in SQLite; equity history, relevant trade/agent execution events, and strategy plan memory are stored there.
 - In LLM mode, recent event context is sourced from persisted DB events (not only in-memory session events), so context survives restarts.
 - Relevant trade/agent events are persisted at event-emission time (engine -> runtime persistor -> SQLite) in transactional batches.
 - SQLite persistence auto-applies the current schema at startup from `internal/storage`.
 - The TUI includes watchlist quote rows, position P&L, and basic agent/system runtime stats.
+- The TUI now includes a dedicated `Strategy` tab for active plan, recommendations, and recent plan history.
 - Equity trend rendering uses `github.com/NimbleMarkets/ntcharts` (sparkline) for higher fidelity terminal charts.
 - Event history supports keyboard paging (`PgUp`, `PgDn`, `Home`, `End`) and retains a larger recent window for scrollback.
 - Autonomous mode emits periodic `agent_heartbeat` summary events so idle-but-healthy loops are visible in logs.

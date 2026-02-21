@@ -11,6 +11,8 @@ func runMigrations(db *gorm.DB) error {
 		&equityHistoryRecord{},
 		&tradeEventRecord{},
 		&complianceUnsettledSellRecord{},
+		&strategyPlanRecord{},
+		&strategyRecommendationRecord{},
 	); err != nil {
 		return fmt.Errorf("auto-migrate database schema: %w", err)
 	}

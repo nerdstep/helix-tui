@@ -24,11 +24,19 @@ func createSystem(cfg app.Config) (*app.System, error) {
 
 func startRunner(ctx context.Context, system *app.System) {
 	if system.Runner == nil {
+	} else {
+		go func() {
+			if err := system.Runner.Run(ctx); err != nil && err != context.Canceled {
+				system.Engine.AddEvent("agent_runner_error", err.Error())
+			}
+		}()
+	}
+	if system.StrategyRunner == nil {
 		return
 	}
 	go func() {
-		if err := system.Runner.Run(ctx); err != nil && err != context.Canceled {
-			system.Engine.AddEvent("agent_runner_error", err.Error())
+		if err := system.StrategyRunner.Run(ctx); err != nil && err != context.Canceled {
+			system.Engine.AddEvent("strategy_runner_error", err.Error())
 		}
 	}()
 }
@@ -47,6 +55,9 @@ func runTUI(system *app.System, store *storage.Store, updateQuoteStream func([]s
 		if system.Runner != nil {
 			system.Runner.SetWatchlist(nextWatchlist)
 		}
+		if system.StrategyRunner != nil {
+			system.StrategyRunner.SetWatchlist(nextWatchlist)
+		}
 		updateQuoteStream(nextWatchlist)
 		return nil
 	}
@@ -61,6 +72,9 @@ func runTUI(system *app.System, store *storage.Store, updateQuoteStream func([]s
 		}
 		if system.Runner != nil {
 			system.Runner.SetWatchlist(nextWatchlist)
+		}
+		if system.StrategyRunner != nil {
+			system.StrategyRunner.SetWatchlist(nextWatchlist)
 		}
 		updateQuoteStream(nextWatchlist)
 		return nextWatchlist, nil
@@ -93,6 +107,9 @@ func runTUI(system *app.System, store *storage.Store, updateQuoteStream func([]s
 			})
 		}
 		model = model.WithEquityHistory(equityHistory, appendPoint)
+		model = model.WithStrategyLoader(func() (tui.StrategySnapshot, error) {
+			return loadStrategySnapshot(store.Strategy())
+		})
 	}
 
 	if system.PullWatchlist != nil {

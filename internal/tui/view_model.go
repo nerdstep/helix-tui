@@ -21,6 +21,9 @@ type viewModel struct {
 	systemRuntime     []string
 	systemAgent       []string
 	systemPersistence []string
+	strategyOverview  []string
+	strategyPicks     []string
+	strategyRecent    []string
 	events            []string
 	status            string
 	statusError       bool
@@ -40,12 +43,74 @@ func (m Model) buildViewModel() viewModel {
 		systemRuntime:     m.buildSystemRuntimeRows(),
 		systemAgent:       m.buildSystemAgentRows(),
 		systemPersistence: m.buildSystemPersistenceRows(),
+		strategyOverview:  m.buildStrategyOverviewRows(),
+		strategyPicks:     m.buildStrategyRecommendationsRows(),
+		strategyRecent:    m.buildStrategyRecentRows(),
 		events:            m.buildEventRows(),
 		status:            m.status,
 		statusError:       m.statusError,
 		input:             m.input,
-		footer:            footerStyle.Render("Commands: buy/sell/cancel/flatten/sync/watch/events/tab/help/q | tabs: Tab key (overview/logs/system)"),
+		footer:            footerStyle.Render("Commands: buy/sell/cancel/flatten/sync/watch/events/tab/help/q | tabs: Tab key (overview/logs/strategy/system)"),
 	}
+}
+
+func (m Model) buildStrategyOverviewRows() []string {
+	rows := []string{panelTitleStyle.Render("Strategy Plan")}
+	if m.strategyLoadError != "" {
+		rows = append(rows, errStyle.Render("load error: "+m.strategyLoadError))
+	}
+	active := m.strategy.Active
+	if active == nil {
+		rows = append(rows, mutedStyle.Render("(no active strategy plan)"))
+		return rows
+	}
+	rows = append(rows, fmt.Sprintf("id=%d status=%s conf=%.2f", active.ID, active.Status, active.Confidence))
+	rows = append(rows, fmt.Sprintf("generated=%s model=%s prompt=%s", active.GeneratedAt.Local().Format("2006-01-02 15:04:05"), active.AnalystModel, active.PromptVersion))
+	if strings.TrimSpace(active.Objective) != "" {
+		rows = append(rows, "objective: "+active.Objective)
+	}
+	if len(active.Watchlist) > 0 {
+		rows = append(rows, "watchlist: "+strings.Join(active.Watchlist, ","))
+	}
+	if strings.TrimSpace(active.Summary) != "" {
+		rows = append(rows, "summary: "+active.Summary)
+	}
+	return rows
+}
+
+func (m Model) buildStrategyRecommendationsRows() []string {
+	rows := []string{panelTitleStyle.Render("Recommendations")}
+	active := m.strategy.Active
+	if active == nil || len(active.Recommendations) == 0 {
+		rows = append(rows, mutedStyle.Render("(none)"))
+		return rows
+	}
+	for _, rec := range active.Recommendations {
+		head := fmt.Sprintf("%d) %s %-4s conf=%.2f max_notional=%.2f", rec.Priority, rec.Symbol, strings.ToUpper(rec.Bias), rec.Confidence, rec.MaxNotional)
+		rows = append(rows, head)
+		if rec.EntryMin > 0 || rec.EntryMax > 0 {
+			rows = append(rows, fmt.Sprintf("entry=%.2f-%.2f target=%.2f stop=%.2f", rec.EntryMin, rec.EntryMax, rec.TargetPrice, rec.StopPrice))
+		}
+		if strings.TrimSpace(rec.Thesis) != "" {
+			rows = append(rows, "thesis: "+rec.Thesis)
+		}
+		if strings.TrimSpace(rec.Invalidation) != "" {
+			rows = append(rows, "invalid: "+rec.Invalidation)
+		}
+	}
+	return rows
+}
+
+func (m Model) buildStrategyRecentRows() []string {
+	rows := []string{panelTitleStyle.Render("Recent Plans")}
+	if len(m.strategy.Recent) == 0 {
+		rows = append(rows, mutedStyle.Render("(none)"))
+		return rows
+	}
+	for _, plan := range m.strategy.Recent {
+		rows = append(rows, fmt.Sprintf("#%d %s status=%s conf=%.2f model=%s", plan.ID, plan.GeneratedAt.Local().Format("01-02 15:04"), plan.Status, plan.Confidence, plan.AnalystModel))
+	}
+	return rows
 }
 
 func (m Model) buildPositionRows() []string {

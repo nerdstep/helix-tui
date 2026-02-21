@@ -49,6 +49,10 @@ func Run(ctx context.Context, args []string, stderr io.Writer) error {
 		if system.Runner != nil {
 			system.Runner.SetEventHistory(store.Events())
 		}
+		if system.StrategyRunner != nil {
+			system.StrategyRunner.SetStore(store.Strategy())
+			system.StrategyRunner.SetEventHistory(store.Events())
+		}
 	}
 
 	stopEventLogger, err := startEventFileLogger(ctx, system.Engine, cfg.LogFile, cfg.LogMode, cfg.LogLevel)

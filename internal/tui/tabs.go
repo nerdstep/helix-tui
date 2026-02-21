@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-const tabCommandUsage = "usage: tab <overview|logs|system>"
+const tabCommandUsage = "usage: tab <overview|logs|strategy|system>"
 
 func (m *Model) handleTabCommand(raw string) (bool, tea.Cmd) {
 	fields := strings.Fields(strings.ToLower(strings.TrimSpace(raw)))
@@ -27,6 +27,8 @@ func (m *Model) handleTabCommand(raw string) (bool, tea.Cmd) {
 		m.setActiveTab(tabOverview)
 	case string(tabLogs), "events":
 		m.setActiveTab(tabLogs)
+	case string(tabStrategy):
+		m.setActiveTab(tabStrategy)
 	case string(tabSystem):
 		m.setActiveTab(tabSystem)
 	default:
@@ -41,6 +43,10 @@ func (m *Model) toggleTab() {
 		return
 	}
 	if m.activeTab == tabLogs {
+		m.setActiveTab(tabStrategy)
+		return
+	}
+	if m.activeTab == tabStrategy {
 		m.setActiveTab(tabSystem)
 		return
 	}
@@ -60,6 +66,7 @@ func (m *Model) setActiveTab(tab uiTab) {
 func (m Model) renderTabBar(width int) string {
 	overview := tabInactiveStyle.Render("Overview")
 	logs := tabInactiveStyle.Render("Logs")
+	strategy := tabInactiveStyle.Render("Strategy")
 	system := tabInactiveStyle.Render("System")
 	if m.activeTab == tabOverview {
 		overview = tabActiveStyle.Render("Overview")
@@ -67,10 +74,13 @@ func (m Model) renderTabBar(width int) string {
 	if m.activeTab == tabLogs {
 		logs = tabActiveStyle.Render("Logs")
 	}
+	if m.activeTab == tabStrategy {
+		strategy = tabActiveStyle.Render("Strategy")
+	}
 	if m.activeTab == tabSystem {
 		system = tabActiveStyle.Render("System")
 	}
-	bar := lipgloss.JoinHorizontal(lipgloss.Left, overview, " ", logs, " ", system)
+	bar := lipgloss.JoinHorizontal(lipgloss.Left, overview, " ", logs, " ", strategy, " ", system)
 	if width <= 0 {
 		return bar
 	}

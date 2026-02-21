@@ -11,55 +11,66 @@ import (
 	"helix-tui/internal/domain"
 	"helix-tui/internal/engine"
 	"helix-tui/internal/storage"
+	"helix-tui/internal/strategy"
 )
 
 type Config struct {
-	Broker                    string
-	AlpacaAPIKey              string
-	AlpacaAPISecret           string
-	AlpacaEnv                 string
-	AlpacaBaseURL             string
-	AlpacaDataURL             string
-	AlpacaFeed                string
-	UseKeyring                bool
-	SaveToKeyring             bool
-	KeyringService            string
-	KeyringUser               string
-	MaxNotionalPerTrade       float64
-	MaxNotionalPerDay         float64
-	ComplianceEnabled         bool
-	ComplianceAccountType     string
-	ComplianceAvoidPDT        bool
-	ComplianceMaxDayTrades5D  int
-	ComplianceMinEquityForPDT float64
-	ComplianceAvoidGoodFaith  bool
-	ComplianceSettlementDays  int
-	Mode                      domain.Mode
-	Watchlist                 []string
-	AgentType                 string
-	AgentInterval             time.Duration
-	AgentOrderQty             float64
-	AgentMovePct              float64
-	AgentMinGainPct           float64
-	MaxAgentIntents           int
-	AgentDryRun               bool
-	SyncTimeout               time.Duration
-	OrderTimeout              time.Duration
-	LogFile                   string
-	LogMode                   string
-	LogLevel                  string
-	DatabasePath              string
-	LLMAPIKey                 string
-	LLMBaseURL                string
-	LLMModel                  string
-	LLMTimeout                time.Duration
-	LLMSystemPrompt           string
-	LLMContextLog             string
+	Broker                     string
+	AlpacaAPIKey               string
+	AlpacaAPISecret            string
+	AlpacaEnv                  string
+	AlpacaBaseURL              string
+	AlpacaDataURL              string
+	AlpacaFeed                 string
+	UseKeyring                 bool
+	SaveToKeyring              bool
+	KeyringService             string
+	KeyringUser                string
+	MaxNotionalPerTrade        float64
+	MaxNotionalPerDay          float64
+	ComplianceEnabled          bool
+	ComplianceAccountType      string
+	ComplianceAvoidPDT         bool
+	ComplianceMaxDayTrades5D   int
+	ComplianceMinEquityForPDT  float64
+	ComplianceAvoidGoodFaith   bool
+	ComplianceSettlementDays   int
+	Mode                       domain.Mode
+	Watchlist                  []string
+	AgentType                  string
+	AgentInterval              time.Duration
+	AgentOrderQty              float64
+	AgentMovePct               float64
+	AgentMinGainPct            float64
+	MaxAgentIntents            int
+	AgentDryRun                bool
+	SyncTimeout                time.Duration
+	OrderTimeout               time.Duration
+	LogFile                    string
+	LogMode                    string
+	LogLevel                   string
+	DatabasePath               string
+	LLMAPIKey                  string
+	LLMBaseURL                 string
+	LLMModel                   string
+	LLMTimeout                 time.Duration
+	LLMSystemPrompt            string
+	LLMContextLog              string
+	StrategyEnabled            bool
+	StrategyInterval           time.Duration
+	StrategyAutoActivate       bool
+	StrategyMaxRecommendations int
+	StrategyObjective          string
+	StrategyModel              string
+	StrategyTimeout            time.Duration
+	StrategySystemPrompt       string
+	StrategyPromptVersion      string
 }
 
 type System struct {
 	Engine             *engine.Engine
 	Runner             *autonomy.Runner
+	StrategyRunner     *strategy.Runner
 	Watchlist          []string
 	PullWatchlist      func() ([]string, error)
 	SyncWatchlist      func([]string) error
@@ -72,39 +83,48 @@ const defaultAlpacaWatchlistName = "helix-tui"
 
 func DefaultConfig() Config {
 	return Config{
-		Broker:                    "alpaca",
-		AlpacaEnv:                 alpaca.EnvPaper,
-		AlpacaFeed:                "iex",
-		UseKeyring:                true,
-		SaveToKeyring:             true,
-		KeyringService:            credentials.DefaultService,
-		KeyringUser:               credentials.DefaultUser,
-		MaxNotionalPerTrade:       5000,
-		MaxNotionalPerDay:         20000,
-		ComplianceEnabled:         false,
-		ComplianceAccountType:     "auto",
-		ComplianceAvoidPDT:        true,
-		ComplianceMaxDayTrades5D:  3,
-		ComplianceMinEquityForPDT: 25000,
-		ComplianceAvoidGoodFaith:  false,
-		ComplianceSettlementDays:  1,
-		Mode:                      domain.ModeManual,
-		Watchlist:                 []string{"AAPL", "MSFT", "TSLA", "NVDA"},
-		AgentType:                 "heuristic",
-		AgentInterval:             10 * time.Second,
-		AgentOrderQty:             1,
-		AgentMovePct:              0.01,
-		AgentMinGainPct:           0,
-		MaxAgentIntents:           1,
-		SyncTimeout:               15 * time.Second,
-		OrderTimeout:              15 * time.Second,
-		LogMode:                   "append",
-		LogLevel:                  "info",
-		DatabasePath:              storage.DefaultPath,
-		LLMBaseURL:                "https://api.openai.com/v1",
-		LLMModel:                  "gpt-4.1-mini",
-		LLMTimeout:                20 * time.Second,
-		LLMContextLog:             "off",
+		Broker:                     "alpaca",
+		AlpacaEnv:                  alpaca.EnvPaper,
+		AlpacaFeed:                 "iex",
+		UseKeyring:                 true,
+		SaveToKeyring:              true,
+		KeyringService:             credentials.DefaultService,
+		KeyringUser:                credentials.DefaultUser,
+		MaxNotionalPerTrade:        5000,
+		MaxNotionalPerDay:          20000,
+		ComplianceEnabled:          false,
+		ComplianceAccountType:      "auto",
+		ComplianceAvoidPDT:         true,
+		ComplianceMaxDayTrades5D:   3,
+		ComplianceMinEquityForPDT:  25000,
+		ComplianceAvoidGoodFaith:   false,
+		ComplianceSettlementDays:   1,
+		Mode:                       domain.ModeManual,
+		Watchlist:                  []string{"AAPL", "MSFT", "TSLA", "NVDA"},
+		AgentType:                  "heuristic",
+		AgentInterval:              10 * time.Second,
+		AgentOrderQty:              1,
+		AgentMovePct:               0.01,
+		AgentMinGainPct:            0,
+		MaxAgentIntents:            1,
+		SyncTimeout:                15 * time.Second,
+		OrderTimeout:               15 * time.Second,
+		LogMode:                    "append",
+		LogLevel:                   "info",
+		DatabasePath:               storage.DefaultPath,
+		LLMBaseURL:                 "https://api.openai.com/v1",
+		LLMModel:                   "gpt-4.1-mini",
+		LLMTimeout:                 20 * time.Second,
+		LLMContextLog:              "off",
+		StrategyEnabled:            false,
+		StrategyInterval:           4 * time.Hour,
+		StrategyAutoActivate:       false,
+		StrategyMaxRecommendations: 8,
+		StrategyObjective:          "Build a risk-aware equities strategy with clear entries, exits, and invalidation rules.",
+		StrategyModel:              "gpt-5",
+		StrategyTimeout:            90 * time.Second,
+		StrategySystemPrompt:       "You are a senior US equities strategy analyst for helix-tui.",
+		StrategyPromptVersion:      "strategy-v1",
 	}
 }
 
@@ -142,6 +162,14 @@ func NewSystem(cfg Config) (*System, error) {
 	if runner != nil {
 		system.Runner = runner
 		e.AddEvent("agent_mode", fmt.Sprintf("mode=%s agent=%s watchlist=%s", mode, agentType, strings.Join(watchlist, ",")))
+	}
+	strategyRunner, err := buildStrategyRunner(cfg, e, watchlist)
+	if err != nil {
+		return nil, err
+	}
+	if strategyRunner != nil {
+		system.StrategyRunner = strategyRunner
+		e.AddEvent("strategy_mode", fmt.Sprintf("enabled=true interval=%s model=%s", cfg.StrategyInterval, strings.TrimSpace(cfg.StrategyModel)))
 	}
 	return system, nil
 }

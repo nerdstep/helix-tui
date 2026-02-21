@@ -25,7 +25,6 @@ Status values:
 | ID | Item | Priority | Status | Why | Exit Criteria |
 |---|---|---|---|---|---|
 | ALPACA-001 | Investigate error: {"level":"warn","component":"eventlog","event_type":"agent_intent_rejected","event_time":"2026-02-19T20:29:57-08:00","time":"2026-02-19T20:29:58-08:00","message":"buy RIVN qty=100.00 type=limit conf=0.00 gain=6.00% rationale=No existing position or open orders; last=15.415 — place a small limit buy (100 sh = ~$1.54k, ~1.5% cash) to establish exposure; targeting modest 6% gain.: invalid limit_price 15.415. sub-penny increment does not fulfill minimum pricing criteria (HTTP 422, Code 42210000)"} | high | next |
-| AGENT-005 | LLM research tool layer (news/fundamentals input before intent generation) | high | next | Improve decision quality vs quote-only context | Agent prompt includes research payload; tests cover empty/failure research cases; risk-gated execution unchanged |
 | AGENT-006 | Assist-mode approval workflow for agent intents in TUI | high | next | Turn `assist` mode into actionable human approval loop | TUI shows pending intents and supports approve/reject commands; events logged for every decision |
 
 ## Backlog
@@ -43,6 +42,47 @@ Status values:
 | ID | Item | Priority | Status | Notes |
 |---|---|---|---|---|
 | COMPLIANCE-001 | Live-trading compliance guardrails (PDT/GFV) | high | in_progress | Phase 1 + Phase 2 implemented; Alpaca calendar now used as settlement source in broker=alpaca mode |
+| AGENT-005 | Strategy Analyst overseer (deep research + plan memory) | high | in_progress | Phase 1 implemented: SQLite-backed strategy memory (`strategy_plans` + `strategy_recommendations`) with typed repository + activation/supersede flow |
+
+## Strategy Analyst Rollout Plan (Phased)
+
+### Phase 1: Strategy memory foundation (implemented)
+
+- Status: `done`
+- Scope:
+  - Add typed persistence for strategy plans/recommendations in SQLite.
+  - Add repository APIs for create/list/activate/get-active plan workflows.
+  - Ensure plan activation supersedes prior active plans for single-source strategy state.
+- Completion criteria:
+  - [x] New DB tables auto-migrated at startup.
+  - [x] Repository tests cover create/read/activate/supersede and reopen persistence.
+  - [x] Store exposes strategy repository for runtime/agent wiring.
+
+### Phase 2: Analyst agent runtime loop (in progress)
+
+- Status: `in_progress`
+- Scope:
+  - Add a low-frequency `strategy` runner (overseer cadence).
+  - Add analyst prompt contract for structured plan + picks output.
+  - Persist model metadata and resulting plans/recommendations.
+  - Surface strategy state in a dedicated TUI `Strategy` tab (not System tab).
+- Completion criteria:
+  - [x] Analyst loop runs independently from execution loop.
+  - [x] Dedicated Strategy tab shows active plan + recommendations + recent plan history.
+  - [x] Unit tests cover strategy runner persistence/activation path.
+  - [ ] Add stale-plan indicators + explicit last-run health status.
+
+### Phase 3: Execution integration + operator controls (planned)
+
+- Status: `proposed`
+- Scope:
+  - Execution agent consumes only active strategy constraints.
+  - Add approve/reject/archive controls for strategy plans (initially via TUI commands).
+  - Surface active strategy summary in TUI/System.
+- Completion criteria:
+  - [ ] Execution intents are policy-checked against active strategy constraints.
+  - [ ] Operator can promote/supersede/archive plans with clear audit events.
+  - [ ] Docs/runbooks cover strategy handoff and incident rollback.
 
 ## Compliance Rollout Plan (Phased)
 

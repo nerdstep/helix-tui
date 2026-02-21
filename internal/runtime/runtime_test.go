@@ -169,6 +169,22 @@ func TestNormalizeAndValidateConfig_InvalidLLMContextLog(t *testing.T) {
 	}
 }
 
+func TestNormalizeAndValidateConfig_InvalidStrategySettings(t *testing.T) {
+	cfg := configfile.Default()
+	cfg.Strategy.Enabled = true
+	cfg.Strategy.Interval = 0
+	if err := normalizeAndValidateConfig(&cfg); err == nil {
+		t.Fatalf("expected invalid strategy interval error")
+	}
+
+	cfg = configfile.Default()
+	cfg.Strategy.Enabled = true
+	cfg.Strategy.MaxRecommendations = 0
+	if err := normalizeAndValidateConfig(&cfg); err == nil {
+		t.Fatalf("expected invalid strategy max recommendations error")
+	}
+}
+
 func TestNormalizeAndValidateConfig_InvalidComplianceAccountType(t *testing.T) {
 	cfg := configfile.Default()
 	cfg.Compliance.AccountType = "prime"

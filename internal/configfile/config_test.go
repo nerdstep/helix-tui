@@ -115,6 +115,19 @@ timeout = "30s"
 system_prompt = "be conservative"
 context_log = "summary"
 
+[strategy]
+enabled = true
+interval = "2h"
+auto_activate = true
+max_recommendations = 5
+objective = "rotate towards higher momentum names"
+
+[strategy.llm]
+model = "gpt-5"
+timeout = "75s"
+prompt_version = "strategy-v2"
+system_prompt = "deep strategy analysis"
+
 [logging]
 file = "logs/helix-debug.log"
 mode = "truncate"
@@ -205,6 +218,21 @@ path = "data/helix.db"
 	}
 	if cfg.Agent.LLM.ContextLog != "summary" {
 		t.Fatalf("unexpected llm context log mode: %q", cfg.Agent.LLM.ContextLog)
+	}
+	if !cfg.Strategy.Enabled || cfg.Strategy.Interval != 2*time.Hour || !cfg.Strategy.AutoActivate {
+		t.Fatalf("unexpected strategy settings: %#v", cfg.Strategy)
+	}
+	if cfg.Strategy.MaxRecommendations != 5 {
+		t.Fatalf("unexpected strategy max recommendations: %d", cfg.Strategy.MaxRecommendations)
+	}
+	if cfg.Strategy.Objective != "rotate towards higher momentum names" {
+		t.Fatalf("unexpected strategy objective: %q", cfg.Strategy.Objective)
+	}
+	if cfg.Strategy.LLM.Model != "gpt-5" || cfg.Strategy.LLM.Timeout != 75*time.Second {
+		t.Fatalf("unexpected strategy llm settings: %#v", cfg.Strategy.LLM)
+	}
+	if cfg.Strategy.LLM.PromptVersion != "strategy-v2" || cfg.Strategy.LLM.SystemPrompt != "deep strategy analysis" {
+		t.Fatalf("unexpected strategy llm prompt settings: %#v", cfg.Strategy.LLM)
 	}
 	if cfg.Logging.File != "logs/helix-debug.log" {
 		t.Fatalf("unexpected log file: %q", cfg.Logging.File)

@@ -31,6 +31,10 @@ func TestStoreOpenMigrateAppendListAndReopen(t *testing.T) {
 	if stateRepo == nil {
 		t.Fatalf("expected compliance state repository")
 	}
+	strategyRepo := store.Strategy()
+	if strategyRepo == nil {
+		t.Fatalf("expected strategy repository")
+	}
 
 	p1 := EquityPoint{Time: time.Now().UTC(), Equity: 100000}
 	p2 := EquityPoint{Time: time.Now().UTC().Add(time.Second), Equity: 100120.5}
@@ -53,6 +57,26 @@ func TestStoreOpenMigrateAppendListAndReopen(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("append compliance state failed: %v", err)
 	}
+	planBundle, err := strategyRepo.CreatePlan(StrategyPlan{
+		GeneratedAt: time.Now().UTC(),
+		Status:      StrategyPlanStatusDraft,
+		Objective:   "smoke test strategy persistence",
+		Watchlist:   []string{"AAPL"},
+	}, []StrategyRecommendation{
+		{
+			Symbol:      "AAPL",
+			Bias:        "buy",
+			Confidence:  0.6,
+			MaxNotional: 1000,
+			Priority:    1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("append strategy plan failed: %v", err)
+	}
+	if err := strategyRepo.SetPlanStatus(planBundle.Plan.ID, StrategyPlanStatusActive); err != nil {
+		t.Fatalf("activate strategy plan failed: %v", err)
+	}
 
 	points, err := repo.List()
 	if err != nil {
@@ -74,6 +98,13 @@ func TestStoreOpenMigrateAppendListAndReopen(t *testing.T) {
 	}
 	if len(unsettled) != 1 {
 		t.Fatalf("expected 1 unsettled sell, got %d", len(unsettled))
+	}
+	activePlan, err := strategyRepo.GetActivePlan()
+	if err != nil {
+		t.Fatalf("get active strategy plan failed: %v", err)
+	}
+	if activePlan == nil || len(activePlan.Recommendations) != 1 {
+		t.Fatalf("expected active strategy plan with one recommendation, got %#v", activePlan)
 	}
 
 	_ = store.Close()
@@ -105,6 +136,13 @@ func TestStoreOpenMigrateAppendListAndReopen(t *testing.T) {
 	}
 	if len(unsettled) != 1 {
 		t.Fatalf("expected 1 unsettled sell after reopen, got %d", len(unsettled))
+	}
+	activePlan, err = reopened.Strategy().GetActivePlan()
+	if err != nil {
+		t.Fatalf("get active strategy plan after reopen failed: %v", err)
+	}
+	if activePlan == nil || activePlan.Plan.Status != StrategyPlanStatusActive {
+		t.Fatalf("expected persisted active strategy plan after reopen, got %#v", activePlan)
 	}
 }
 

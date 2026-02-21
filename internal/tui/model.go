@@ -57,6 +57,7 @@ const (
 	tabOverview uiTab = "overview"
 	tabLogs     uiTab = "logs"
 	tabSystem   uiTab = "system"
+	tabStrategy uiTab = "strategy"
 	minUIWidth        = 60
 	minUIHeight       = 37
 )
@@ -64,10 +65,12 @@ const (
 type tickMsg time.Time
 
 type refreshMsg struct {
-	snapshot domain.Snapshot
-	quotes   map[string]domain.Quote
-	quoteErr map[string]string
-	err      error
+	snapshot    domain.Snapshot
+	quotes      map[string]domain.Quote
+	quoteErr    map[string]string
+	strategy    StrategySnapshot
+	strategyErr error
+	err         error
 }
 
 type quitMsg struct{}
@@ -79,6 +82,7 @@ type Model struct {
 	onWatchlistChanged func([]string) error
 	onWatchlistSync    func([]string) ([]string, error)
 	onEquityPoint      func(EquityPoint) error
+	onStrategyLoad     func() (StrategySnapshot, error)
 	eventScroll        int
 	eventsViewport     viewport.Model
 	positionsTable     table.Model
@@ -93,6 +97,8 @@ type Model struct {
 	quoteErr           map[string]string
 	equityHistory      []EquityPoint
 	equityMaxPoints    int
+	strategy           StrategySnapshot
+	strategyLoadError  string
 	input              string
 	status             string
 	statusError        bool
@@ -145,6 +151,11 @@ func (m Model) WithEquityHistory(points []EquityPoint, appendFn func(EquityPoint
 	return m
 }
 
+func (m Model) WithStrategyLoader(fn func() (StrategySnapshot, error)) Model {
+	m.onStrategyLoad = fn
+	return m
+}
+
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(m.refreshCmd(), tickCmd())
 }
@@ -173,10 +184,17 @@ func (m Model) refreshCmd() tea.Cmd {
 			}
 			quotes[symbol] = q
 		}
+		var strategySnapshot StrategySnapshot
+		var strategyErr error
+		if m.onStrategyLoad != nil {
+			strategySnapshot, strategyErr = m.onStrategyLoad()
+		}
 		return refreshMsg{
-			snapshot: m.engine.Snapshot(),
-			quotes:   quotes,
-			quoteErr: quoteErr,
+			snapshot:    m.engine.Snapshot(),
+			quotes:      quotes,
+			quoteErr:    quoteErr,
+			strategy:    strategySnapshot,
+			strategyErr: strategyErr,
 		}
 	}
 }

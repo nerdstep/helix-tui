@@ -181,7 +181,7 @@ func TestRefreshCmdAndView(t *testing.T) {
 	if !strings.Contains(view, "Cash:") || !strings.Contains(view, "Commands:") {
 		t.Fatalf("unexpected view output: %q", view)
 	}
-	if !strings.Contains(view, "Overview") || !strings.Contains(view, "Logs") || !strings.Contains(view, "System") {
+	if !strings.Contains(view, "Overview") || !strings.Contains(view, "Logs") || !strings.Contains(view, "Strategy") || !strings.Contains(view, "System") {
 		t.Fatalf("expected tabs in view output: %q", view)
 	}
 	if !strings.Contains(view, "Watchlist") || !strings.Contains(view, "AAPL") {
@@ -403,10 +403,20 @@ func TestTabSwitching(t *testing.T) {
 
 	model, _ = m1.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m2 := model.(Model)
-	if m2.activeTab != tabSystem {
-		t.Fatalf("expected active tab system, got %s", m2.activeTab)
+	if m2.activeTab != tabStrategy {
+		t.Fatalf("expected active tab strategy, got %s", m2.activeTab)
 	}
-	systemView := m2.View()
+	strategyView := m2.View()
+	if !strings.Contains(strategyView, "Strategy Plan") || !strings.Contains(strategyView, "Recent Plans") {
+		t.Fatalf("expected strategy panel on strategy tab: %q", strategyView)
+	}
+
+	model, _ = m2.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m3 := model.(Model)
+	if m3.activeTab != tabSystem {
+		t.Fatalf("expected active tab system, got %s", m3.activeTab)
+	}
+	systemView := m3.View()
 	if !strings.Contains(systemView, "Runtime") || !strings.Contains(systemView, "watchlist") {
 		t.Fatalf("expected system panel on system tab: %q", systemView)
 	}
@@ -414,11 +424,25 @@ func TestTabSwitching(t *testing.T) {
 		t.Fatalf("expected request counters in system panel: %q", systemView)
 	}
 
-	m2.input = "tab overview"
-	model, _ = m2.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m3 := model.(Model)
-	if m3.activeTab != tabOverview {
-		t.Fatalf("expected active tab overview, got %s", m3.activeTab)
+	m3.input = "tab overview"
+	model, _ = m3.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m4 := model.(Model)
+	if m4.activeTab != tabOverview {
+		t.Fatalf("expected active tab overview, got %s", m4.activeTab)
+	}
+}
+
+func TestTabCommandTargetsStrategy(t *testing.T) {
+	m := New(newTestEngine())
+	m.input = "tab strategy"
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m1 := model.(Model)
+	if m1.activeTab != tabStrategy {
+		t.Fatalf("expected active tab strategy, got %s", m1.activeTab)
+	}
+	view := m1.View()
+	if !strings.Contains(view, "Strategy Plan") {
+		t.Fatalf("expected strategy tab content, got %q", view)
 	}
 }
 

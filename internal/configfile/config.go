@@ -27,6 +27,7 @@ type Config struct {
 	Risk       RiskConfig       `koanf:"risk"`
 	Compliance ComplianceConfig `koanf:"compliance"`
 	Agent      AgentConfig      `koanf:"agent"`
+	Strategy   StrategyConfig   `koanf:"strategy"`
 	Logging    Logging          `koanf:"logging"`
 	Database   Database         `koanf:"database"`
 }
@@ -83,6 +84,22 @@ type LLMConfig struct {
 	Timeout      time.Duration `koanf:"timeout"`
 	SystemPrompt string        `koanf:"system_prompt"`
 	ContextLog   string        `koanf:"context_log"`
+}
+
+type StrategyConfig struct {
+	Enabled            bool              `koanf:"enabled"`
+	Interval           time.Duration     `koanf:"interval"`
+	AutoActivate       bool              `koanf:"auto_activate"`
+	MaxRecommendations int               `koanf:"max_recommendations"`
+	Objective          string            `koanf:"objective"`
+	LLM                StrategyLLMConfig `koanf:"llm"`
+}
+
+type StrategyLLMConfig struct {
+	Model         string        `koanf:"model"`
+	Timeout       time.Duration `koanf:"timeout"`
+	SystemPrompt  string        `koanf:"system_prompt"`
+	PromptVersion string        `koanf:"prompt_version"`
 }
 
 type Logging struct {
@@ -147,6 +164,19 @@ func Default() Config {
 				ContextLog:   d.LLMContextLog,
 			},
 		},
+		Strategy: StrategyConfig{
+			Enabled:            d.StrategyEnabled,
+			Interval:           d.StrategyInterval,
+			AutoActivate:       d.StrategyAutoActivate,
+			MaxRecommendations: d.StrategyMaxRecommendations,
+			Objective:          d.StrategyObjective,
+			LLM: StrategyLLMConfig{
+				Model:         d.StrategyModel,
+				Timeout:       d.StrategyTimeout,
+				SystemPrompt:  d.StrategySystemPrompt,
+				PromptVersion: d.StrategyPromptVersion,
+			},
+		},
 		Logging: Logging{
 			File:  d.LogFile,
 			Mode:  d.LogMode,
@@ -160,47 +190,56 @@ func Default() Config {
 
 func (c Config) ToAppConfig() app.Config {
 	return app.Config{
-		Broker:                    c.Broker,
-		AlpacaAPIKey:              c.Alpaca.APIKey,
-		AlpacaAPISecret:           c.Alpaca.APISecret,
-		AlpacaEnv:                 c.Alpaca.Env,
-		AlpacaBaseURL:             c.Alpaca.BaseURL,
-		AlpacaDataURL:             c.Alpaca.DataURL,
-		AlpacaFeed:                c.Alpaca.Feed,
-		UseKeyring:                c.Keyring.Use,
-		SaveToKeyring:             c.Keyring.Save,
-		KeyringService:            c.Keyring.Service,
-		KeyringUser:               c.Keyring.User,
-		MaxNotionalPerTrade:       c.Risk.MaxTradeNotional,
-		MaxNotionalPerDay:         c.Risk.MaxDayNotional,
-		ComplianceEnabled:         c.Compliance.Enabled,
-		ComplianceAccountType:     c.Compliance.AccountType,
-		ComplianceAvoidPDT:        c.Compliance.AvoidPDT,
-		ComplianceMaxDayTrades5D:  c.Compliance.MaxDayTrades5D,
-		ComplianceMinEquityForPDT: c.Compliance.MinEquityForPDT,
-		ComplianceAvoidGoodFaith:  c.Compliance.AvoidGoodFaith,
-		ComplianceSettlementDays:  c.Compliance.SettlementDays,
-		Mode:                      domain.Mode(c.Mode),
-		Watchlist:                 cloneStrings(c.Agent.Watchlist),
-		AgentType:                 c.Agent.Type,
-		AgentInterval:             c.Agent.Interval,
-		AgentOrderQty:             c.Agent.Qty,
-		AgentMovePct:              c.Agent.MovePct,
-		AgentMinGainPct:           c.Agent.MinGainPct,
-		MaxAgentIntents:           c.Agent.MaxIntents,
-		AgentDryRun:               c.Agent.DryRun,
-		SyncTimeout:               c.Agent.SyncTimeout,
-		OrderTimeout:              c.Agent.OrderTimeout,
-		LogFile:                   c.Logging.File,
-		LogMode:                   c.Logging.Mode,
-		LogLevel:                  c.Logging.Level,
-		DatabasePath:              c.Database.Path,
-		LLMAPIKey:                 c.Agent.LLM.APIKey,
-		LLMBaseURL:                c.Agent.LLM.BaseURL,
-		LLMModel:                  c.Agent.LLM.Model,
-		LLMTimeout:                c.Agent.LLM.Timeout,
-		LLMSystemPrompt:           c.Agent.LLM.SystemPrompt,
-		LLMContextLog:             c.Agent.LLM.ContextLog,
+		Broker:                     c.Broker,
+		AlpacaAPIKey:               c.Alpaca.APIKey,
+		AlpacaAPISecret:            c.Alpaca.APISecret,
+		AlpacaEnv:                  c.Alpaca.Env,
+		AlpacaBaseURL:              c.Alpaca.BaseURL,
+		AlpacaDataURL:              c.Alpaca.DataURL,
+		AlpacaFeed:                 c.Alpaca.Feed,
+		UseKeyring:                 c.Keyring.Use,
+		SaveToKeyring:              c.Keyring.Save,
+		KeyringService:             c.Keyring.Service,
+		KeyringUser:                c.Keyring.User,
+		MaxNotionalPerTrade:        c.Risk.MaxTradeNotional,
+		MaxNotionalPerDay:          c.Risk.MaxDayNotional,
+		ComplianceEnabled:          c.Compliance.Enabled,
+		ComplianceAccountType:      c.Compliance.AccountType,
+		ComplianceAvoidPDT:         c.Compliance.AvoidPDT,
+		ComplianceMaxDayTrades5D:   c.Compliance.MaxDayTrades5D,
+		ComplianceMinEquityForPDT:  c.Compliance.MinEquityForPDT,
+		ComplianceAvoidGoodFaith:   c.Compliance.AvoidGoodFaith,
+		ComplianceSettlementDays:   c.Compliance.SettlementDays,
+		Mode:                       domain.Mode(c.Mode),
+		Watchlist:                  cloneStrings(c.Agent.Watchlist),
+		AgentType:                  c.Agent.Type,
+		AgentInterval:              c.Agent.Interval,
+		AgentOrderQty:              c.Agent.Qty,
+		AgentMovePct:               c.Agent.MovePct,
+		AgentMinGainPct:            c.Agent.MinGainPct,
+		MaxAgentIntents:            c.Agent.MaxIntents,
+		AgentDryRun:                c.Agent.DryRun,
+		SyncTimeout:                c.Agent.SyncTimeout,
+		OrderTimeout:               c.Agent.OrderTimeout,
+		LogFile:                    c.Logging.File,
+		LogMode:                    c.Logging.Mode,
+		LogLevel:                   c.Logging.Level,
+		DatabasePath:               c.Database.Path,
+		LLMAPIKey:                  c.Agent.LLM.APIKey,
+		LLMBaseURL:                 c.Agent.LLM.BaseURL,
+		LLMModel:                   c.Agent.LLM.Model,
+		LLMTimeout:                 c.Agent.LLM.Timeout,
+		LLMSystemPrompt:            c.Agent.LLM.SystemPrompt,
+		LLMContextLog:              c.Agent.LLM.ContextLog,
+		StrategyEnabled:            c.Strategy.Enabled,
+		StrategyInterval:           c.Strategy.Interval,
+		StrategyAutoActivate:       c.Strategy.AutoActivate,
+		StrategyMaxRecommendations: c.Strategy.MaxRecommendations,
+		StrategyObjective:          c.Strategy.Objective,
+		StrategyModel:              c.Strategy.LLM.Model,
+		StrategyTimeout:            c.Strategy.LLM.Timeout,
+		StrategySystemPrompt:       c.Strategy.LLM.SystemPrompt,
+		StrategyPromptVersion:      c.Strategy.LLM.PromptVersion,
 	}
 }
 
@@ -226,6 +265,11 @@ func (c *Config) Normalize() {
 	c.Agent.LLM.Model = strings.TrimSpace(c.Agent.LLM.Model)
 	c.Agent.LLM.SystemPrompt = strings.TrimSpace(c.Agent.LLM.SystemPrompt)
 	c.Agent.LLM.ContextLog = strings.ToLower(strings.TrimSpace(c.Agent.LLM.ContextLog))
+
+	c.Strategy.Objective = strings.TrimSpace(c.Strategy.Objective)
+	c.Strategy.LLM.Model = strings.TrimSpace(c.Strategy.LLM.Model)
+	c.Strategy.LLM.SystemPrompt = strings.TrimSpace(c.Strategy.LLM.SystemPrompt)
+	c.Strategy.LLM.PromptVersion = strings.TrimSpace(c.Strategy.LLM.PromptVersion)
 
 	c.Logging.File = strings.TrimSpace(c.Logging.File)
 	c.Logging.Mode = strings.ToLower(strings.TrimSpace(c.Logging.Mode))

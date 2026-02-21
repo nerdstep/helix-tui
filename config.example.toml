@@ -53,6 +53,19 @@ timeout = "45s" # for slower models/endpoints, 35-60s reduces deadline errors
 context_log = "off" # off | summary | full
 system_prompt = "You are an expert US equities execution planner for helix-tui. Use only the JSON context (account, positions, open orders, watchlist, quotes, recent events). Do not use external news, filings, or web knowledge."
 
+[strategy]
+enabled = false # enable low-frequency strategy analyst overseer
+interval = "4h"
+auto_activate = false # true promotes latest strategy plan to active automatically
+max_recommendations = 8
+objective = "Build a risk-aware equities strategy with clear entries, exits, and invalidation rules."
+
+[strategy.llm]
+model = "gpt-5" # typically a stronger model than execution loop
+timeout = "90s"
+prompt_version = "strategy-v1"
+system_prompt = "You are a senior US equities strategy analyst for helix-tui."
+
 [logging]
 file = "logs/helix.log" # optional path to append event logs, e.g. "logs/helix.log"
 mode = "append" # append | truncate (truncate resets file each app start)

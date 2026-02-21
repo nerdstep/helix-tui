@@ -41,6 +41,19 @@ func (m Model) renderTabContent(vm viewModel, spec layoutSpec, gap int) string {
 	if m.activeTab == tabLogs {
 		return renderPanel(vm.events, spec.usableWidth)
 	}
+	if m.activeTab == tabStrategy {
+		if spec.twoColumn {
+			row1 := renderTwoColumnPanels(vm.strategyOverview, vm.strategyRecent, spec.leftWidth, spec.rightWidth, spec.usableWidth, gap)
+			row2 := renderPanel(vm.strategyPicks, spec.usableWidth)
+			return lipgloss.JoinVertical(lipgloss.Left, row1, row2)
+		}
+		return lipgloss.JoinVertical(
+			lipgloss.Left,
+			renderPanel(vm.strategyOverview, spec.usableWidth),
+			renderPanel(vm.strategyRecent, spec.usableWidth),
+			renderPanel(vm.strategyPicks, spec.usableWidth),
+		)
+	}
 	if m.activeTab == tabSystem {
 		if spec.twoColumn {
 			row1 := renderTwoColumnPanels(vm.systemRuntime, vm.systemAgent, spec.leftWidth, spec.rightWidth, spec.usableWidth, gap)

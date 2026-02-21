@@ -18,11 +18,12 @@ type Config struct {
 }
 
 type Store struct {
-	path   string
-	db     *gorm.DB
-	equity *EquityRepository
-	events *TradeEventRepository
-	state  *ComplianceStateRepository
+	path     string
+	db       *gorm.DB
+	equity   *EquityRepository
+	events   *TradeEventRepository
+	state    *ComplianceStateRepository
+	strategy *StrategyRepository
 }
 
 func Open(cfg Config) (*Store, error) {
@@ -46,11 +47,12 @@ func Open(cfg Config) (*Store, error) {
 	}
 
 	return &Store{
-		path:   path,
-		db:     db,
-		equity: &EquityRepository{db: db},
-		events: &TradeEventRepository{db: db},
-		state:  &ComplianceStateRepository{db: db},
+		path:     path,
+		db:       db,
+		equity:   &EquityRepository{db: db},
+		events:   &TradeEventRepository{db: db},
+		state:    &ComplianceStateRepository{db: db},
+		strategy: &StrategyRepository{db: db},
 	}, nil
 }
 
@@ -91,6 +93,13 @@ func (s *Store) ComplianceState() *ComplianceStateRepository {
 		return nil
 	}
 	return s.state
+}
+
+func (s *Store) Strategy() *StrategyRepository {
+	if s == nil {
+		return nil
+	}
+	return s.strategy
 }
 
 func ensureParentDir(path string) error {

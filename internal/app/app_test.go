@@ -57,6 +57,12 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.LLMContextLog != "off" {
 		t.Fatalf("unexpected llm context log default: %q", cfg.LLMContextLog)
 	}
+	if cfg.StrategyEnabled {
+		t.Fatalf("expected strategy disabled by default")
+	}
+	if cfg.StrategyInterval <= 0 || cfg.StrategyMaxRecommendations <= 0 {
+		t.Fatalf("unexpected strategy defaults: interval=%s max=%d", cfg.StrategyInterval, cfg.StrategyMaxRecommendations)
+	}
 	if cfg.ComplianceEnabled {
 		t.Fatalf("expected compliance disabled by default")
 	}

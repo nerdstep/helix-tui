@@ -88,5 +88,13 @@ func validateConfig(cfg configfile.Config) error {
 	default:
 		return fmt.Errorf("agent.llm.context_log must be one of off|summary|full")
 	}
+	if cfg.Strategy.Enabled {
+		if cfg.Strategy.Interval <= 0 {
+			return fmt.Errorf("strategy.interval must be > 0 when strategy.enabled=true")
+		}
+		if cfg.Strategy.MaxRecommendations <= 0 {
+			return fmt.Errorf("strategy.max_recommendations must be > 0 when strategy.enabled=true")
+		}
+	}
 	return nil
 }

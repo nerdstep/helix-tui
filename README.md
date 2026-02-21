@@ -2,7 +2,7 @@
 
 Go CLI + TUI trading app scaffold with a safety-first architecture:
 
-- Broker adapter boundary (`paper` simulator and `alpaca` real API mode)
+- Broker adapter boundary (runtime uses Alpaca; `paper` adapter retained for tests)
 - Deterministic risk gate between intent and execution
 - State engine with event log and reconciliation
 - Autonomous agent runtime modes (`manual`, `assist`, `auto`)
@@ -22,7 +22,7 @@ Implementation backlog and roadmap: `docs/implementation-plan.md`
 - `internal/engine`
   - Trading engine + risk gate
 - `internal/broker/paper`
-  - In-memory paper broker with instant fills
+  - In-memory paper broker retained for deterministic tests
 - `internal/broker/alpaca`
   - Official Alpaca Go SDK adapter (`alpaca-trade-api-go/v3`)
 - `internal/tui`
@@ -46,6 +46,9 @@ The app can load runtime settings from a TOML file.
 - Default path: `config.toml` in the project root (auto-loaded if present)
 - Override path: `-config=path/to/file.toml`
 - Example template: `config.example.toml`
+- Runtime broker:
+  - Runtime always uses Alpaca.
+  - The in-memory `paper` adapter is retained for tests only.
 - Alpaca routing config keys:
   - `[alpaca].env`
   - `[alpaca].base_url`
@@ -79,7 +82,7 @@ Config precedence is:
 
 - built-in defaults
 - TOML file
-- environment variables for credentials (`APCA_API_KEY_ID`, `APCA_API_SECRET_KEY`, `APCA_API_DATA_URL`, `OPENAI_API_KEY`, `HELIX_LLM_API_KEY`)
+- environment variables for credentials (`APCA_API_KEY_ID`, `APCA_API_SECRET_KEY`, `APCA_API_DATA_URL`, `OPENAI_API_KEY`)
 - CLI flags (`-config` and `-headless`)
 
 Windows (PowerShell) quick start:
@@ -197,7 +200,6 @@ These checks are enforced in `internal/engine/risk.go` and `internal/engine/comp
 
 ## Notes
 
-- The paper broker fills immediately at the current mock quote.
 - The Alpaca adapter uses the official SDK client for account/positions/orders plus trade update streaming and websocket quote streaming.
 - In Alpaca mode, quotes are streamed independently from the agent interval into an engine quote cache.
 - Runner/TUI quote reads use the cached stream first and fall back to REST latest-quote lookup when cache is stale or missing.
@@ -206,16 +208,15 @@ These checks are enforced in `internal/engine/risk.go` and `internal/engine/comp
 - Alpaca quote feed defaults to `iex` (override via `[alpaca].feed`).
 - When `[keyring].use` is enabled, missing Alpaca credentials are loaded from OS keyring; provided credentials can be stored when `[keyring].save` is true.
 - When `[keyring].use` is enabled, missing LLM credentials are also loaded from OS keyring.
-- In `broker = "alpaca"`, the app treats Alpaca watchlist `helix-tui` as the watchlist source of truth.
-- In `broker = "paper"`, watchlist comes from config.
+- Runtime treats Alpaca watchlist `helix-tui` as the watchlist source of truth.
 - Watchlist symbols are automatically treated as allowlisted symbols by the risk gate.
 - The built-in agent is a conservative heuristic (`internal/agent/heuristic`) that reacts to sampled price moves.
 - LLM agent can be enabled with `[agent].type = "llm"`.
-- LLM credentials can be supplied via `OPENAI_API_KEY` / `HELIX_LLM_API_KEY`, config, or keyring.
+- LLM credentials can be supplied via `OPENAI_API_KEY`, config, or keyring.
 - LLM output only proposes intents; all execution still goes through `Runner -> Engine -> RiskGate`.
 - LLM/manual order execution still passes through pre-trade controls; when enabled, `ComplianceGate` runs after `RiskGate`.
 - `avoid_gfv` uses a SQLite-backed unsettled-proceeds ledger built from observed sell fills (cash accounts), with settlement based on `[compliance].settlement_days`.
-- In `broker = "alpaca"` mode, settlement-day resolution for GFV guardrails uses Alpaca calendar API data as source of truth.
+- Settlement-day resolution for GFV guardrails uses Alpaca calendar API data as source of truth.
 - Set `[logging].file` to persist event logs for later debugging.
 - Use `[logging].mode = "truncate"` to reset the log file each app start.
 - Set `[logging].level` to tune verbosity; default is `info`.

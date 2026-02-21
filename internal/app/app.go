@@ -72,7 +72,7 @@ const defaultAlpacaWatchlistName = "helix-tui"
 
 func DefaultConfig() Config {
 	return Config{
-		Broker:                    "paper",
+		Broker:                    "alpaca",
 		AlpacaEnv:                 alpaca.EnvPaper,
 		AlpacaFeed:                "iex",
 		UseKeyring:                true,

@@ -185,6 +185,29 @@ func TestNormalizeAndValidateConfig_InvalidComplianceSettlementDays(t *testing.T
 	}
 }
 
+func TestNormalizeAndValidateConfig_ForcesAlpacaBroker(t *testing.T) {
+	cfg := configfile.Default()
+	cfg.Broker = "paper"
+	if err := normalizeAndValidateConfig(&cfg); err != nil {
+		t.Fatalf("normalizeAndValidateConfig failed: %v", err)
+	}
+	if cfg.Broker != "alpaca" {
+		t.Fatalf("expected broker alpaca, got %q", cfg.Broker)
+	}
+}
+
+func TestNormalizeAndValidateConfig_AllowsPaperBrokerForTests(t *testing.T) {
+	cfg := configfile.Default()
+	cfg.Broker = "alpaca"
+	t.Setenv(testPaperBrokerEnv, "1")
+	if err := normalizeAndValidateConfig(&cfg); err != nil {
+		t.Fatalf("normalizeAndValidateConfig failed: %v", err)
+	}
+	if cfg.Broker != "paper" {
+		t.Fatalf("expected broker paper for tests, got %q", cfg.Broker)
+	}
+}
+
 func TestRunHeadlessStopsOnCanceledContext(t *testing.T) {
 	oldStdout := os.Stdout
 	r, w, err := os.Pipe()
@@ -223,7 +246,13 @@ func TestRunHeadlessManual(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	stderr := &bytes.Buffer{}
-	err = Run(ctx, []string{"-headless"}, stderr)
+	t.Setenv(testPaperBrokerEnv, "1")
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	content := "mode = \"manual\"\n"
+	if writeErr := os.WriteFile(cfgPath, []byte(content), 0o644); writeErr != nil {
+		t.Fatalf("WriteFile failed: %v", writeErr)
+	}
+	err = Run(ctx, []string{"-headless", "-config=" + cfgPath}, stderr)
 	_ = w.Close()
 	if err != nil {
 		t.Fatalf("Run failed: %v", err)
@@ -240,12 +269,12 @@ func TestRunErrors(t *testing.T) {
 	}
 
 	badConfigPath := filepath.Join(t.TempDir(), "bad.toml")
-	if writeErr := os.WriteFile(badConfigPath, []byte("broker = \"unsupported\"\n"), 0o644); writeErr != nil {
+	if writeErr := os.WriteFile(badConfigPath, []byte("[agent]\nmin_gain_pct = -1\n"), 0o644); writeErr != nil {
 		t.Fatalf("WriteFile failed: %v", writeErr)
 	}
 	err = Run(ctx, []string{"-headless", "-config=" + badConfigPath}, stderr)
-	if err == nil || !strings.Contains(err.Error(), "unsupported broker") {
-		t.Fatalf("expected unsupported broker error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "agent.min_gain_pct must be >= 0") {
+		t.Fatalf("expected invalid config error, got %v", err)
 	}
 
 	err = Run(ctx, []string{"-config=does-not-exist.toml"}, stderr)

@@ -15,7 +15,7 @@ import (
 
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.Broker != "paper" {
+	if cfg.Broker != "alpaca" {
 		t.Fatalf("unexpected broker default: %q", cfg.Broker)
 	}
 	if cfg.AlpacaFeed != "iex" {

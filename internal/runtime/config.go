@@ -10,6 +10,8 @@ import (
 	"helix-tui/internal/domain"
 )
 
+const testPaperBrokerEnv = "HELIX_USE_PAPER_BROKER_FOR_TESTS"
+
 func loadConfig(path string, required bool) (app.Config, error) {
 	cfg := configfile.Default()
 	if err := configfile.Load(path, &cfg, required); err != nil {
@@ -35,9 +37,6 @@ func ApplyEnvOverrides(cfg *configfile.Config) {
 	if v := strings.TrimSpace(os.Getenv("OPENAI_API_KEY")); v != "" {
 		cfg.Agent.LLM.APIKey = v
 	}
-	if v := strings.TrimSpace(os.Getenv("HELIX_LLM_API_KEY")); v != "" {
-		cfg.Agent.LLM.APIKey = v
-	}
 }
 
 func normalizeAndValidateConfig(cfg *configfile.Config) error {
@@ -47,6 +46,10 @@ func normalizeAndValidateConfig(cfg *configfile.Config) error {
 
 func normalizeConfig(cfg *configfile.Config) {
 	cfg.Normalize()
+	cfg.Broker = "alpaca"
+	if strings.TrimSpace(os.Getenv(testPaperBrokerEnv)) == "1" {
+		cfg.Broker = "paper"
+	}
 	cfg.Logging.Mode = normalizedLogMode(cfg.Logging.Mode)
 	cfg.Logging.Level = normalizedLogLevel(cfg.Logging.Level)
 	switch mode := domain.Mode(cfg.Mode); mode {

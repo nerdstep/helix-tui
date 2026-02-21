@@ -3,6 +3,7 @@ package alpaca
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -553,5 +554,75 @@ func TestPlaceOrderMarketIgnoresLimitPrice(t *testing.T) {
 	}
 	if v, ok := placedBody["limit_price"]; ok && v != nil {
 		t.Fatalf("expected nil limit_price for market order payload: %#v", placedBody)
+	}
+}
+
+func TestSettlementDate_UsesCalendarTradingDays(t *testing.T) {
+	b := &Broker{
+		tradeClient: &sdkalpaca.Client{},
+		calendarFetch: func(req sdkalpaca.GetCalendarRequest) ([]sdkalpaca.CalendarDay, error) {
+			return []sdkalpaca.CalendarDay{
+				{Date: "2026-02-23"},
+				{Date: "2026-02-24"},
+				{Date: "2026-02-25"},
+			}, nil
+		},
+	}
+	fill := time.Date(2026, time.February, 20, 15, 0, 0, 0, time.UTC) // Friday
+
+	settlesAt, err := b.SettlementDate(fill, 1)
+	if err != nil {
+		t.Fatalf("SettlementDate failed: %v", err)
+	}
+	if settlesAt.Format("2006-01-02") != "2026-02-23" {
+		t.Fatalf("unexpected T+1 settlement date: %s", settlesAt.Format("2006-01-02"))
+	}
+
+	settlesAt, err = b.SettlementDate(fill, 2)
+	if err != nil {
+		t.Fatalf("SettlementDate failed: %v", err)
+	}
+	if settlesAt.Format("2006-01-02") != "2026-02-24" {
+		t.Fatalf("unexpected T+2 settlement date: %s", settlesAt.Format("2006-01-02"))
+	}
+}
+
+func TestSettlementDate_PropagatesCalendarErrors(t *testing.T) {
+	b := &Broker{
+		tradeClient: &sdkalpaca.Client{},
+		calendarFetch: func(req sdkalpaca.GetCalendarRequest) ([]sdkalpaca.CalendarDay, error) {
+			return nil, fmt.Errorf("calendar down")
+		},
+	}
+	fill := time.Date(2026, time.February, 20, 15, 0, 0, 0, time.UTC)
+	if _, err := b.SettlementDate(fill, 1); err == nil {
+		t.Fatalf("expected settlement date error")
+	}
+}
+
+func TestSettlementDate_CachesCalendarFetches(t *testing.T) {
+	calls := 0
+	b := &Broker{
+		tradeClient: &sdkalpaca.Client{},
+		calendarFetch: func(req sdkalpaca.GetCalendarRequest) ([]sdkalpaca.CalendarDay, error) {
+			calls++
+			return []sdkalpaca.CalendarDay{
+				{Date: "2026-02-23"},
+				{Date: "2026-02-24"},
+				{Date: "2026-02-25"},
+				{Date: "2026-02-26"},
+			}, nil
+		},
+	}
+	fill := time.Date(2026, time.February, 20, 15, 0, 0, 0, time.UTC)
+
+	if _, err := b.SettlementDate(fill, 1); err != nil {
+		t.Fatalf("first SettlementDate failed: %v", err)
+	}
+	if _, err := b.SettlementDate(fill, 2); err != nil {
+		t.Fatalf("second SettlementDate failed: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("expected 1 calendar fetch due cache reuse, got %d", calls)
 	}
 }

@@ -30,7 +30,7 @@ avoid_pdt = true
 max_day_trades_5d = 3
 min_equity_for_pdt = 25000
 avoid_gfv = false # settled-cash GFV guard for cash accounts
-settlement_days = 1 # T+N business-day settlement window used by avoid_gfv
+settlement_days = 1 # T+N settlement window (Alpaca calendar in broker=alpaca; weekend-only fallback otherwise)
 
 [agent]
 type = "heuristic" # heuristic | llm
@@ -52,10 +52,10 @@ base_url = "https://api.openai.com/v1" # OpenAI-compatible endpoint
 model = "gpt-5-mini"
 timeout = "45s" # for slower models/endpoints, 35-60s reduces deadline errors
 context_log = "off" # off | summary | full
-system_prompt = "You are a US equities execution planner for helix-tui. Use only the JSON context in the user message (account, positions, open orders, watchlist, quotes, recent events). Do not use external news, filings, or web knowledge. Return JSON only with schema {\"intents\":[{\"symbol\":\"AAPL\",\"side\":\"buy|sell\",\"qty\":1.0,\"order_type\":\"market|limit\",\"limit_price\":123.45,\"confidence\":0.0,\"rationale\":\"...\"}]}. Prefer exactly one intent per cycle when at least one watchlist symbol has a valid quote and there is no conflicting open order for that symbol; otherwise return {\"intents\":[]}. Keep rationale concise and tied to the provided quote and position data."
+system_prompt = "You are an expert US equities execution planner for helix-tui. Use only the JSON context (account, positions, open orders, watchlist, quotes, recent events). Do not use external news, filings, or web knowledge."
 
 [logging]
-file = "" # optional path to append event logs, e.g. "logs/helix.log"
+file = "logs/helix.log" # optional path to append event logs, e.g. "logs/helix.log"
 mode = "append" # append | truncate (truncate resets file each app start)
 level = "info" # trace | debug | info | warn | error | fatal | panic | disabled
 

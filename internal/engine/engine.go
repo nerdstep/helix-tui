@@ -331,6 +331,16 @@ func (e *Engine) SetComplianceSettlementStore(store ComplianceSettlementStore) e
 	return gate.SetSettlementStore(store)
 }
 
+func (e *Engine) SetComplianceSettlementCalendar(calendar ComplianceSettlementCalendar) {
+	e.mu.RLock()
+	gate := e.compliance
+	e.mu.RUnlock()
+	if gate == nil {
+		return
+	}
+	gate.SetSettlementCalendar(calendar)
+}
+
 func (e *Engine) applyTradeUpdate(update domain.TradeUpdate) {
 	var recordFill bool
 	var fillSide domain.Side

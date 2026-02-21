@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	sdkalpaca "github.com/alpacahq/alpaca-trade-api-go/v3/alpaca"
@@ -35,6 +36,12 @@ type Broker struct {
 	apiKey      string
 	apiSecret   string
 	streamBase  string
+
+	calendarMu         sync.RWMutex
+	calendarTradingDay map[string]struct{}
+	calendarRangeStart time.Time
+	calendarRangeEnd   time.Time
+	calendarFetch      func(req sdkalpaca.GetCalendarRequest) ([]sdkalpaca.CalendarDay, error)
 }
 
 type silentStreamLogger struct{}
@@ -66,23 +73,26 @@ func New(cfg Config) *Broker {
 	apiKey := strings.TrimSpace(cfg.APIKey)
 	apiSecret := strings.TrimSpace(cfg.APISecret)
 	feed := normalizeFeed(cfg.Feed)
+	tradeClient := sdkalpaca.NewClient(sdkalpaca.ClientOpts{
+		BaseURL:   baseURL,
+		APIKey:    apiKey,
+		APISecret: apiSecret,
+	})
 
 	return &Broker{
-		tradeClient: sdkalpaca.NewClient(sdkalpaca.ClientOpts{
-			BaseURL:   baseURL,
-			APIKey:    apiKey,
-			APISecret: apiSecret,
-		}),
+		tradeClient: tradeClient,
 		dataClient: marketdata.NewClient(marketdata.ClientOpts{
 			BaseURL:   dataBaseURL,
 			APIKey:    apiKey,
 			APISecret: apiSecret,
 			Feed:      feed,
 		}),
-		feed:       feed,
-		apiKey:     apiKey,
-		apiSecret:  apiSecret,
-		streamBase: stockStreamBaseURL(dataBaseURL),
+		feed:               feed,
+		apiKey:             apiKey,
+		apiSecret:          apiSecret,
+		streamBase:         stockStreamBaseURL(dataBaseURL),
+		calendarTradingDay: map[string]struct{}{},
+		calendarFetch:      tradeClient.GetCalendar,
 	}
 }
 
@@ -384,6 +394,93 @@ func (b *Broker) UpsertWatchlistSymbols(name string, symbols []string) error {
 	return err
 }
 
+func (b *Broker) SettlementDate(fillTime time.Time, settlementDays int) (time.Time, error) {
+	if b == nil || b.tradeClient == nil {
+		return time.Time{}, fmt.Errorf("alpaca broker is not initialized")
+	}
+	if settlementDays <= 0 {
+		return fillTime.UTC(), nil
+	}
+	fillDay := dateAtUTCMidnight(fillTime)
+	start := fillDay.AddDate(0, 0, 1)
+	end := fillDay.AddDate(0, 0, maxInt(30, settlementDays*10))
+	if err := b.ensureCalendarRange(start, end); err != nil {
+		return time.Time{}, err
+	}
+
+	found := 0
+	cursor := start
+	for i := 0; i < 366*2; i++ {
+		if b.isTradingDay(cursor) {
+			found++
+			if found >= settlementDays {
+				return cursor, nil
+			}
+		}
+		cursor = cursor.AddDate(0, 0, 1)
+		if cursor.After(end) {
+			end = end.AddDate(0, 0, 60)
+			if err := b.ensureCalendarRange(start, end); err != nil {
+				return time.Time{}, err
+			}
+		}
+	}
+	return time.Time{}, fmt.Errorf("unable to resolve settlement date for %s (settlement_days=%d)", fillDay.Format("2006-01-02"), settlementDays)
+}
+
+func (b *Broker) ensureCalendarRange(start, end time.Time) error {
+	start = dateAtUTCMidnight(start)
+	end = dateAtUTCMidnight(end)
+	b.calendarMu.RLock()
+	if !b.calendarRangeStart.IsZero() &&
+		!b.calendarRangeEnd.IsZero() &&
+		!start.Before(b.calendarRangeStart) &&
+		!end.After(b.calendarRangeEnd) {
+		b.calendarMu.RUnlock()
+		return nil
+	}
+	b.calendarMu.RUnlock()
+
+	fetch := b.calendarFetch
+	if fetch == nil {
+		fetch = b.tradeClient.GetCalendar
+	}
+	days, err := fetch(sdkalpaca.GetCalendarRequest{
+		Start: start,
+		End:   end,
+	})
+	if err != nil {
+		return fmt.Errorf("fetch alpaca calendar: %w", err)
+	}
+
+	b.calendarMu.Lock()
+	if b.calendarTradingDay == nil {
+		b.calendarTradingDay = map[string]struct{}{}
+	}
+	for _, day := range days {
+		dayDate, parseErr := time.Parse("2006-01-02", strings.TrimSpace(day.Date))
+		if parseErr != nil {
+			continue
+		}
+		b.calendarTradingDay[dayDate.Format("2006-01-02")] = struct{}{}
+	}
+	if b.calendarRangeStart.IsZero() || start.Before(b.calendarRangeStart) {
+		b.calendarRangeStart = start
+	}
+	if b.calendarRangeEnd.IsZero() || end.After(b.calendarRangeEnd) {
+		b.calendarRangeEnd = end
+	}
+	b.calendarMu.Unlock()
+	return nil
+}
+
+func (b *Broker) isTradingDay(day time.Time) bool {
+	b.calendarMu.RLock()
+	_, ok := b.calendarTradingDay[dateAtUTCMidnight(day).Format("2006-01-02")]
+	b.calendarMu.RUnlock()
+	return ok
+}
+
 func toDomainOrder(o sdkalpaca.Order) domain.Order {
 	return domain.Order{
 		ID:         o.ID,
@@ -584,4 +681,16 @@ func normalizeSymbolsFromAssets(assets []sdkalpaca.Asset) []string {
 		raw = append(raw, asset.Symbol)
 	}
 	return symbols.Normalize(raw)
+}
+
+func dateAtUTCMidnight(t time.Time) time.Time {
+	t = t.UTC()
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

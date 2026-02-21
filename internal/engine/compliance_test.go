@@ -280,12 +280,62 @@ func TestComplianceGate_RecordFillStoreErrorReturned(t *testing.T) {
 	}
 }
 
+func TestComplianceGate_RecordFillUsesSettlementCalendar(t *testing.T) {
+	now := time.Date(2026, time.February, 21, 10, 0, 0, 0, time.UTC)
+	calendar := &stubSettlementCalendar{
+		settlesAt: time.Date(2026, time.February, 24, 0, 0, 0, 0, time.UTC),
+	}
+	g := NewComplianceGate(CompliancePolicy{
+		Enabled:        true,
+		AccountType:    "cash",
+		AvoidGoodFaith: true,
+		SettlementDays: 2,
+	})
+	g.SetSettlementCalendar(calendar)
+
+	if err := g.RecordFill(domain.SideSell, 10, 15, now); err != nil {
+		t.Fatalf("record fill failed: %v", err)
+	}
+	if len(g.unsettledSells) != 1 {
+		t.Fatalf("expected 1 unsettled lot, got %d", len(g.unsettledSells))
+	}
+	if got := g.unsettledSells[0].SettlesAt; !got.Equal(calendar.settlesAt) {
+		t.Fatalf("expected calendar settlement date %s, got %s", calendar.settlesAt, got)
+	}
+}
+
+func TestComplianceGate_RecordFillCalendarErrorReturned(t *testing.T) {
+	now := time.Date(2026, time.February, 21, 10, 0, 0, 0, time.UTC)
+	g := NewComplianceGate(CompliancePolicy{
+		Enabled:        true,
+		AccountType:    "cash",
+		AvoidGoodFaith: true,
+		SettlementDays: 1,
+	})
+	g.SetSettlementCalendar(&stubSettlementCalendar{err: fmt.Errorf("calendar unavailable")})
+	if err := g.RecordFill(domain.SideSell, 10, 15, now); err == nil {
+		t.Fatalf("expected calendar error")
+	}
+}
+
 type stubSettlementStore struct {
 	lots      []UnsettledSellProceeds
 	appended  []UnsettledSellProceeds
 	loadErr   error
 	appendErr error
 	pruneErr  error
+}
+
+type stubSettlementCalendar struct {
+	settlesAt time.Time
+	err       error
+}
+
+func (s *stubSettlementCalendar) SettlementDate(_ time.Time, _ int) (time.Time, error) {
+	if s.err != nil {
+		return time.Time{}, s.err
+	}
+	return s.settlesAt, nil
 }
 
 func (s *stubSettlementStore) LoadUnsettledSellProceeds(_ time.Time) ([]UnsettledSellProceeds, error) {

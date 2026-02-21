@@ -22,6 +22,12 @@ func Run(ctx context.Context, args []string, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if system.SettlementCalendar != nil {
+		system.Engine.SetComplianceSettlementCalendar(system.SettlementCalendar)
+		if cfg.ComplianceEnabled && cfg.ComplianceAvoidGoodFaith {
+			system.Engine.AddEvent("compliance_calendar_source", "alpaca")
+		}
+	}
 
 	var store *storage.Store
 	store, err = storage.Open(storage.Config{Path: cfg.DatabasePath})

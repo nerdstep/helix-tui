@@ -23,6 +23,7 @@ type brokerSpec struct {
 	broker              domain.Broker
 	quoteStreamer       domain.QuoteStreamer
 	watchlistSyncBroker *alpaca.Broker
+	settlementCalendar  engine.ComplianceSettlementCalendar
 	credentialSource    string
 }
 
@@ -60,6 +61,7 @@ func buildBroker(cfg Config) (brokerSpec, error) {
 	spec.broker = alpacaBroker
 	spec.quoteStreamer = alpacaBroker
 	spec.watchlistSyncBroker = alpacaBroker
+	spec.settlementCalendar = alpacaBroker
 	spec.credentialSource = source
 	return spec, nil
 }

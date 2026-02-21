@@ -215,6 +215,7 @@ These checks are enforced in `internal/engine/risk.go` and `internal/engine/comp
 - LLM output only proposes intents; all execution still goes through `Runner -> Engine -> RiskGate`.
 - LLM/manual order execution still passes through pre-trade controls; when enabled, `ComplianceGate` runs after `RiskGate`.
 - `avoid_gfv` uses a SQLite-backed unsettled-proceeds ledger built from observed sell fills (cash accounts), with settlement based on `[compliance].settlement_days`.
+- In `broker = "alpaca"` mode, settlement-day resolution for GFV guardrails uses Alpaca calendar API data as source of truth.
 - Set `[logging].file` to persist event logs for later debugging.
 - Use `[logging].mode = "truncate"` to reset the log file each app start.
 - Set `[logging].level` to tune verbosity; default is `info`.

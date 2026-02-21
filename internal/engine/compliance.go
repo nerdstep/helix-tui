@@ -31,6 +31,7 @@ type ComplianceGate struct {
 	mu             sync.Mutex
 	unsettledSells []UnsettledSellProceeds
 	store          ComplianceSettlementStore
+	calendar       ComplianceSettlementCalendar
 	now            func() time.Time
 }
 
@@ -43,6 +44,10 @@ type ComplianceSettlementStore interface {
 	LoadUnsettledSellProceeds(asOf time.Time) ([]UnsettledSellProceeds, error)
 	AppendUnsettledSellProceeds(lot UnsettledSellProceeds, createdAt time.Time) error
 	PruneSettledSellProceeds(asOf time.Time) error
+}
+
+type ComplianceSettlementCalendar interface {
+	SettlementDate(fillTime time.Time, settlementDays int) (time.Time, error)
 }
 
 func NewComplianceGate(policy CompliancePolicy) *ComplianceGate {
@@ -106,6 +111,15 @@ func (g *ComplianceGate) SetSettlementStore(store ComplianceSettlementStore) err
 	return nil
 }
 
+func (g *ComplianceGate) SetSettlementCalendar(calendar ComplianceSettlementCalendar) {
+	if g == nil {
+		return
+	}
+	g.mu.Lock()
+	g.calendar = calendar
+	g.mu.Unlock()
+}
+
 func (g *ComplianceGate) RecordFill(side domain.Side, qty, fillPrice float64, fillTime time.Time) error {
 	if g == nil || !g.policy.Enabled || !g.policy.AvoidGoodFaith {
 		return nil
@@ -113,7 +127,10 @@ func (g *ComplianceGate) RecordFill(side domain.Side, qty, fillPrice float64, fi
 	if side != domain.SideSell || qty <= 0 || fillPrice <= 0 {
 		return nil
 	}
-	settlesAt := settlementTime(nonZeroTime(fillTime, g.now()), g.policy.SettlementDays)
+	settlesAt, err := g.resolveSettlementTime(nonZeroTime(fillTime, g.now()))
+	if err != nil {
+		return err
+	}
 	proceeds := qty * fillPrice
 	if proceeds <= 0 {
 		return nil
@@ -135,6 +152,23 @@ func (g *ComplianceGate) RecordFill(side domain.Side, qty, fillPrice float64, fi
 		return err
 	}
 	return nil
+}
+
+func (g *ComplianceGate) resolveSettlementTime(fillTime time.Time) (time.Time, error) {
+	g.mu.Lock()
+	calendar := g.calendar
+	g.mu.Unlock()
+	if calendar == nil {
+		return settlementTime(fillTime, g.policy.SettlementDays), nil
+	}
+	settlesAt, err := calendar.SettlementDate(fillTime, g.policy.SettlementDays)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("resolve settlement date from calendar: %w", err)
+	}
+	if settlesAt.IsZero() {
+		return time.Time{}, fmt.Errorf("resolve settlement date from calendar: zero settlement date")
+	}
+	return settlesAt.UTC(), nil
 }
 
 func (g *ComplianceGate) enforcePDT(req domain.OrderRequest, account domain.Account) error {

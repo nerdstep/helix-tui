@@ -42,7 +42,7 @@ Status values:
 
 | ID | Item | Priority | Status | Notes |
 |---|---|---|---|---|
-| COMPLIANCE-001 | Live-trading compliance guardrails (PDT/GFV) | high | in_progress | Phase 1 PDT guard implemented; Phase 2 GFV settled-cash checks now enforced in-session |
+| COMPLIANCE-001 | Live-trading compliance guardrails (PDT/GFV) | high | in_progress | Phase 1 + Phase 2 implemented; Alpaca calendar now used as settlement source in broker=alpaca mode |
 
 ## Compliance Rollout Plan (Phased)
 
@@ -71,6 +71,7 @@ Status values:
 - Status: `done`
 - Scope:
   - Build settled/unsettled cash ledger from fills + settlement rules (T+1 baseline).
+  - Use Alpaca market calendar as settlement source of truth when `broker=alpaca`.
   - Block buy orders that would consume unsettled proceeds in a way likely to trigger GFV/freeriding restrictions.
   - Emit explicit rejection reasons (`gfv_guard`) and add TUI counters.
 - Completion criteria:

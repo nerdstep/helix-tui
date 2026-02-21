@@ -64,6 +64,7 @@ type System struct {
 	PullWatchlist      func() ([]string, error)
 	SyncWatchlist      func([]string) error
 	QuoteStreamer      domain.QuoteStreamer
+	SettlementCalendar engine.ComplianceSettlementCalendar
 	DefaultBrokerLabel string
 }
 
@@ -129,6 +130,7 @@ func NewSystem(cfg Config) (*System, error) {
 		Engine:             e,
 		Watchlist:          watchlist,
 		QuoteStreamer:      brokerSpec.quoteStreamer,
+		SettlementCalendar: brokerSpec.settlementCalendar,
 		DefaultBrokerLabel: brokerSpec.label,
 	}
 	system.PullWatchlist, system.SyncWatchlist = buildWatchlistHandlers(brokerSpec.watchlistSyncBroker)

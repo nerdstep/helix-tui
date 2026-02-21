@@ -1,0 +1,40 @@
+version: 2
+
+project_name: helix
+
+builds:
+  - id: helix
+    main: ./cmd/helix
+    binary: helix
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X helix-tui/internal/version.Version={{ .Version }} -X helix-tui/internal/version.Commit={{ .Commit }} -X helix-tui/internal/version.Date={{ .Date }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: binaries
+    ids:
+      - helix
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: git
+  sort: asc

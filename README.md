@@ -147,3 +147,24 @@ go test ./...
 go build ./cmd/helix
 go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 ```
+
+## Releases
+
+This repo is wired for GoReleaser.
+
+- Config: `.goreleaser.yaml`
+- GitHub workflow: `.github/workflows/release.yml` (runs on tags like `v1.2.3`)
+
+Local smoke checks:
+
+```bash
+go run github.com/goreleaser/goreleaser/v2@latest check
+go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean
+```
+
+Create a release:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```

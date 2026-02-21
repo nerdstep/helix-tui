@@ -2,46 +2,39 @@
 
 ## Purpose
 
-Provide consistent operating rules for agents working in this repository, with a strong bias toward safe paper-trading workflows and auditable autonomous execution.
+Provide consistent rules for coding/ops agents working in this repository, with a strong safety bias and auditable autonomous behavior.
 
 ## Non-Negotiables
 
-- Keep risk controls enabled at all times.
-- Default to paper mode unless the user explicitly requests otherwise.
-- Prefer `-dry-run` before enabling real autonomous execution.
-- Never bypass symbol allowlists or notional limits in code changes.
-- Treat all autonomous activity as auditable: preserve clear event logging.
+- Keep risk controls enabled.
+- Default to Alpaca paper environment (`[alpaca].env = "paper"`) unless explicitly asked to use live.
+- Prefer `mode = "auto"` with `[agent].dry_run = true` before enabling real autonomous execution.
+- Never bypass watchlist allowlist behavior or notional limits.
+- Preserve auditable events/logging for autonomous actions.
 
-## Skills
+## Local Skills
 
-Use these local skills when relevant:
+- `skills/autonomous-trading-ops/SKILL.md`
+- `skills/alpaca-paper-runbook/SKILL.md`
+- `skills/risk-incident-response/SKILL.md`
 
-- `autonomous-trading-ops`
-  - File: `skills/autonomous-trading-ops/SKILL.md`
-  - Use for running the app in `manual|assist|auto`, choosing flags, and monitoring autonomous behavior.
-
-- `alpaca-paper-runbook`
-  - File: `skills/alpaca-paper-runbook/SKILL.md`
-  - Use for Alpaca paper setup, credential wiring, paper endpoint operations, and adapter troubleshooting.
-
-- `risk-incident-response`
-  - File: `skills/risk-incident-response/SKILL.md`
-  - Use for kill-switch style response, flatten/cancel workflows, and safe recovery after abnormal behavior.
+Use these when task scope matches runtime operations, Alpaca wiring, or safety incidents.
 
 ## Defaults
 
-- Preferred broker for autonomous testing: `paper`
-- Preferred startup for autonomous verification:
-  - `-mode=auto -dry-run` first
-  - then remove `-dry-run` after behavior is acceptable
-- Preferred monitoring:
-  - run with TUI (no `-headless`) when operator visibility is needed
-  - use `-headless` for daemon-style runs
+- Runtime broker model: Alpaca (paper/live via config)
+- Preferred safe startup for autonomous validation:
+  - `[alpaca].env = "paper"`
+  - `mode = "auto"`
+  - `[agent].dry_run = true`
+- Preferred visibility:
+  - use TUI (no `-headless`) when operator monitoring is needed
+  - use `-headless` for unattended runs
 
 ## Change Expectations
 
 - Keep changes small and reversible.
-- Update `README.md` when CLI flags or runtime behavior changes.
+- Update `README.md` and relevant docs when runtime behavior or operations change.
 - Validate with:
   - `go test ./...`
   - `go build ./cmd/helix`

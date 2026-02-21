@@ -1,59 +1,72 @@
 ---
 name: alpaca-paper-runbook
-description: Configure and operate helix-tui against Alpaca paper trading endpoints, including credentials, runtime flags, and basic adapter troubleshooting. Use when asked to connect autonomous or manual runs to Alpaca paper mode.
+description: Configure and operate helix-tui in Alpaca paper environment, including credentials/keyring setup, connectivity verification, and common troubleshooting.
 ---
 
 # Alpaca Paper Runbook
 
-Use Alpaca paper mode for broker-backed testing without live capital.
+Use this skill when setting up or troubleshooting Alpaca paper operations.
 
-## Set Credentials
-- Set:
-  - `APCA_API_KEY_ID`
-  - `APCA_API_SECRET_KEY`
-- Pass flags explicitly when needed:
-  - `-alpaca-key`
-  - `-alpaca-secret`
-- Use keyring for persisted credentials:
-  - `-use-keyring`
-  - `-save-keyring`
-  - optional: `-keyring-service`, `-keyring-user`
+## Current Runtime Assumptions
 
-## Start in Paper Mode
-- Use:
-  - `-broker=alpaca-paper`
-  - `-alpaca-feed=iex` (default feed)
-- Keep autonomous safety flags enabled during first runs:
-  - `-mode=assist` or `-mode=auto -dry-run`
+- Runtime broker is Alpaca.
+- Paper vs live is controlled by `[alpaca].env`.
+- Preferred paper default:
+  - `[alpaca].env = "paper"`
+  - `[alpaca].feed = "iex"`
 
-Example:
+## Credential Sources
+
+Credentials can come from:
+
+- `config.toml` (`[alpaca].api_key`, `[alpaca].api_secret`)
+- environment (`APCA_API_KEY_ID`, `APCA_API_SECRET_KEY`)
+- OS keyring (`[keyring].use = true`)
+
+For LLM mode/strategy also support:
+
+- `OPENAI_API_KEY`
+- `[agent.llm].api_key`
+- keyring via same service/user
+
+## Basic Bring-Up
+
+1. Copy template:
 
 ```bash
-go run ./cmd/helix -broker=alpaca-paper -alpaca-feed=iex -mode=assist
+cp config.example.toml config.toml
 ```
 
-## Common Runtime Checks
-- Confirm startup does not fail with missing key/secret errors.
-- Confirm `sync` succeeds and account/positions load.
-- Confirm order placement path works from TUI command (`buy` / `sell`) before autonomous auto-execution.
+1. Set:
+   - `[alpaca].env = "paper"`
+   - `mode = "manual"` (or `assist`)
+2. Run:
 
-## Known Scaffold Limits
-- Quote retrieval and trade update streaming are wired through the official Alpaca Go SDK.
-- Market data availability depends on account entitlements/feed availability (`iex` vs `sip`).
-- If quote retrieval fails in paper mode, test with `paper` broker adapter to isolate entitlement vs application issues.
+```bash
+go run ./cmd/helix -config=config.toml
+```
+
+3. Verify sync/account load:
+   - header values populate
+   - `sync` command succeeds
+   - no credential/auth errors in Logs tab
 
 ## Troubleshooting
-- If authentication errors occur:
-  - verify key/secret pair
-  - verify paper endpoint mode is used
-- If autonomous mode does not execute:
-  - check events for `agent_intent_rejected` and risk gate violations
-  - verify symbol is in allowlist (`-allow=...`)
-- If no intents appear:
-  - lower `-agent-move-pct`
-  - increase watchlist coverage
+
+- Auth failures:
+  - verify paper key/secret pair
+  - verify `[alpaca].env = "paper"`
+  - verify no stale env vars overriding config
+- Missing/poor quotes:
+  - confirm `[alpaca].feed`
+  - check market data entitlements
+- Autonomous issues:
+  - inspect `agent_intent_rejected` details/rejection_reason
+  - verify symbol is present in watchlist (watchlist is allowlist)
 
 ## Validation
-- Run:
-  - `go test ./...`
-  - `go build ./cmd/helix`
+
+```bash
+go test ./...
+go build ./cmd/helix
+```

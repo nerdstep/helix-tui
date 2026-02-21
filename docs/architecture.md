@@ -1,82 +1,85 @@
 # Architecture
 
-## Component Diagram
+This document describes the current runtime architecture of `helix-tui`.
+
+## Runtime Scope
+
+- Runtime broker path: Alpaca (`[alpaca].env = paper|live`)
+- Config-first runtime (`config.toml` + env overrides + minimal flags)
+- Safety pipeline: `RiskGate` -> `ComplianceGate` -> broker execution
+- Autonomous execution optionally constrained by active strategy plan
+
+`internal/broker/paper` remains in the codebase for deterministic tests.
+
+## High-Level Components
 
 ```mermaid
 flowchart LR
-    U[Operator]
-    CLI[cmd/helix CLI]
-    CFG[configfile + env + flags]
-    APP[internal/app.NewSystem]
-    TUI[internal/tui]
-    RUNNER[autonomy.Runner]
-    CTX[Decision Context Gate<br/>hash + change detection]
+    OP[Operator]
+    CLI[cmd/helix]
+    CFG[Config Loader<br/>config + env + flags]
+    APP[app.NewSystem]
+    TUI[TUI]
+    RUN[autonomy.Runner]
+    STRAT[strategy.Runner]
+    AGENT[Execution Agent<br/>heuristic | llm]
+    ANALYST[Strategy Analyst<br/>llm]
+    ENG[engine.Engine]
+    RISK[RiskGate]
+    COMP[ComplianceGate]
+    BROKER[Alpaca Broker]
+    ALP[(Alpaca APIs)]
+    DB[(SQLite)]
+    EVT[runtime event persistor]
     QSC[runtime quote stream controller]
-    AGENT[agent/heuristic.Agent<br/>or agent/llm.Agent]
-    ENGINE[engine.Engine]
-    EVTDB[(SQLite<br/>trade_events + compliance_unsettled_sells)]
-    EVTSINK[runtime trade event persistor]
-    RISK[engine.RiskGate]
-    COMPLIANCE[engine.ComplianceGate<br/>Phase 1: PDT + Phase 2: GFV guard]
-    KEYRING[credentials keyring]
-    AB[(Broker Interface)]
-    PBRK[paper Broker]
-    ABRK[alpaca Broker]
-    ALPACA[(Alpaca Trade/Data APIs)]
 
-    U --> CLI
-    CLI --> CFG
-    CFG --> APP
-    CFG --> KEYRING
-    APP --> ENGINE
+    OP --> CLI --> CFG --> APP
     APP --> TUI
-    APP --> RUNNER
+    APP --> RUN
+    APP --> STRAT
     APP --> QSC
-    APP --> EVTSINK
-    RUNNER --> CTX
-    CTX --> AGENT
-    AGENT --> ENGINE
-    TUI --> ENGINE
-    QSC --> ENGINE
-    QSC --> ABRK
-    ENGINE --> RISK
-    ENGINE --> COMPLIANCE
-    ENGINE --> EVTSINK
-    EVTSINK --> EVTDB
-    ENGINE --> AB
-    AB --> PBRK
-    AB --> ABRK
-    ABRK --> ALPACA
-    APP --> ABRK
+    APP --> EVT
+    RUN --> AGENT --> ENG
+    STRAT --> ANALYST
+    TUI --> ENG
+    ENG --> RISK --> COMP --> BROKER --> ALP
+    QSC --> BROKER
+    QSC --> ENG
+    ENG --> EVT --> DB
+    STRAT --> DB
+    RUN --> DB
 ```
 
-## Order Data Flow (Manual and Autonomous)
+## Startup/Data Initialization
+
+```mermaid
+flowchart TD
+    START[Process start]
+    LOAD[Load config.toml]
+    ENV[Apply env overrides]
+    VALIDATE[Normalize + validate]
+    BUILD[Build alpaca broker + engine]
+    WATCH[PULL alpaca watchlist 'helix-tui']
+    ALLOW[Watchlist -> risk allowlist]
+    SYNC[Initial engine sync]
+    RUNNERS[Start quote stream + optional runners]
+    READY[TUI/headless running]
+
+    START --> LOAD --> ENV --> VALIDATE --> BUILD --> WATCH --> ALLOW --> SYNC --> RUNNERS --> READY
+```
+
+## Order Execution Pipeline (Manual + Auto)
 
 ```mermaid
 sequenceDiagram
-    participant Op as Operator
-    participant T as TUI/CLI
-    participant A as Agent Runner
+    participant U as User/Runner
     participant E as Engine
     participant R as RiskGate
     participant C as ComplianceGate
-    participant B as Broker (paper/alpaca)
-    participant X as Alpaca API
+    participant B as Alpaca Broker
+    participant A as Alpaca API
 
-    alt Manual Command
-        Op->>T: buy/sell command
-        T->>E: PlaceOrder(request)
-    else Autonomous Cycle
-        A->>E: Sync snapshot + quotes
-        A->>A: Build context hash
-        alt Context changed (or force window reached)
-            A->>A: Invoke agent
-            A->>E: ExecuteIntent(intent)
-        else Context unchanged
-            A->>E: Record skip event
-        end
-    end
-
+    U->>E: PlaceOrder(request)
     E->>B: GetQuote(symbol)
     B-->>E: Quote
     E->>R: Evaluate(request, quote)
@@ -84,116 +87,104 @@ sequenceDiagram
     E->>C: Evaluate(request, quote, snapshot)
     C-->>E: allow/reject
 
-    alt Allowed
-        E->>B: PlaceOrder(request)
-        alt Alpaca broker
-            B->>X: submit order
-            X-->>B: order status/update
-        end
-        B-->>E: Order/TradeUpdate
-        E-->>T: Snapshot + events
-    else Rejected
-        R-->>E: policy violation
-        E-->>T: agent_intent_rejected / error event
+    alt allowed
+      E->>B: PlaceOrder(request)
+      B->>A: submit order
+      A-->>B: order/trade updates
+      B-->>E: domain.Order / TradeUpdate
+    else rejected
+      E-->>U: rejection event/error
     end
-```
-
-## Quote Data Flow
-
-```mermaid
-sequenceDiagram
-    participant W as Runtime
-    participant Q as Quote Stream Controller
-    participant E as Engine quote cache
-    participant B as Alpaca Broker
-    participant S as Alpaca WS feed
-    participant R as Runner/TUI
-
-    W->>Q: Start with watchlist symbols
-    Q->>B: StreamQuotes(symbols)
-    B->>S: Subscribe quotes via websocket
-    S-->>B: Quote updates
-    B-->>Q: domain.Quote channel
-    Q->>E: UpsertQuote(quote)
-    R->>E: GetQuote(symbol)
-    E-->>R: Fresh cached quote (fallback to REST when stale/missing)
-    Q->>Q: On watchlist change: cancel + resubscribe
 ```
 
 ## Autonomous Decision Loop
 
 ```mermaid
 flowchart TD
-    TICK[Interval tick]
-    SYNC[Engine.SyncQuiet]
-    BUILD[Build decision context<br/>watchlist/account/positions/orders/quotes]
-    HASH[Hash context]
-    CHANGED{Changed since last successful<br/>agent call?}
-    FORCE{Force refresh window reached?}
-    CALL[Invoke agent ProposeTrades]
-    SKIP[Skip agent call<br/>emit agent_context_unchanged]
-    EXEC[Risk-gated execution path]
+    TICK[Cycle tick]
+    LOWP[Low-power state check]
+    SYNC[SyncQuiet + snapshot]
+    QUOTES[Collect quotes]
+    HASH[Hash decision context]
+    CHANGED{Context changed?}
+    FORCE{Force-refresh window reached?}
+    CALL[Agent.ProposeTrades]
+    FILTER[Per-cycle max intents + policy checks]
+    EXEC[Place orders through engine]
+    SKIP[Skip call + emit context unchanged]
 
-    TICK --> SYNC --> BUILD --> HASH --> CHANGED
-    CHANGED -->|Yes| CALL --> EXEC
-    CHANGED -->|No| FORCE
-    FORCE -->|Yes| CALL --> EXEC
-    FORCE -->|No| SKIP
+    TICK --> LOWP
+    LOWP -->|idle| SKIP
+    LOWP -->|active/warmup| SYNC --> QUOTES --> HASH --> CHANGED
+    CHANGED -->|yes| CALL --> FILTER --> EXEC
+    CHANGED -->|no| FORCE
+    FORCE -->|yes| CALL
+    FORCE -->|no| SKIP
 ```
 
-## Strategy-Constrained Execution Flow
+## Strategy Analyst Loop
 
 ```mermaid
 sequenceDiagram
+    participant S as strategy.Runner
+    participant D as SQLite strategy tables
+    participant L as LLM Analyst
+    participant E as Engine
     participant A as autonomy.Runner
-    participant SP as Strategy Policy Adapter
-    participant DB as SQLite strategy_plans
-    participant E as engine.Engine
 
-    A->>SP: GetActiveStrategyPolicy()
-    SP->>DB: GetActivePlan + recommendations
-    DB-->>SP: active plan constraints
-    SP-->>A: plan_id + symbol/bias/max_notional
-    A->>A: Validate intent against constraints
-    alt Allowed by active plan
-        A->>E: PlaceOrder(...)
-    else Rejected by strategy policy
-        A->>E: Emit agent_intent_rejected (rejection_reason)
+    S->>D: GetLatestPlan / GetActivePlan
+    alt plan still fresh and not forced
+      S-->>S: skip cycle
+    else run cycle
+      S->>E: Sync + snapshot + quotes + events
+      S->>L: BuildPlan(input)
+      L-->>S: Plan (or no_change)
+      alt no_change
+        S-->>E: strategy_plan_unchanged event
+      else new plan
+        S->>D: Create plan + recommendations
+        alt auto_activate=true
+          S->>D: Set active
+        end
+        S-->>E: strategy_plan_created event
+      end
     end
+    A->>D: Get active plan constraints
+    A-->>A: enforce symbol/bias/max_notional
 ```
 
 ## Event Persistence + LLM Context
 
 ```mermaid
 sequenceDiagram
-    participant E as Engine (in-memory events)
-    participant P as runtime trade event persistor
-    participant DB as SQLite trade_events
+    participant E as Engine Events
+    participant P as Event Persistor
+    participant D as SQLite trade_events
     participant R as autonomy.Runner
     participant L as LLM Agent
 
-    E->>P: Emit relevant trade/agent event
-    P->>DB: Transactional AppendMany(batch)
-    R->>E: Snapshot()
-    R->>DB: ListRecent(N)
-    DB-->>R: persisted recent events
-    R->>L: ProposeTrades(input with DB-backed recent_events)
+    E->>P: relevant event emitted
+    P->>D: append batch (transaction)
+    R->>D: ListRecent(N)
+    D-->>R: recent persisted events
+    R->>L: context payload (snapshot + quotes + risk + identity + recent events)
 ```
 
-## Watchlist Flow
+## Quote Streaming
 
 ```mermaid
-flowchart TD
-    START[Startup]
-    LOADCFG[Load config + flags + env]
-    PULLALPACA[If broker=alpaca:<br/>pull watchlist from Alpaca API]
-    LOCALWATCH[If broker=paper:<br/>use local watchlist from config/flags]
-    ALLOW[Add watchlist symbols to risk allowlist]
-    RUN[Run TUI/agent]
-
-    START --> LOADCFG --> PULLALPACA --> ALLOW --> RUN
-    START --> LOADCFG --> LOCALWATCH --> ALLOW --> RUN
-
-    RUN -->|watch add/remove (alpaca)| PUSH[Push to Alpaca watchlist API]
-    RUN -->|watch sync/pull (alpaca)| PULL[Pull remote Alpaca watchlist]
+flowchart LR
+    WS[Alpaca quote websocket] --> AB[alpaca broker stream]
+    AB --> QSC[quote stream controller]
+    QSC --> CACHE[engine quote cache]
+    RUN[runner/tui quote read] --> CACHE
+    RUN -->|fallback when stale/missing| REST[alpaca latest quote REST]
 ```
+
+## Safety Boundaries
+
+- Watchlist is the effective execution allowlist.
+- All order paths (manual/TUI/autonomous) go through the same engine gates.
+- Compliance checks run after risk checks before broker submission.
+- Autonomous execution can be globally dampened by low-power mode.
+- Strategy policy can further restrict autonomous execution decisions.

@@ -1,73 +1,73 @@
 ---
 name: autonomous-trading-ops
-description: Operate helix-tui in manual, assist, or auto mode with safe defaults, monitoring, and command-line tuning. Use when asked to run autonomous agent sessions, monitor agent activity in the TUI, or configure runtime flags for autonomous trading behavior.
+description: Operate helix-tui autonomous sessions with config-first safe defaults, TUI monitoring, and controlled escalation from manual to auto execution.
 ---
 
 # Autonomous Trading Ops
 
-Run autonomous sessions with explicit mode and monitoring choices.
+Use this skill for runtime operations and autonomous execution control.
 
-## Use Safe Startup Sequence
-- Start in `paper` broker mode.
-- Start in `assist` or `auto` with `-dry-run` first.
-- Remove `-dry-run` only after reviewing event flow and trade intents.
+## Current Runtime Assumptions
 
-Example:
+- Runtime broker is Alpaca.
+- Use `[alpaca].env = "paper"` for safety unless explicitly asked to use live.
+- Runtime behavior is configured in `config.toml` (not legacy execution flags).
+
+## Safe Startup Sequence
+
+1. Start with:
+   - `mode = "manual"` or `mode = "assist"`
+   - `[alpaca].env = "paper"`
+2. If validating `auto`, keep:
+   - `mode = "auto"`
+   - `[agent].dry_run = true`
+3. Remove dry-run only after event flow and order behavior are acceptable.
+
+Run:
 
 ```bash
-go run ./cmd/helix -dry-run
+go run ./cmd/helix -config=config.toml
 ```
 
-## Choose Runtime Shape
-- Use TUI mode (omit `-headless`) when human monitoring is required.
-- Use `-headless` for unattended execution with periodic console summaries.
-
-Example headless run:
+Headless:
 
 ```bash
-go run ./cmd/helix -headless
+go run ./cmd/helix -config=config.toml -headless
 ```
 
-## Tune Autonomous Behavior
-- Adjust `-agent-interval` to control cycle frequency.
-- Adjust `-agent-max-intents` to cap per-cycle execution.
-- Adjust `-agent-qty` to control order size.
-- Adjust `-agent-move-pct` to control intent trigger threshold.
+## Tuning Knobs (config.toml)
+
+- `[agent].interval`
+- `[agent].max_intents`
+- `[agent].min_gain_pct`
+- `[agent].sync_timeout`
+- `[agent].order_timeout`
+- `[agent].dry_run`
+- `[agent.low_power].*`
+- `[risk].max_trade_notional`
+- `[risk].max_day_notional`
 
 ## Monitor in TUI
-- Watch account line (`Cash`, `BuyingPower`, `Equity`) for drift and P/L effects.
-- Watch `Open Orders` for stuck or repeated submissions.
-- Watch `Recent Events` for:
-  - `agent_runner_start`
-  - `agent_intent_needs_approval`
-  - `agent_intent_executed`
-  - `agent_intent_rejected`
-  - `agent_cycle_error`
-  - `order_placed`
-  - `trade_update`
 
-## Operator Commands During Session
-- Use `sync` for immediate reconciliation.
-- Use `cancel <ORDER_ID>` to stop a pending order.
-- Use `flatten` to exit positions quickly.
-- Use strategy controls for handoff:
-  - `strategy status`
-  - `strategy approve <PLAN_ID>` to promote a plan active
-  - `strategy reject <PLAN_ID>` to supersede a plan
-  - `strategy archive <PLAN_ID>` to remove stale plans from active consideration
-- Use `q` to quit TUI.
+Watch:
 
-## Strategy Handoff + Rollback
-- Handoff flow:
-  - Run `strategy run` to generate/update recommendations.
-  - Validate in Strategy tab (`summary`, `recommendations`, `health`).
-  - Promote with `strategy approve <PLAN_ID>`.
-- Incident rollback flow:
-  - `strategy reject <PLAN_ID>` to supersede a bad plan quickly.
-  - If positions/orders are unstable, execute `cancel` and `flatten`.
-  - Optionally `strategy archive <PLAN_ID>` after incident review.
+- account totals in header (`Cash`, `Buying Power`, `Equity`)
+- `Open Orders` table for stuck/replaced orders
+- `Logs` tab for `agent_cycle_error`, `agent_intent_rejected`, `order_placed`, `trade_update`
+- `System` tab for request counters and persistence health
+- `Strategy` tab if strategy mode is enabled
+
+## Session Commands
+
+- `sync`
+- `cancel <ORDER_ID|ORDER_ID_PREFIX|#ROW>`
+- `flatten`
+- `watch list|add|remove|sync`
+- `strategy run|status|approve|reject|archive`
 
 ## Validation
-- Run:
-  - `go test ./...`
-  - `go build ./cmd/helix`
+
+```bash
+go test ./...
+go build ./cmd/helix
+```

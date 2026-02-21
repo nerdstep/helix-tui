@@ -183,3 +183,52 @@ func TestParseEventsCommand(t *testing.T) {
 		})
 	}
 }
+
+func TestParseStrategyCommand(t *testing.T) {
+	tests := []struct {
+		name      string
+		raw       string
+		wantSeen  bool
+		wantType  strategyCommandType
+		wantErr   bool
+		wantErrIn string
+	}{
+		{name: "non strategy", raw: "help", wantSeen: false},
+		{name: "default status", raw: "strategy", wantSeen: true, wantType: strategyCommandStatus},
+		{name: "run", raw: "strategy run", wantSeen: true, wantType: strategyCommandRun},
+		{name: "status", raw: "strategy status", wantSeen: true, wantType: strategyCommandStatus},
+		{name: "usage", raw: "strategy nope", wantSeen: true, wantErr: true, wantErrIn: "usage: strategy"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd, seen, err := parseStrategyCommand(tt.raw)
+			if seen != tt.wantSeen {
+				t.Fatalf("unexpected handled: got %v want %v", seen, tt.wantSeen)
+			}
+			if !tt.wantSeen {
+				if cmd != nil || err != nil {
+					t.Fatalf("expected nil results for non-strategy command, got cmd=%#v err=%#v", cmd, err)
+				}
+				return
+			}
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected parse error")
+				}
+				if !strings.Contains(err.status, tt.wantErrIn) {
+					t.Fatalf("expected error %q to contain %q", err.status, tt.wantErrIn)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected parse error: %#v", err)
+			}
+			if cmd == nil {
+				t.Fatalf("expected command")
+			}
+			if cmd.Type != tt.wantType {
+				t.Fatalf("unexpected type: got %v want %v", cmd.Type, tt.wantType)
+			}
+		})
+	}
+}

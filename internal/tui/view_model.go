@@ -22,6 +22,7 @@ type viewModel struct {
 	systemAgent       []string
 	systemPersistence []string
 	strategyOverview  []string
+	strategyHealth    []string
 	strategyPicks     []string
 	strategyRecent    []string
 	events            []string
@@ -44,6 +45,7 @@ func (m Model) buildViewModel() viewModel {
 		systemAgent:       m.buildSystemAgentRows(),
 		systemPersistence: m.buildSystemPersistenceRows(),
 		strategyOverview:  m.buildStrategyOverviewRows(),
+		strategyHealth:    m.buildStrategyHealthRows(),
 		strategyPicks:     m.buildStrategyRecommendationsRows(),
 		strategyRecent:    m.buildStrategyRecentRows(),
 		events:            m.buildEventRows(),
@@ -111,6 +113,90 @@ func (m Model) buildStrategyRecentRows() []string {
 		rows = append(rows, fmt.Sprintf("#%d %s status=%s conf=%.2f model=%s", plan.ID, plan.GeneratedAt.Local().Format("01-02 15:04"), plan.Status, plan.Confidence, plan.AnalystModel))
 	}
 	return rows
+}
+
+func (m Model) buildStrategyHealthRows() []string {
+	rows := []string{panelTitleStyle.Render("Health")}
+	mode := latestEventByType(m.snapshot.Events, "strategy_mode")
+	if mode == nil {
+		rows = append(rows, mutedStyle.Render("status: strategy disabled"))
+		return rows
+	}
+	fields := parseEventFields(mode.Details)
+	interval := time.Duration(0)
+	if raw := strings.TrimSpace(fields["interval"]); raw != "" {
+		if parsed, err := time.ParseDuration(raw); err == nil {
+			interval = parsed
+		}
+	}
+
+	lastStart := latestEventByType(m.snapshot.Events, "strategy_cycle_start")
+	lastCreated := latestEventByType(m.snapshot.Events, "strategy_plan_created")
+	lastErr := latestEventByType(m.snapshot.Events, "strategy_cycle_error")
+	lastRunnerErr := latestEventByType(m.snapshot.Events, "strategy_runner_error")
+
+	status := "ok"
+	statusStyle := positiveStyle
+	if lastCreated == nil {
+		status = "waiting_for_first_plan"
+		statusStyle = warnStyle
+	}
+	if newerEvent(lastErr, lastCreated) || lastRunnerErr != nil {
+		status = "error"
+		statusStyle = errStyle
+	}
+
+	stale := false
+	if interval > 0 {
+		if lastCreated == nil {
+			if lastStart != nil && time.Since(lastStart.Time) > interval {
+				stale = true
+			}
+		} else if time.Since(lastCreated.Time) > interval*2 {
+			stale = true
+		}
+	}
+	rows = append(rows, "status: "+statusStyle.Render(status))
+	rows = append(rows, fmt.Sprintf("interval: %s", intervalString(interval)))
+	rows = append(rows, fmt.Sprintf("stale: %t", stale))
+	rows = append(rows, "last cycle: "+eventClock(lastStart))
+	rows = append(rows, "last success: "+eventClock(lastCreated))
+	if lastErr != nil {
+		rows = append(rows, "last error: "+fmt.Sprintf("%s %s", formatLocalClock(lastErr.Time), strings.TrimSpace(lastErr.Details)))
+	} else if lastRunnerErr != nil {
+		rows = append(rows, "last error: "+fmt.Sprintf("%s %s", formatLocalClock(lastRunnerErr.Time), strings.TrimSpace(lastRunnerErr.Details)))
+	} else {
+		rows = append(rows, "last error: none")
+	}
+	return rows
+}
+
+func newerEvent(a *domain.Event, b *domain.Event) bool {
+	if a == nil {
+		return false
+	}
+	if b == nil {
+		return true
+	}
+	return a.Time.After(b.Time)
+}
+
+func eventClock(e *domain.Event) string {
+	if e == nil {
+		return "n/a"
+	}
+	age := time.Since(e.Time)
+	if age < 0 {
+		age = 0
+	}
+	return fmt.Sprintf("%s (%s ago)", formatLocalClock(e.Time), age.Round(time.Second))
+}
+
+func intervalString(d time.Duration) string {
+	if d <= 0 {
+		return "n/a"
+	}
+	return d.String()
 }
 
 func (m Model) buildPositionRows() []string {

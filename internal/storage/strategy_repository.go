@@ -219,15 +219,16 @@ func (r *StrategyRepository) getSinglePlanByStatus(status string) (*StrategyPlan
 		return nil, fmt.Errorf("strategy repository is not initialized")
 	}
 	var record strategyPlanRecord
-	err := r.db.
+	result := r.db.
 		Where("status = ?", status).
 		Order("generated_at desc, id desc").
-		First(&record).Error
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("query strategy plan by status: %w", err)
+		Limit(1).
+		Find(&record)
+	if result.Error != nil {
+		return nil, fmt.Errorf("query strategy plan by status: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
 	}
 	plan, err := fromStrategyPlanRecord(record)
 	if err != nil {

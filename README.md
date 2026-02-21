@@ -168,6 +168,8 @@ go run ./cmd/helix \
 - `watch add <SYM>`
 - `watch remove <SYM>`
 - `watch sync` (or `watch pull`)
+- `strategy run` (queue immediate strategy analyst cycle)
+- `strategy status`
 - `help`
 - `q`
 
@@ -236,7 +238,7 @@ These checks are enforced in `internal/engine/risk.go` and `internal/engine/comp
 - Relevant trade/agent events are persisted at event-emission time (engine -> runtime persistor -> SQLite) in transactional batches.
 - SQLite persistence auto-applies the current schema at startup from `internal/storage`.
 - The TUI includes watchlist quote rows, position P&L, and basic agent/system runtime stats.
-- The TUI now includes a dedicated `Strategy` tab for active plan, recommendations, and recent plan history.
+- The TUI now includes a dedicated `Strategy` tab for active plan, recommendations, recent plan history, and strategy health/staleness status.
 - Equity trend rendering uses `github.com/NimbleMarkets/ntcharts` (sparkline) for higher fidelity terminal charts.
 - Event history supports keyboard paging (`PgUp`, `PgDn`, `Home`, `End`) and retains a larger recent window for scrollback.
 - Autonomous mode emits periodic `agent_heartbeat` summary events so idle-but-healthy loops are visible in logs.

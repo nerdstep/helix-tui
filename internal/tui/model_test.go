@@ -269,8 +269,13 @@ func TestWatchCommandCallbackError(t *testing.T) {
 		return context.DeadlineExceeded
 	})
 	m.input = "watch add MSFT"
-	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m1 := model.(Model)
+	if cmd == nil {
+		t.Fatalf("expected async command for watch add with callback")
+	}
+	model, _ = m1.Update(cmd())
+	m1 = model.(Model)
 	if !m1.statusError || !strings.Contains(strings.ToLower(m1.status), "sync failed") {
 		t.Fatalf("expected sync failure status, got %q", m1.status)
 	}
@@ -288,13 +293,18 @@ func TestWatchSyncCommand(t *testing.T) {
 	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m1 := model.(Model)
 	if cmd == nil {
-		t.Fatalf("watch sync should trigger refresh")
+		t.Fatalf("watch sync should schedule async work")
 	}
-	if len(m1.watchlist) != 2 || m1.watchlist[1] != "BYND" {
-		t.Fatalf("unexpected watchlist after sync: %#v", m1.watchlist)
+	model, follow := m1.Update(cmd())
+	m2 := model.(Model)
+	if follow == nil {
+		t.Fatalf("watch sync completion should trigger refresh")
 	}
-	if m1.statusError || !strings.Contains(m1.status, "watchlist synced") {
-		t.Fatalf("unexpected sync status: %q", m1.status)
+	if len(m2.watchlist) != 2 || m2.watchlist[1] != "BYND" {
+		t.Fatalf("unexpected watchlist after sync: %#v", m2.watchlist)
+	}
+	if m2.statusError || !strings.Contains(m2.status, "watchlist synced") {
+		t.Fatalf("unexpected sync status: %q", m2.status)
 	}
 }
 
@@ -306,11 +316,16 @@ func TestWatchSyncCommandError(t *testing.T) {
 	m.input = "watch sync"
 	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m1 := model.(Model)
-	if cmd != nil {
+	if cmd == nil {
+		t.Fatalf("watch sync should schedule async work")
+	}
+	model, follow := m1.Update(cmd())
+	m2 := model.(Model)
+	if follow != nil {
 		t.Fatalf("watch sync should not refresh on error")
 	}
-	if !m1.statusError || !strings.Contains(strings.ToLower(m1.status), "sync failed") {
-		t.Fatalf("unexpected sync error status: %q", m1.status)
+	if !m2.statusError || !strings.Contains(strings.ToLower(m2.status), "sync failed") {
+		t.Fatalf("unexpected sync error status: %q", m2.status)
 	}
 }
 
@@ -407,7 +422,7 @@ func TestTabSwitching(t *testing.T) {
 		t.Fatalf("expected active tab strategy, got %s", m2.activeTab)
 	}
 	strategyView := m2.View()
-	if !strings.Contains(strategyView, "Strategy Plan") || !strings.Contains(strategyView, "Recent Plans") {
+	if !strings.Contains(strategyView, "Strategy Plan") || !strings.Contains(strategyView, "Recent Plans") || !strings.Contains(strategyView, "Health") {
 		t.Fatalf("expected strategy panel on strategy tab: %q", strategyView)
 	}
 
@@ -443,6 +458,49 @@ func TestTabCommandTargetsStrategy(t *testing.T) {
 	view := m1.View()
 	if !strings.Contains(view, "Strategy Plan") {
 		t.Fatalf("expected strategy tab content, got %q", view)
+	}
+}
+
+func TestStrategyRunCommandInvokesHandler(t *testing.T) {
+	triggered := false
+	m := New(newTestEngine()).WithStrategyRunHandler(func() error {
+		triggered = true
+		return nil
+	})
+	m.input = "strategy run"
+	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m1 := model.(Model)
+	if !triggered {
+		t.Fatalf("expected strategy run handler to be invoked")
+	}
+	if cmd == nil {
+		t.Fatalf("expected refresh command after strategy run request")
+	}
+	if m1.statusError || !strings.Contains(m1.status, "strategy run") {
+		t.Fatalf("unexpected status: %q", m1.status)
+	}
+}
+
+func TestStrategyRunLoadingCompletesOnPlanCreatedEvent(t *testing.T) {
+	m := New(newTestEngine()).WithStrategyRunHandler(func() error { return nil })
+	m.input = "strategy run"
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m1 := model.(Model)
+	if !m1.strategyBusy {
+		t.Fatalf("expected strategy busy state after run request")
+	}
+	m1.snapshot.Events = append(m1.snapshot.Events, domain.Event{
+		Time:    time.Now().UTC(),
+		Type:    "strategy_plan_created",
+		Details: "id=42",
+	})
+	model, _ = m1.Update(refreshMsg{snapshot: m1.snapshot})
+	m2 := model.(Model)
+	if m2.strategyBusy {
+		t.Fatalf("expected strategy busy state to clear after plan created")
+	}
+	if m2.statusError || !strings.Contains(m2.status, "plan created") {
+		t.Fatalf("unexpected status after completion: %q", m2.status)
 	}
 }
 

@@ -185,3 +185,23 @@ func TestStrategyRepositoryRequiresInitializedDB(t *testing.T) {
 		t.Fatalf("expected uninitialized repository error")
 	}
 }
+
+func TestStrategyRepositoryGetActivePlan_NoActivePlanReturnsNil(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "strategy-empty-active.db")
+	store, err := Open(Config{Path: path})
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+
+	repo := store.Strategy()
+	active, err := repo.GetActivePlan()
+	if err != nil {
+		t.Fatalf("GetActivePlan failed: %v", err)
+	}
+	if active != nil {
+		t.Fatalf("expected nil active plan when none exists, got %#v", active)
+	}
+}

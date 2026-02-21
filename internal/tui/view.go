@@ -20,8 +20,14 @@ func (m Model) View() string {
 	statusRenderer := okStyle
 	if vm.statusError {
 		statusRenderer = errStyle
+	} else if m.isLoading() {
+		statusRenderer = warnStyle
 	}
-	status := statusRenderer.Render(vm.status)
+	statusText := vm.status
+	if m.isLoading() {
+		statusText = fmt.Sprintf("%s %s", m.spinner.View(), vm.status)
+	}
+	status := statusRenderer.Render(statusText)
 	input := inputStyle.Render("> " + vm.input)
 
 	lines := []string{vm.header, tabBar}
@@ -43,13 +49,15 @@ func (m Model) renderTabContent(vm viewModel, spec layoutSpec, gap int) string {
 	}
 	if m.activeTab == tabStrategy {
 		if spec.twoColumn {
-			row1 := renderTwoColumnPanels(vm.strategyOverview, vm.strategyRecent, spec.leftWidth, spec.rightWidth, spec.usableWidth, gap)
+			row1 := renderTwoColumnPanels(vm.strategyOverview, vm.strategyHealth, spec.leftWidth, spec.rightWidth, spec.usableWidth, gap)
 			row2 := renderPanel(vm.strategyPicks, spec.usableWidth)
-			return lipgloss.JoinVertical(lipgloss.Left, row1, row2)
+			row3 := renderPanel(vm.strategyRecent, spec.usableWidth)
+			return lipgloss.JoinVertical(lipgloss.Left, row1, row2, row3)
 		}
 		return lipgloss.JoinVertical(
 			lipgloss.Left,
 			renderPanel(vm.strategyOverview, spec.usableWidth),
+			renderPanel(vm.strategyHealth, spec.usableWidth),
 			renderPanel(vm.strategyRecent, spec.usableWidth),
 			renderPanel(vm.strategyPicks, spec.usableWidth),
 		)

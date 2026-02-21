@@ -58,9 +58,9 @@ Status values:
   - [x] Repository tests cover create/read/activate/supersede and reopen persistence.
   - [x] Store exposes strategy repository for runtime/agent wiring.
 
-### Phase 2: Analyst agent runtime loop (in progress)
+### Phase 2: Analyst agent runtime loop (implemented)
 
-- Status: `in_progress`
+- Status: `done`
 - Scope:
   - Add a low-frequency `strategy` runner (overseer cadence).
   - Add analyst prompt contract for structured plan + picks output.
@@ -70,7 +70,7 @@ Status values:
   - [x] Analyst loop runs independently from execution loop.
   - [x] Dedicated Strategy tab shows active plan + recommendations + recent plan history.
   - [x] Unit tests cover strategy runner persistence/activation path.
-  - [ ] Add stale-plan indicators + explicit last-run health status.
+  - [x] Add stale-plan indicators + explicit last-run health status.
 
 ### Phase 3: Execution integration + operator controls (planned)
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -81,6 +82,7 @@ type Model struct {
 	watchlist          []string
 	onWatchlistChanged func([]string) error
 	onWatchlistSync    func([]string) ([]string, error)
+	onStrategyRun      func() error
 	onEquityPoint      func(EquityPoint) error
 	onStrategyLoad     func() (StrategySnapshot, error)
 	eventScroll        int
@@ -99,6 +101,11 @@ type Model struct {
 	equityMaxPoints    int
 	strategy           StrategySnapshot
 	strategyLoadError  string
+	commandBusy        bool
+	commandBusyLabel   string
+	strategyBusy       bool
+	strategyBusySince  time.Time
+	spinner            spinner.Model
 	input              string
 	status             string
 	statusError        bool
@@ -108,6 +115,10 @@ type Model struct {
 }
 
 func New(engine *engine.Engine, watchlist ...string) Model {
+	spin := spinner.New()
+	spin.Spinner = spinner.MiniDot
+	spin.Style = warnStyle
+
 	m := Model{
 		engine:          engine,
 		watchlist:       symbols.Normalize(watchlist),
@@ -118,6 +129,7 @@ func New(engine *engine.Engine, watchlist ...string) Model {
 		equityMaxPoints: 1000,
 		status:          "Type 'help' for commands.",
 		activeTab:       tabOverview,
+		spinner:         spin,
 	}
 	m.eventsViewport = viewport.New(1, m.eventPageSize())
 	m.positionsTable = newPositionsTable()
@@ -140,6 +152,11 @@ func (m Model) WithWatchlistSyncHandler(fn func([]string) ([]string, error)) Mod
 	return m
 }
 
+func (m Model) WithStrategyRunHandler(fn func() error) Model {
+	m.onStrategyRun = fn
+	return m
+}
+
 func (m Model) WithEquityHistory(points []EquityPoint, appendFn func(EquityPoint) error) Model {
 	if points != nil {
 		m.equityHistory = append([]EquityPoint{}, points...)
@@ -157,7 +174,7 @@ func (m Model) WithStrategyLoader(fn func() (StrategySnapshot, error)) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.refreshCmd(), tickCmd())
+	return tea.Batch(m.refreshCmd(), tickCmd(), m.spinner.Tick)
 }
 
 func tickCmd() tea.Cmd {

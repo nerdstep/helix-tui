@@ -11,6 +11,14 @@ import (
 
 const watchCommandUsage = "usage: watch <list|add|remove|sync> [SYM]"
 
+type watchCommandResultMsg struct {
+	watchlist []string
+	apply     bool
+	status    string
+	isErr     bool
+	refresh   bool
+}
+
 func (m *Model) handleWatchCommand(raw string) (bool, tea.Cmd) {
 	cmd, handled, parseErr := parseWatchCommand(raw)
 	if !handled {
@@ -49,24 +57,28 @@ func (m *Model) handleWatchSync() tea.Cmd {
 		m.setStatus("watchlist sync is not configured", true)
 		return nil
 	}
-	next, err := m.onWatchlistSync(m.watchlist)
-	if err != nil {
-		m.setStatus(fmt.Sprintf("watchlist sync failed: %v", err), true)
-		return nil
-	}
-	next = symbols.Normalize(next)
-	m.watchlist = next
-	m.pruneWatchlistQuoteState()
-	for _, symbol := range next {
-		m.engine.AllowSymbol(symbol)
-	}
-	m.syncWidgets()
-	if len(next) == 0 {
-		m.setStatus("watchlist synced: (none)", false)
-	} else {
-		m.setStatus("watchlist synced: "+strings.Join(next, ","), false)
-	}
-	return m.refreshCmd()
+	current := append([]string{}, m.watchlist...)
+	syncFn := m.onWatchlistSync
+	return m.startWatchAsync("running watch sync", func() watchCommandResultMsg {
+		next, err := syncFn(current)
+		if err != nil {
+			return watchCommandResultMsg{
+				status: fmt.Sprintf("watchlist sync failed: %v", err),
+				isErr:  true,
+			}
+		}
+		next = symbols.Normalize(next)
+		status := "watchlist synced: (none)"
+		if len(next) > 0 {
+			status = "watchlist synced: " + strings.Join(next, ",")
+		}
+		return watchCommandResultMsg{
+			watchlist: next,
+			apply:     true,
+			status:    status,
+			refresh:   true,
+		}
+	})
 }
 
 func (m *Model) handleWatchAdd(symbol string) tea.Cmd {
@@ -78,18 +90,29 @@ func (m *Model) handleWatchAdd(symbol string) tea.Cmd {
 	}
 
 	next := append(append([]string{}, m.watchlist...), symbol)
-	if m.onWatchlistChanged != nil {
-		if err := m.onWatchlistChanged(next); err != nil {
-			m.setStatus(fmt.Sprintf("watchlist sync failed: %v", err), true)
-			return nil
-		}
+	if m.onWatchlistChanged == nil {
+		m.watchlist = next
+		m.pruneWatchlistQuoteState()
+		m.engine.AllowSymbol(symbol)
+		m.syncWidgets()
+		m.setStatus(fmt.Sprintf("added %s to watchlist", symbol), false)
+		return m.refreshCmd()
 	}
-	m.watchlist = next
-	m.pruneWatchlistQuoteState()
-	m.engine.AllowSymbol(symbol)
-	m.syncWidgets()
-	m.setStatus(fmt.Sprintf("added %s to watchlist", symbol), false)
-	return m.refreshCmd()
+	changeFn := m.onWatchlistChanged
+	return m.startWatchAsync("running watch add", func() watchCommandResultMsg {
+		if err := changeFn(next); err != nil {
+			return watchCommandResultMsg{
+				status: fmt.Sprintf("watchlist sync failed: %v", err),
+				isErr:  true,
+			}
+		}
+		return watchCommandResultMsg{
+			watchlist: next,
+			apply:     true,
+			status:    fmt.Sprintf("added %s to watchlist", symbol),
+			refresh:   true,
+		}
+	})
 }
 
 func (m *Model) handleWatchRemove(symbol string) tea.Cmd {
@@ -111,20 +134,37 @@ func (m *Model) handleWatchRemove(symbol string) tea.Cmd {
 		m.setStatus(fmt.Sprintf("%s not in watchlist", symbol), true)
 		return nil
 	}
-	if m.onWatchlistChanged != nil {
-		if err := m.onWatchlistChanged(next); err != nil {
-			m.setStatus(fmt.Sprintf("watchlist sync failed: %v", err), true)
-			return nil
-		}
+	if m.onWatchlistChanged == nil {
+		m.watchlist = next
+		delete(m.quotes, symbol)
+		delete(m.quoteSeenAt, symbol)
+		delete(m.prevLast, symbol)
+		delete(m.quoteErr, symbol)
+		m.syncWidgets()
+		m.setStatus(fmt.Sprintf("removed %s from watchlist", symbol), false)
+		return nil
 	}
-	m.watchlist = next
-	delete(m.quotes, symbol)
-	delete(m.quoteSeenAt, symbol)
-	delete(m.prevLast, symbol)
-	delete(m.quoteErr, symbol)
-	m.syncWidgets()
-	m.setStatus(fmt.Sprintf("removed %s from watchlist", symbol), false)
-	return nil
+	changeFn := m.onWatchlistChanged
+	return m.startWatchAsync("running watch remove", func() watchCommandResultMsg {
+		if err := changeFn(next); err != nil {
+			return watchCommandResultMsg{
+				status: fmt.Sprintf("watchlist sync failed: %v", err),
+				isErr:  true,
+			}
+		}
+		return watchCommandResultMsg{
+			watchlist: next,
+			apply:     true,
+			status:    fmt.Sprintf("removed %s from watchlist", symbol),
+		}
+	})
+}
+
+func (m *Model) startWatchAsync(label string, fn func() watchCommandResultMsg) tea.Cmd {
+	m.startCommandLoading(label)
+	return func() tea.Msg {
+		return fn()
+	}
 }
 
 func (m *Model) pruneWatchlistQuoteState() {

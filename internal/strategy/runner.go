@@ -38,7 +38,8 @@ type Runner struct {
 
 	eventHistory eventHistoryStore
 
-	mu sync.RWMutex
+	triggerCh chan struct{}
+	mu        sync.RWMutex
 }
 
 func NewRunner(
@@ -73,6 +74,7 @@ func NewRunner(
 		promptVersion:      strings.TrimSpace(promptVersion),
 		maxRecommendations: maxRecommendations,
 		autoActivate:       autoActivate,
+		triggerCh:          make(chan struct{}, 1),
 	}
 }
 
@@ -92,6 +94,25 @@ func (r *Runner) SetWatchlist(next []string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.watchlist = symbols.Normalize(next)
+}
+
+func (r *Runner) TriggerNow(reason string) bool {
+	if r == nil {
+		return false
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "manual"
+	}
+	if r.engine != nil {
+		r.engine.AddEvent("strategy_cycle_requested", fmt.Sprintf("reason=%s", reason))
+	}
+	select {
+	case r.triggerCh <- struct{}{}:
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *Runner) Run(ctx context.Context) error {
@@ -119,6 +140,10 @@ func (r *Runner) Run(ctx context.Context) error {
 			r.engine.AddEvent("strategy_runner_stop", "context canceled")
 			return ctx.Err()
 		case <-ticker.C:
+			if err := r.runCycle(ctx); err != nil {
+				r.engine.AddEvent("strategy_cycle_error", err.Error())
+			}
+		case <-r.triggerCh:
 			if err := r.runCycle(ctx); err != nil {
 				r.engine.AddEvent("strategy_cycle_error", err.Error())
 			}

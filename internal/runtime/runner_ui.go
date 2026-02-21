@@ -83,6 +83,15 @@ func runTUI(system *app.System, store *storage.Store, updateQuoteStream func([]s
 	model := tui.New(system.Engine, system.Watchlist...).
 		WithWatchlistChangeHandler(onWatchlistChanged)
 
+	if system.StrategyRunner != nil {
+		model = model.WithStrategyRunHandler(func() error {
+			if queued := system.StrategyRunner.TriggerNow("tui_command"); !queued {
+				return fmt.Errorf("strategy run request already pending")
+			}
+			return nil
+		})
+	}
+
 	if store != nil {
 		dbPoints, loadErr := store.EquityHistory().List()
 		if loadErr != nil {

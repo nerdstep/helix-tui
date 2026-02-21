@@ -55,6 +55,17 @@ type eventsCommand struct {
 	Step int
 }
 
+type strategyCommandType uint8
+
+const (
+	strategyCommandRun strategyCommandType = iota + 1
+	strategyCommandStatus
+)
+
+type strategyCommand struct {
+	Type strategyCommandType
+}
+
 func parseCoreCommand(raw string) (*coreCommand, *statusOnlyMsg) {
 	args := strings.Fields(raw)
 	if len(args) == 0 {
@@ -152,5 +163,26 @@ func parseEventsCommand(raw string, defaultStep int) (*eventsCommand, bool, *sta
 		return &eventsCommand{Type: eventsCommandDown, Step: step}, true, nil
 	default:
 		return nil, true, statusError(eventsCommandUsage)
+	}
+}
+
+func parseStrategyCommand(raw string) (*strategyCommand, bool, *statusOnlyMsg) {
+	args := lowerCommandArgs(raw)
+	if len(args) == 0 || args[0] != "strategy" {
+		return nil, false, nil
+	}
+	if len(args) == 1 {
+		return &strategyCommand{Type: strategyCommandStatus}, true, nil
+	}
+	if len(args) != 2 {
+		return nil, true, statusError(strategyCommandUsage)
+	}
+	switch args[1] {
+	case "run":
+		return &strategyCommand{Type: strategyCommandRun}, true, nil
+	case "status":
+		return &strategyCommand{Type: strategyCommandStatus}, true, nil
+	default:
+		return nil, true, statusError(strategyCommandUsage)
 	}
 }

@@ -4,7 +4,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+
+	"helix-tui/internal/symbols"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -17,6 +20,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateRefresh(msg)
 	case statusOnlyMsg:
 		return m.updateStatus(msg)
+	case watchCommandResultMsg:
+		return m.updateWatchCommandResult(msg)
+	case spinner.TickMsg:
+		return m.updateSpinner(msg)
 	case quitMsg:
 		return m, tea.Quit
 	case tea.KeyMsg:
@@ -34,7 +41,11 @@ func (m Model) updateWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateTick() (tea.Model, tea.Cmd) {
-	return m, tea.Batch(m.refreshCmd(), tickCmd())
+	cmds := []tea.Cmd{m.refreshCmd(), tickCmd()}
+	if m.isLoading() {
+		cmds = append(cmds, m.spinner.Tick)
+	}
+	return m, tea.Batch(cmds...)
 }
 
 func (m Model) updateRefresh(msg refreshMsg) (tea.Model, tea.Cmd) {
@@ -68,17 +79,61 @@ func (m Model) updateRefresh(msg refreshMsg) (tea.Model, tea.Cmd) {
 	} else {
 		m.strategyLoadError = ""
 	}
+	m.reconcileStrategyLoading(time.Now().UTC())
 	m.syncWidgets()
+	if m.isLoading() {
+		return m, m.spinner.Tick
+	}
 	return m, nil
 }
 
 func (m Model) updateStatus(msg statusOnlyMsg) (tea.Model, tea.Cmd) {
+	m.clearCommandLoading()
 	m.status = msg.status
 	m.statusError = msg.isErr
 	if msg.refresh {
-		return m, m.refreshCmd()
+		cmds := []tea.Cmd{m.refreshCmd()}
+		if m.isLoading() {
+			cmds = append(cmds, m.spinner.Tick)
+		}
+		return m, tea.Batch(cmds...)
 	}
 	return m, nil
+}
+
+func (m Model) updateSpinner(msg spinner.TickMsg) (tea.Model, tea.Cmd) {
+	if !m.isLoading() {
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.spinner, cmd = m.spinner.Update(msg)
+	return m, cmd
+}
+
+func (m Model) updateWatchCommandResult(msg watchCommandResultMsg) (tea.Model, tea.Cmd) {
+	m.clearCommandLoading()
+	if msg.apply {
+		next := symbols.Normalize(msg.watchlist)
+		m.watchlist = next
+		m.pruneWatchlistQuoteState()
+		for _, symbol := range next {
+			m.engine.AllowSymbol(symbol)
+		}
+		m.syncWidgets()
+	}
+	m.status = msg.status
+	m.statusError = msg.isErr
+	cmds := []tea.Cmd{}
+	if msg.refresh {
+		cmds = append(cmds, m.refreshCmd())
+	}
+	if m.isLoading() {
+		cmds = append(cmds, m.spinner.Tick)
+	}
+	if len(cmds) == 0 {
+		return m, nil
+	}
+	return m, tea.Batch(cmds...)
 }
 
 func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -142,6 +197,13 @@ func (m Model) submitInput() (tea.Model, tea.Cmd) {
 	}
 	if handled, cmd := m.handleEventsCommand(input); handled {
 		return m, cmd
+	}
+	if handled, cmd := m.handleStrategyCommand(input); handled {
+		return m, cmd
+	}
+	if shouldTrackCoreCommandLoading(input) {
+		m.startCommandLoading("running " + coreCommandLabel(input))
+		return m, m.runCommand(input)
 	}
 	return m, m.runCommand(input)
 }

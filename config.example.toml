@@ -1,54 +1,62 @@
 # Copy this file to config.toml and adjust values for your environment.
+#
+# Notes:
+# - Duration values use Go duration format (examples: "15s", "2m", "4h").
+# - Secrets can come from config, env vars, or keyring.
+# - Safe startup recommendation: [alpaca].env="paper", mode="manual|assist",
+#   and [agent].dry_run=true before enabling real auto execution.
 
 mode = "manual" # manual | assist | auto
 
 [identity]
-human_name = "Operator" # shown to/used by LLM agents
-human_alias = "" # optional X/GitHub/user handle
-agent_name = "Helix" # execution + strategy agent identity
+human_name = "Operator" # operator display name sent to LLM context
+human_alias = "" # optional handle (X/GitHub/etc.) sent to LLM context
+agent_name = "Helix" # execution + strategy agent self-name in prompts/context
 
 [alpaca]
-env = "paper" # paper | live
-base_url = "" # optional override; defaults by env
+env = "paper" # paper | live (live trades real capital)
+base_url = "" # optional trading API override; defaults by env when empty
 # You can leave credentials empty and rely on keyring/env instead.
-api_key = ""
-api_secret = ""
-data_url = ""
+api_key = "" # APCA_API_KEY_ID equivalent
+api_secret = "" # APCA_API_SECRET_KEY equivalent
+data_url = "" # optional market-data API override
 feed = "iex" # iex | sip | delayed_sip | boats | overnight
 
 [keyring]
 # Used for both Alpaca and LLM API keys when enabled.
-use = true
-save = true
-service = "helix-tui"
-user = "alpaca"
+use = true # load missing credentials from OS keyring
+save = true # save provided credentials into OS keyring
+service = "helix-tui" # keyring service namespace
+user = "alpaca" # keyring username/key label
 
 [risk]
-max_trade_notional = 1000
-max_day_notional = 10000
+max_trade_notional = 100 # USD max notional per order
+max_day_notional = 1000 # USD max aggregate notional per day
 
 [compliance]
-enabled = false
+enabled = true # enable PDT/GFV pre-trade checks
 account_type = "auto" # auto | margin | cash
-avoid_pdt = true
-max_day_trades_5d = 3
-min_equity_for_pdt = 25000
-avoid_gfv = false # settled-cash GFV guard for cash accounts
+avoid_pdt = true # for margin accounts: block risky day-trade patterns
+max_day_trades_5d = 3 # PDT threshold used by guard logic
+min_equity_for_pdt = 25000 # PDT equity threshold (USD)
+avoid_gfv = true # settled-cash GFV guard for cash accounts
 settlement_days = 1 # T+N settlement window (uses Alpaca calendar API)
 
 [agent]
-type = "heuristic" # heuristic | llm
+type = "heuristic" # heuristic | llm (execution agent)
 # Watchlist is the effective risk allowlist.
 # In runtime, this syncs to Alpaca watchlist "helix-tui" and is used as the trading allowlist.
 watchlist = ["AAPL", "MSFT", "TSLA", "NVDA"]
-interval = "15s"
+interval = "15s" # autonomous cycle interval
 sync_timeout = "15s" # sync timeout used by autonomous cycles
 order_timeout = "15s" # order execution timeout used by autonomous cycles
-qty = 1.0 # heuristic agent only: per-intent order quantity
-move_pct = 0.01 # heuristic agent only: minimum sampled move (0.01 = 1%) before signaling
 min_gain_pct = 1.0 # minimum expected gain percent per intent; 0 disables
-max_intents = 1
-dry_run = false
+max_intents = 1 # max intents attempted per autonomous cycle
+dry_run = true # when true, intents are logged but orders are not submitted
+
+[agent.heuristic]
+qty = 1.0 # per-intent order quantity for heuristic agent
+move_pct = 0.01 # minimum sampled move (0.01 = 1%) before heuristic signaling
 
 [agent.low_power]
 enabled = true # when true, autonomous cycles idle outside regular market hours
@@ -59,28 +67,26 @@ pre_open_warmup = "15m" # switch to normal cadence this long before 09:30 ET
 [agent.llm]
 api_key = "" # optional if OPENAI_API_KEY is set or keyring has one
 base_url = "https://api.openai.com/v1" # OpenAI-compatible endpoint
-model = "gpt-5-mini"
+model = "gpt-5-mini" # execution model
 timeout = "45s" # for slower models/endpoints, 35-60s reduces deadline errors
-context_log = "off" # off | summary | full
+context_log = "off" # off | summary | full (full can be verbose/large)
 system_prompt = "You are an expert US equities execution planner for helix-tui. Use only the JSON context (account, positions, open orders, watchlist, quotes, recent events). Do not use external news, filings, or web knowledge."
 
 [strategy]
 enabled = false # enable low-frequency strategy analyst overseer
-interval = "4h"
-auto_activate = false # true promotes latest strategy plan to active automatically
-max_recommendations = 8
-objective = "Build a risk-aware equities strategy with clear entries, exits, and invalidation rules."
+interval = "4h" # analyst cadence when enabled
+auto_activate = false # true auto-promotes latest plan to active
+max_recommendations = 8 # cap analyst picks per plan
 
 [strategy.llm]
 model = "gpt-5" # typically a stronger model than execution loop
-timeout = "90s"
-prompt_version = "strategy-v1"
-system_prompt = "You are a senior US equities strategy analyst for helix-tui."
+timeout = "90s" # strategy analysis timeout
+system_prompt = "You are a senior US equities strategy analyst for helix-tui. Build a risk-aware equities strategy with clear entries, exits, and invalidation rules."
 
 [logging]
-file = "logs/helix.log" # optional path to append event logs, e.g. "logs/helix.log"
+file = "logs/helix.log" # optional JSONL event log path
 mode = "append" # append | truncate (truncate resets file each app start)
 level = "info" # trace | debug | info | warn | error | fatal | panic | disabled
 
 [database]
-path = "logs/helix.db" # SQLite database for persistent app state (equity history + persisted trade events for LLM context)
+path = "logs/helix.db" # SQLite path for persisted app state (auto-migrated at startup)

@@ -9,7 +9,6 @@ import (
 
 type Input struct {
 	GeneratedAt        time.Time
-	Objective          string
 	MaxRecommendations int
 	Watchlist          []string
 	CurrentPlan        *CurrentPlan

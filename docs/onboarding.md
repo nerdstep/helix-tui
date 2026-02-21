@@ -16,6 +16,8 @@ From repository root:
 Copy-Item config.example.toml config.toml
 ```
 
+If you skip this step, `helix` will prompt on startup to create `config.toml` automatically.
+
 Edit `config.toml` and confirm:
 
 - `mode = "manual"`

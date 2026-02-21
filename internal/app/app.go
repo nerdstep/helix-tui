@@ -67,11 +67,9 @@ type Config struct {
 	StrategyInterval           time.Duration
 	StrategyAutoActivate       bool
 	StrategyMaxRecommendations int
-	StrategyObjective          string
 	StrategyModel              string
 	StrategyTimeout            time.Duration
 	StrategySystemPrompt       string
-	StrategyPromptVersion      string
 }
 
 type System struct {
@@ -134,11 +132,9 @@ func DefaultConfig() Config {
 		StrategyInterval:           4 * time.Hour,
 		StrategyAutoActivate:       false,
 		StrategyMaxRecommendations: 8,
-		StrategyObjective:          "Build a risk-aware equities strategy with clear entries, exits, and invalidation rules.",
 		StrategyModel:              "gpt-5",
 		StrategyTimeout:            90 * time.Second,
 		StrategySystemPrompt:       "You are a senior US equities strategy analyst for helix-tui.",
-		StrategyPromptVersion:      "strategy-v1",
 	}
 }
 

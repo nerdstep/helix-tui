@@ -41,7 +41,6 @@ func toStrategyPlanView(plan storage.StrategyPlan) tui.StrategyPlanView {
 		Status:        string(plan.Status),
 		AnalystModel:  plan.AnalystModel,
 		PromptVersion: plan.PromptVersion,
-		Objective:     plan.Objective,
 		Watchlist:     append([]string{}, plan.Watchlist...),
 		Summary:       plan.Summary,
 		Confidence:    plan.Confidence,

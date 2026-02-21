@@ -322,9 +322,7 @@ func buildStrategyRunner(cfg Config, e *engine.Engine, watchlist []string) (*str
 		watchlist,
 		cfg.StrategyInterval,
 		cfg.SyncTimeout,
-		cfg.StrategyObjective,
 		cfg.StrategyModel,
-		cfg.StrategyPromptVersion,
 		cfg.StrategyMaxRecommendations,
 		cfg.StrategyAutoActivate,
 	), nil

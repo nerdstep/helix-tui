@@ -60,7 +60,6 @@ func TestStoreOpenMigrateAppendListAndReopen(t *testing.T) {
 	planBundle, err := strategyRepo.CreatePlan(StrategyPlan{
 		GeneratedAt: time.Now().UTC(),
 		Status:      StrategyPlanStatusDraft,
-		Objective:   "smoke test strategy persistence",
 		Watchlist:   []string{"AAPL"},
 	}, []StrategyRecommendation{
 		{

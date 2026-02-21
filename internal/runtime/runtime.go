@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"helix-tui/internal/storage"
 	"helix-tui/internal/version"
@@ -17,6 +18,9 @@ func Run(ctx context.Context, args []string, stderr io.Writer) error {
 	if options.version {
 		_, _ = fmt.Fprintln(stderr, version.String())
 		return nil
+	}
+	if err := maybeBootstrapConfig(options.configPath, options.configExplicit, os.Stdin, stderr); err != nil {
+		return err
 	}
 	cfg, err := loadConfig(options.configPath, options.configExplicit)
 	if err != nil {

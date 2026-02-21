@@ -46,9 +46,7 @@ func TestRunnerPersistsAndActivatesPlan(t *testing.T) {
 		[]string{"AAPL"},
 		time.Hour,
 		2*time.Second,
-		"test objective",
 		"test-model",
-		"strategy-v1",
 		4,
 		true,
 	)
@@ -103,9 +101,7 @@ func TestRunnerSkipsCycleWhenLatestPlanIsFresh(t *testing.T) {
 		[]string{"AAPL"},
 		time.Hour,
 		2*time.Second,
-		"test objective",
 		"test-model",
-		"strategy-v1",
 		4,
 		true,
 	)
@@ -163,9 +159,7 @@ func TestRunnerNoChangePlanDoesNotPersistNewPlan(t *testing.T) {
 		[]string{"AAPL"},
 		time.Hour,
 		2*time.Second,
-		"test objective",
 		"test-model",
-		"strategy-v1",
 		4,
 		true,
 	)

@@ -23,7 +23,6 @@ type StrategyPlanView struct {
 	Status          string
 	AnalystModel    string
 	PromptVersion   string
-	Objective       string
 	Watchlist       []string
 	Summary         string
 	Confidence      float64
@@ -34,4 +33,3 @@ type StrategySnapshot struct {
 	Active *StrategyPlanView
 	Recent []StrategyPlanView
 }
-

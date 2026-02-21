@@ -27,7 +27,6 @@ func TestStrategyRepositoryCreateActivateAndList(t *testing.T) {
 			Status:        StrategyPlanStatusDraft,
 			AnalystModel:  "gpt-5",
 			PromptVersion: "strategy-v1",
-			Objective:     "Prioritize momentum names with defined risk.",
 			Watchlist:     []string{"AAPL", "MSFT", "NVDA"},
 			Summary:       "Lean long on semis, neutral mega-cap software.",
 			Confidence:    0.71,
@@ -131,7 +130,6 @@ func TestStrategyRepositoryActivatingPlanSupersedesPriorActive(t *testing.T) {
 	first, err := repo.CreatePlan(StrategyPlan{
 		GeneratedAt: time.Now().UTC().Add(-time.Hour),
 		Status:      StrategyPlanStatusDraft,
-		Objective:   "first",
 	}, nil)
 	if err != nil {
 		t.Fatalf("CreatePlan first failed: %v", err)
@@ -139,7 +137,6 @@ func TestStrategyRepositoryActivatingPlanSupersedesPriorActive(t *testing.T) {
 	second, err := repo.CreatePlan(StrategyPlan{
 		GeneratedAt: time.Now().UTC(),
 		Status:      StrategyPlanStatusDraft,
-		Objective:   "second",
 	}, nil)
 	if err != nil {
 		t.Fatalf("CreatePlan second failed: %v", err)
@@ -220,7 +217,6 @@ func TestStrategyRepositoryGetLatestPlan(t *testing.T) {
 	first, err := repo.CreatePlan(StrategyPlan{
 		GeneratedAt: time.Now().UTC().Add(-2 * time.Hour),
 		Status:      StrategyPlanStatusDraft,
-		Objective:   "first",
 	}, nil)
 	if err != nil {
 		t.Fatalf("CreatePlan first failed: %v", err)
@@ -228,7 +224,6 @@ func TestStrategyRepositoryGetLatestPlan(t *testing.T) {
 	second, err := repo.CreatePlan(StrategyPlan{
 		GeneratedAt: time.Now().UTC().Add(-time.Hour),
 		Status:      StrategyPlanStatusDraft,
-		Objective:   "second",
 	}, nil)
 	if err != nil {
 		t.Fatalf("CreatePlan second failed: %v", err)

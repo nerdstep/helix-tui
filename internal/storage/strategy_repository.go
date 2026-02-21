@@ -28,7 +28,6 @@ type StrategyPlan struct {
 	Status        StrategyPlanStatus
 	AnalystModel  string
 	PromptVersion string
-	Objective     string
 	Watchlist     []string
 	Summary       string
 	Confidence    float64
@@ -61,7 +60,6 @@ type strategyPlanRecord struct {
 	Status        string    `gorm:"size:32;index;not null"`
 	AnalystModel  string    `gorm:"size:128"`
 	PromptVersion string    `gorm:"size:128"`
-	Objective     string    `gorm:"type:text"`
 	WatchlistJSON string    `gorm:"type:text"`
 	Summary       string    `gorm:"type:text"`
 	Confidence    float64   `gorm:"not null;default:0"`
@@ -288,7 +286,6 @@ func toStrategyPlanRecord(plan StrategyPlan) (strategyPlanRecord, error) {
 		Status:        strings.ToLower(strings.TrimSpace(string(plan.Status))),
 		AnalystModel:  strings.TrimSpace(plan.AnalystModel),
 		PromptVersion: strings.TrimSpace(plan.PromptVersion),
-		Objective:     strings.TrimSpace(plan.Objective),
 		WatchlistJSON: watchlistJSON,
 		Summary:       strings.TrimSpace(plan.Summary),
 		Confidence:    plan.Confidence,
@@ -311,7 +308,6 @@ func fromStrategyPlanRecord(record strategyPlanRecord) (StrategyPlan, error) {
 		Status:        StrategyPlanStatus(strings.ToLower(strings.TrimSpace(record.Status))),
 		AnalystModel:  strings.TrimSpace(record.AnalystModel),
 		PromptVersion: strings.TrimSpace(record.PromptVersion),
-		Objective:     strings.TrimSpace(record.Objective),
 		Watchlist:     watchlist,
 		Summary:       strings.TrimSpace(record.Summary),
 		Confidence:    record.Confidence,

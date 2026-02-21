@@ -27,3 +27,6 @@ jobs:
 
       - name: Build
         run: go build ./cmd/helix
+
+      - name: Govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...

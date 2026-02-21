@@ -24,6 +24,8 @@ type eventHistoryStore interface {
 	ListRecent(limit int) ([]domain.Event, error)
 }
 
+const defaultPromptVersion = "strategy-v1"
+
 type Runner struct {
 	engine      *engine.Engine
 	analyst     Analyst
@@ -31,11 +33,9 @@ type Runner struct {
 	watchlist   []string
 	interval    time.Duration
 	syncTimeout time.Duration
-	objective   string
 
 	maxRecommendations int
 	autoActivate       bool
-	promptVersion      string
 	model              string
 
 	eventHistory eventHistoryStore
@@ -50,9 +50,7 @@ func NewRunner(
 	watchlist []string,
 	interval time.Duration,
 	syncTimeout time.Duration,
-	objective string,
 	model string,
-	promptVersion string,
 	maxRecommendations int,
 	autoActivate bool,
 ) *Runner {
@@ -71,9 +69,7 @@ func NewRunner(
 		watchlist:          symbols.Normalize(watchlist),
 		interval:           interval,
 		syncTimeout:        syncTimeout,
-		objective:          strings.TrimSpace(objective),
 		model:              strings.TrimSpace(model),
-		promptVersion:      strings.TrimSpace(promptVersion),
 		maxRecommendations: maxRecommendations,
 		autoActivate:       autoActivate,
 		triggerCh:          make(chan struct{}, 1),
@@ -205,7 +201,6 @@ func (r *Runner) runCycle(ctx context.Context, force bool, reason string) error 
 	snapshot := r.engine.Snapshot()
 	input := Input{
 		GeneratedAt:        time.Now().UTC(),
-		Objective:          r.objective,
 		MaxRecommendations: r.maxRecommendations,
 		Watchlist:          watchlist,
 		CurrentPlan:        toCurrentPlanInput(currentPlan),
@@ -262,8 +257,7 @@ func (r *Runner) runCycle(ctx context.Context, force bool, reason string) error 
 		GeneratedAt:   input.GeneratedAt,
 		Status:        storage.StrategyPlanStatusDraft,
 		AnalystModel:  r.model,
-		PromptVersion: r.promptVersion,
-		Objective:     r.objective,
+		PromptVersion: defaultPromptVersion,
 		Watchlist:     watchlist,
 		Summary:       plan.Summary,
 		Confidence:    plan.Confidence,

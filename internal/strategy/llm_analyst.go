@@ -80,7 +80,6 @@ func NewLLMAnalyst(cfg LLMAnalystConfig) (*LLMAnalyst, error) {
 
 type llmStrategyInput struct {
 	GeneratedAt        string                `json:"generated_at"`
-	Objective          string                `json:"objective"`
 	MaxRecommendations int                   `json:"max_recommendations"`
 	Watchlist          []string              `json:"watchlist"`
 	CurrentPlan        *llmCurrentPlan       `json:"current_plan,omitempty"`
@@ -134,7 +133,6 @@ func (a *LLMAnalyst) BuildPlan(ctx context.Context, input Input) (Plan, error) {
 	}
 	payload := llmStrategyInput{
 		GeneratedAt:        input.GeneratedAt.UTC().Format(time.RFC3339),
-		Objective:          strings.TrimSpace(input.Objective),
 		MaxRecommendations: minInt(a.maxRecommendations, maxInt(1, input.MaxRecommendations)),
 		Watchlist:          symbols.Normalize(input.Watchlist),
 		CurrentPlan:        toLLMCurrentPlan(input.CurrentPlan),
@@ -145,10 +143,6 @@ func (a *LLMAnalyst) BuildPlan(ctx context.Context, input Input) (Plan, error) {
 		Identity:           a.identity,
 		RecentEvents:       trimRecentEvents(input.RecentEvents, 24),
 	}
-	if payload.Objective == "" {
-		payload.Objective = "Produce a risk-aware equities strategy plan with clear entries, exits, and invalidation."
-	}
-
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return Plan{}, fmt.Errorf("marshal strategy payload: %w", err)

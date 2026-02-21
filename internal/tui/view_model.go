@@ -68,9 +68,6 @@ func (m Model) buildStrategyOverviewRows() []string {
 	}
 	rows = append(rows, fmt.Sprintf("id=%d status=%s conf=%.2f", active.ID, active.Status, active.Confidence))
 	rows = append(rows, fmt.Sprintf("generated=%s model=%s prompt=%s", active.GeneratedAt.Local().Format("2006-01-02 15:04:05"), active.AnalystModel, active.PromptVersion))
-	if strings.TrimSpace(active.Objective) != "" {
-		rows = append(rows, "objective: "+active.Objective)
-	}
 	if len(active.Watchlist) > 0 {
 		rows = append(rows, "watchlist: "+strings.Join(active.Watchlist, ","))
 	}

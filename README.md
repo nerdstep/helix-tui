@@ -7,6 +7,8 @@
 - low-frequency strategy analyst overseer
 - SQLite-backed persistence (events, equity history, strategy memory)
 
+![screenshot](./screenshot.jpg)
+
 ## Disclaimer
 
 This project is an AI-generated, experimental toy project for educational/development use only.
@@ -14,7 +16,7 @@ It is not investment advice and is not production-ready trading software.
 You are solely responsible for all configuration, operation, compliance, and losses.
 Use at your own risk.
 
-## Documentation Map
+## Documentation
 
 - [Architecture](./docs/architecture.md)
 - [New user onboarding](./docs/onboarding.md)
@@ -34,13 +36,15 @@ Use at your own risk.
 - Alpaca account/API keys (paper recommended)
 - Optional: OpenAI API key for `[agent].type = "llm"` and strategy analyst
 
-## Quick Start (Safe)
+## Quick Start
 
 1. Create your config:
 
 ```powershell
 Copy-Item config.example.toml config.toml
 ```
+
+If `config.toml` is missing, startup will prompt you to create it automatically from `config.example.toml`.
 
 1. Keep safe defaults while validating:
 
@@ -83,6 +87,7 @@ Key config areas:
 - `[risk]`: max trade/day notional
 - `[compliance]`: PDT/GFV guardrails
 - `[agent]`: runtime cadence + intent limits + low power
+- `[agent.heuristic]`: heuristic-only sizing/trigger settings
 - `[agent.llm]`: model/prompt/timeout/context logging
 - `[strategy]` and `[strategy.llm]`: overseer cadence + model/prompt
 - `[logging]`: structured log file/mode/level
@@ -140,4 +145,5 @@ Run checks before committing:
 ```bash
 go test ./...
 go build ./cmd/helix
+go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 ```

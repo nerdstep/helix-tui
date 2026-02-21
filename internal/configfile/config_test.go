@@ -124,11 +124,13 @@ watchlist = ["tsla", "TSLA", " nvda "]
 interval = "15s"
 sync_timeout = "18s"
 order_timeout = "22s"
-qty = 2.5
-move_pct = 0.03
 min_gain_pct = 1.25
 max_intents = 4
 dry_run = true
+
+[agent.heuristic]
+qty = 2.5
+move_pct = 0.03
 
 [agent.low_power]
 enabled = true
@@ -149,12 +151,10 @@ enabled = true
 interval = "2h"
 auto_activate = true
 max_recommendations = 5
-objective = "rotate towards higher momentum names"
 
 [strategy.llm]
 model = "gpt-5"
 timeout = "75s"
-prompt_version = "strategy-v2"
 system_prompt = "deep strategy analysis"
 
 [logging]
@@ -221,7 +221,7 @@ path = "data/helix.db"
 	if cfg.Agent.SyncTimeout != 18*time.Second || cfg.Agent.OrderTimeout != 22*time.Second {
 		t.Fatalf("unexpected runtime timeouts: sync=%s order=%s", cfg.Agent.SyncTimeout, cfg.Agent.OrderTimeout)
 	}
-	if cfg.Agent.Qty != 2.5 || cfg.Agent.MovePct != 0.03 || cfg.Agent.MaxIntents != 4 {
+	if cfg.Agent.Heuristic.Qty != 2.5 || cfg.Agent.Heuristic.MovePct != 0.03 || cfg.Agent.MaxIntents != 4 {
 		t.Fatalf("unexpected agent numeric settings")
 	}
 	if cfg.Agent.MinGainPct != 1.25 {
@@ -266,13 +266,10 @@ path = "data/helix.db"
 	if cfg.Strategy.MaxRecommendations != 5 {
 		t.Fatalf("unexpected strategy max recommendations: %d", cfg.Strategy.MaxRecommendations)
 	}
-	if cfg.Strategy.Objective != "rotate towards higher momentum names" {
-		t.Fatalf("unexpected strategy objective: %q", cfg.Strategy.Objective)
-	}
 	if cfg.Strategy.LLM.Model != "gpt-5" || cfg.Strategy.LLM.Timeout != 75*time.Second {
 		t.Fatalf("unexpected strategy llm settings: %#v", cfg.Strategy.LLM)
 	}
-	if cfg.Strategy.LLM.PromptVersion != "strategy-v2" || cfg.Strategy.LLM.SystemPrompt != "deep strategy analysis" {
+	if cfg.Strategy.LLM.SystemPrompt != "deep strategy analysis" {
 		t.Fatalf("unexpected strategy llm prompt settings: %#v", cfg.Strategy.LLM)
 	}
 	if cfg.Logging.File != "logs/helix-debug.log" {

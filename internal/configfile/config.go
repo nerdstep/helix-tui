@@ -71,18 +71,22 @@ type ComplianceConfig struct {
 }
 
 type AgentConfig struct {
-	Type         string        `koanf:"type"`
-	Watchlist    []string      `koanf:"watchlist"`
-	Interval     time.Duration `koanf:"interval"`
-	SyncTimeout  time.Duration `koanf:"sync_timeout"`
-	OrderTimeout time.Duration `koanf:"order_timeout"`
-	Qty          float64       `koanf:"qty"`
-	MovePct      float64       `koanf:"move_pct"`
-	MinGainPct   float64       `koanf:"min_gain_pct"`
-	MaxIntents   int           `koanf:"max_intents"`
-	DryRun       bool          `koanf:"dry_run"`
-	LowPower     LowPower      `koanf:"low_power"`
-	LLM          LLMConfig     `koanf:"llm"`
+	Type         string          `koanf:"type"`
+	Watchlist    []string        `koanf:"watchlist"`
+	Interval     time.Duration   `koanf:"interval"`
+	SyncTimeout  time.Duration   `koanf:"sync_timeout"`
+	OrderTimeout time.Duration   `koanf:"order_timeout"`
+	Heuristic    HeuristicConfig `koanf:"heuristic"`
+	MinGainPct   float64         `koanf:"min_gain_pct"`
+	MaxIntents   int             `koanf:"max_intents"`
+	DryRun       bool            `koanf:"dry_run"`
+	LowPower     LowPower        `koanf:"low_power"`
+	LLM          LLMConfig       `koanf:"llm"`
+}
+
+type HeuristicConfig struct {
+	Qty     float64 `koanf:"qty"`
+	MovePct float64 `koanf:"move_pct"`
 }
 
 type LowPower struct {
@@ -106,15 +110,13 @@ type StrategyConfig struct {
 	Interval           time.Duration     `koanf:"interval"`
 	AutoActivate       bool              `koanf:"auto_activate"`
 	MaxRecommendations int               `koanf:"max_recommendations"`
-	Objective          string            `koanf:"objective"`
 	LLM                StrategyLLMConfig `koanf:"llm"`
 }
 
 type StrategyLLMConfig struct {
-	Model         string        `koanf:"model"`
-	Timeout       time.Duration `koanf:"timeout"`
-	SystemPrompt  string        `koanf:"system_prompt"`
-	PromptVersion string        `koanf:"prompt_version"`
+	Model        string        `koanf:"model"`
+	Timeout      time.Duration `koanf:"timeout"`
+	SystemPrompt string        `koanf:"system_prompt"`
 }
 
 type Logging struct {
@@ -170,11 +172,13 @@ func Default() Config {
 			Interval:     d.AgentInterval,
 			SyncTimeout:  d.SyncTimeout,
 			OrderTimeout: d.OrderTimeout,
-			Qty:          d.AgentOrderQty,
-			MovePct:      d.AgentMovePct,
-			MinGainPct:   d.AgentMinGainPct,
-			MaxIntents:   d.MaxAgentIntents,
-			DryRun:       d.AgentDryRun,
+			Heuristic: HeuristicConfig{
+				Qty:     d.AgentOrderQty,
+				MovePct: d.AgentMovePct,
+			},
+			MinGainPct: d.AgentMinGainPct,
+			MaxIntents: d.MaxAgentIntents,
+			DryRun:     d.AgentDryRun,
 			LowPower: LowPower{
 				Enabled:            d.AgentLowPowerEnabled,
 				AllowAfterHours:    d.AgentAllowAfterHours,
@@ -195,12 +199,10 @@ func Default() Config {
 			Interval:           d.StrategyInterval,
 			AutoActivate:       d.StrategyAutoActivate,
 			MaxRecommendations: d.StrategyMaxRecommendations,
-			Objective:          d.StrategyObjective,
 			LLM: StrategyLLMConfig{
-				Model:         d.StrategyModel,
-				Timeout:       d.StrategyTimeout,
-				SystemPrompt:  d.StrategySystemPrompt,
-				PromptVersion: d.StrategyPromptVersion,
+				Model:        d.StrategyModel,
+				Timeout:      d.StrategyTimeout,
+				SystemPrompt: d.StrategySystemPrompt,
 			},
 		},
 		Logging: Logging{
@@ -243,8 +245,8 @@ func (c Config) ToAppConfig() app.Config {
 		Watchlist:                  cloneStrings(c.Agent.Watchlist),
 		AgentType:                  c.Agent.Type,
 		AgentInterval:              c.Agent.Interval,
-		AgentOrderQty:              c.Agent.Qty,
-		AgentMovePct:               c.Agent.MovePct,
+		AgentOrderQty:              c.Agent.Heuristic.Qty,
+		AgentMovePct:               c.Agent.Heuristic.MovePct,
 		AgentMinGainPct:            c.Agent.MinGainPct,
 		MaxAgentIntents:            c.Agent.MaxIntents,
 		AgentDryRun:                c.Agent.DryRun,
@@ -268,11 +270,9 @@ func (c Config) ToAppConfig() app.Config {
 		StrategyInterval:           c.Strategy.Interval,
 		StrategyAutoActivate:       c.Strategy.AutoActivate,
 		StrategyMaxRecommendations: c.Strategy.MaxRecommendations,
-		StrategyObjective:          c.Strategy.Objective,
 		StrategyModel:              c.Strategy.LLM.Model,
 		StrategyTimeout:            c.Strategy.LLM.Timeout,
 		StrategySystemPrompt:       c.Strategy.LLM.SystemPrompt,
-		StrategyPromptVersion:      c.Strategy.LLM.PromptVersion,
 	}
 }
 
@@ -302,10 +302,8 @@ func (c *Config) Normalize() {
 	c.Agent.LLM.SystemPrompt = strings.TrimSpace(c.Agent.LLM.SystemPrompt)
 	c.Agent.LLM.ContextLog = strings.ToLower(strings.TrimSpace(c.Agent.LLM.ContextLog))
 
-	c.Strategy.Objective = strings.TrimSpace(c.Strategy.Objective)
 	c.Strategy.LLM.Model = strings.TrimSpace(c.Strategy.LLM.Model)
 	c.Strategy.LLM.SystemPrompt = strings.TrimSpace(c.Strategy.LLM.SystemPrompt)
-	c.Strategy.LLM.PromptVersion = strings.TrimSpace(c.Strategy.LLM.PromptVersion)
 
 	c.Logging.File = strings.TrimSpace(c.Logging.File)
 	c.Logging.Mode = strings.ToLower(strings.TrimSpace(c.Logging.Mode))

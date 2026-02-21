@@ -13,7 +13,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const DefaultPath = "logs/helix.db"
+const DefaultPath = "data/helix.db"
 
 const (
 	sqliteBusyTimeoutMillis = 5000

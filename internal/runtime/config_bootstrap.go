@@ -46,7 +46,7 @@ max_intents = 1
 dry_run = true
 
 [database]
-path = "logs/helix.db"
+path = "data/helix.db"
 `
 
 func maybeBootstrapConfig(path string, explicit bool, input io.Reader, output io.Writer) error {

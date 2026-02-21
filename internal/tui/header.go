@@ -2,9 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +15,11 @@ var (
 	nyLocOnce sync.Once
 	nyLoc     *time.Location
 )
+
+const embeddedLogo = "" +
+	"▄▄ ▄▄ ▄▄▄▄▄ ▄▄    ▄▄ ▄▄ ▄▄ \n" +
+	"██▄██ ██▄▄  ██    ██ ▀█▄█▀ \n" +
+	"██ ██ ██▄▄▄ ██▄▄▄ ██ ██ ██"
 
 func (m Model) buildHeader() string {
 	logo := renderGradientLogo(loadLogoLines())
@@ -219,7 +221,7 @@ func newYorkLocation() *time.Location {
 
 func loadLogoLines() []string {
 	logoOnce.Do(func() {
-		content := readLogoText()
+		content := embeddedLogo
 		content = strings.TrimRight(content, "\r\n")
 		if content == "" {
 			logoLines = nil
@@ -228,27 +230,6 @@ func loadLogoLines() []string {
 		logoLines = strings.Split(content, "\n")
 	})
 	return append([]string{}, logoLines...)
-}
-
-func readLogoText() string {
-	for _, path := range logoCandidates() {
-		b, err := os.ReadFile(path)
-		if err == nil {
-			return string(b)
-		}
-	}
-	return ""
-}
-
-func logoCandidates() []string {
-	paths := []string{"logo.txt"}
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		return paths
-	}
-	moduleRoot := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
-	paths = append([]string{filepath.Join(moduleRoot, "logo.txt")}, paths...)
-	return paths
 }
 
 func renderGradientLogo(lines []string) string {

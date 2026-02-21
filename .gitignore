@@ -3,6 +3,7 @@
 .gomodcache/
 .gotmp/
 bin/
+data/
 dist/
 logs/
 *.exe*

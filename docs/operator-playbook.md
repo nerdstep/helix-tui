@@ -77,4 +77,4 @@ Before `[alpaca].env = "live"`:
 
 - config: `config.toml`
 - logs: `logs/helix.log`
-- db: `logs/helix.db`
+- db: `data/helix.db`

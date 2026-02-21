@@ -7,7 +7,7 @@
 - low-frequency strategy analyst overseer
 - SQLite-backed persistence (events, equity history, strategy memory)
 
-![screenshot](./screenshot.jpg)
+![screenshot](./assets/screenshot.jpg)
 
 ## Disclaimer
 
@@ -154,6 +154,7 @@ This repo is wired for GoReleaser.
 
 - Config: `.goreleaser.yaml`
 - GitHub workflow: `.github/workflows/release.yml` (runs on tags like `v1.2.3`)
+- Release archives include: binary + `README.md` + `LICENSE` + `config.example.toml` + `docs/`
 
 Local smoke checks:
 

@@ -59,6 +59,7 @@ type ComplianceConfig struct {
 	MaxDayTrades5D  int     `koanf:"max_day_trades_5d"`
 	MinEquityForPDT float64 `koanf:"min_equity_for_pdt"`
 	AvoidGoodFaith  bool    `koanf:"avoid_gfv"`
+	SettlementDays  int     `koanf:"settlement_days"`
 }
 
 type AgentConfig struct {
@@ -124,6 +125,7 @@ func Default() Config {
 			MaxDayTrades5D:  d.ComplianceMaxDayTrades5D,
 			MinEquityForPDT: d.ComplianceMinEquityForPDT,
 			AvoidGoodFaith:  d.ComplianceAvoidGoodFaith,
+			SettlementDays:  d.ComplianceSettlementDays,
 		},
 		Agent: AgentConfig{
 			Type:         d.AgentType,
@@ -177,6 +179,7 @@ func (c Config) ToAppConfig() app.Config {
 		ComplianceMaxDayTrades5D:  c.Compliance.MaxDayTrades5D,
 		ComplianceMinEquityForPDT: c.Compliance.MinEquityForPDT,
 		ComplianceAvoidGoodFaith:  c.Compliance.AvoidGoodFaith,
+		ComplianceSettlementDays:  c.Compliance.SettlementDays,
 		Mode:                      domain.Mode(c.Mode),
 		Watchlist:                 cloneStrings(c.Agent.Watchlist),
 		AgentType:                 c.Agent.Type,

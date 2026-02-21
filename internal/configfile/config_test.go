@@ -32,6 +32,9 @@ func TestDefaultAndToAppConfig(t *testing.T) {
 	if appCfg.ComplianceEnabled != cfg.Compliance.Enabled {
 		t.Fatalf("compliance enabled mismatch: app=%t cfg=%t", appCfg.ComplianceEnabled, cfg.Compliance.Enabled)
 	}
+	if appCfg.ComplianceSettlementDays != cfg.Compliance.SettlementDays {
+		t.Fatalf("compliance settlement days mismatch: app=%d cfg=%d", appCfg.ComplianceSettlementDays, cfg.Compliance.SettlementDays)
+	}
 }
 
 func TestLoad_MissingOptionalFile(t *testing.T) {
@@ -90,6 +93,7 @@ avoid_pdt = true
 max_day_trades_5d = 3
 min_equity_for_pdt = 25000
 avoid_gfv = false
+settlement_days = 1
 
 [agent]
 type = "llm"
@@ -159,6 +163,9 @@ path = "data/helix.db"
 	}
 	if cfg.Compliance.MaxDayTrades5D != 3 || cfg.Compliance.MinEquityForPDT != 25000 {
 		t.Fatalf("unexpected compliance limits: %#v", cfg.Compliance)
+	}
+	if cfg.Compliance.SettlementDays != 1 {
+		t.Fatalf("unexpected compliance settlement days: %#v", cfg.Compliance)
 	}
 	if !reflect.DeepEqual(cfg.Agent.Watchlist, []string{"tsla", "TSLA", " nvda "}) {
 		t.Fatalf("unexpected watchlist: %#v", cfg.Agent.Watchlist)

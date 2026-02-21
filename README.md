@@ -55,7 +55,8 @@ The app can load runtime settings from a TOML file.
   - `[compliance].avoid_pdt`
   - `[compliance].max_day_trades_5d`
   - `[compliance].min_equity_for_pdt`
-  - `[compliance].avoid_gfv` (planned phase, not yet enforced)
+  - `[compliance].avoid_gfv`
+  - `[compliance].settlement_days` (T+N business days for cash-settlement guard)
 - Agent selection/config keys:
   - `[agent].type` (`heuristic` or `llm`)
   - `[agent].qty` (heuristic agent only)
@@ -183,14 +184,14 @@ Agent tuning notes:
 - LLM request context includes risk limits from `[risk]` (`max_trade_notional`, `max_day_notional`) so the model can size intents within policy.
 - Rejected intents are included in `recent_events` with a dedicated `rejection_reason` field (separate from event `details`).
 - System tab now surfaces agent request counters (`ok`/`failed`) and DB event persistence health (`queue`, `flush_ok`, `flush_failed`, `events_ok`, `events_failed`, `dropped`).
-- Phase 1 compliance guard can reject orders with `compliance_rejected` when PDT-protection settings block risky buys.
+- Compliance guard can reject orders with `compliance_rejected` when PDT/GFV protection blocks risky buys.
 
 ## Safety Defaults
 
 - Watchlist-based symbol allowlist
 - Max notional per trade
 - Max daily notional
-- Optional compliance guard for live scenarios (PDT-aware in Phase 1)
+- Optional compliance guard for live scenarios (PDT + cash-account GFV guardrails)
 
 These checks are enforced in `internal/engine/risk.go` and `internal/engine/compliance.go`.
 
@@ -213,6 +214,7 @@ These checks are enforced in `internal/engine/risk.go` and `internal/engine/comp
 - LLM credentials can be supplied via `OPENAI_API_KEY` / `HELIX_LLM_API_KEY`, config, or keyring.
 - LLM output only proposes intents; all execution still goes through `Runner -> Engine -> RiskGate`.
 - LLM/manual order execution still passes through pre-trade controls; when enabled, `ComplianceGate` runs after `RiskGate`.
+- `avoid_gfv` uses a SQLite-backed unsettled-proceeds ledger built from observed sell fills (cash accounts), with settlement based on `[compliance].settlement_days`.
 - Set `[logging].file` to persist event logs for later debugging.
 - Use `[logging].mode = "truncate"` to reset the log file each app start.
 - Set `[logging].level` to tune verbosity; default is `info`.

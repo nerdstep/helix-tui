@@ -103,6 +103,7 @@ func buildEngine(cfg Config, broker domain.Broker, allowSymbols map[string]struc
 		MaxDayTrades5D:  cfg.ComplianceMaxDayTrades5D,
 		MinEquityForPDT: cfg.ComplianceMinEquityForPDT,
 		AvoidGoodFaith:  cfg.ComplianceAvoidGoodFaith,
+		SettlementDays:  cfg.ComplianceSettlementDays,
 	}))
 	syncTimeout := cfg.SyncTimeout
 	if syncTimeout <= 0 {
@@ -117,12 +118,13 @@ func buildEngine(cfg Config, broker domain.Broker, allowSymbols map[string]struc
 		e.AddEvent(
 			"compliance_config",
 			fmt.Sprintf(
-				"enabled=true account_type=%s avoid_pdt=%t max_day_trades_5d=%d min_equity_for_pdt=%.2f avoid_gfv=%t",
+				"enabled=true account_type=%s avoid_pdt=%t max_day_trades_5d=%d min_equity_for_pdt=%.2f avoid_gfv=%t settlement_days=%d",
 				strings.ToLower(strings.TrimSpace(cfg.ComplianceAccountType)),
 				cfg.ComplianceAvoidPDT,
 				cfg.ComplianceMaxDayTrades5D,
 				cfg.ComplianceMinEquityForPDT,
 				cfg.ComplianceAvoidGoodFaith,
+				cfg.ComplianceSettlementDays,
 			),
 		)
 	}

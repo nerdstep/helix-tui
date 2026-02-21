@@ -104,6 +104,12 @@ func (e *Engine) PlaceOrder(ctx context.Context, req domain.OrderRequest) (domai
 	}
 	if e.compliance != nil {
 		snapshot := e.Snapshot()
+		if account, accountErr := e.broker.GetAccount(ctx); accountErr == nil {
+			snapshot.Account = account
+			e.mu.Lock()
+			e.account = account
+			e.mu.Unlock()
+		}
 		if err := e.compliance.Evaluate(req, quote, snapshot); err != nil {
 			e.AddEvent("compliance_rejected", fmt.Sprintf("%s %s %.2f: %v", req.Side, req.Symbol, req.Qty, err))
 			return domain.Order{}, err
@@ -114,6 +120,18 @@ func (e *Engine) PlaceOrder(ctx context.Context, req domain.OrderRequest) (domai
 		return domain.Order{}, err
 	}
 
+	recordFill := false
+	fillSide := order.Side
+	fillQty := order.FilledQty
+	fillPrice := estimateOrderFillPrice(order, quote)
+	fillTime := order.UpdatedAt
+	if fillTime.IsZero() {
+		fillTime = order.CreatedAt
+	}
+	if fillQty > 0 && fillPrice > 0 {
+		recordFill = true
+	}
+
 	e.mu.Lock()
 	e.orders[order.ID] = order
 	emitted := e.addEventLocked(domain.Event{
@@ -121,6 +139,12 @@ func (e *Engine) PlaceOrder(ctx context.Context, req domain.OrderRequest) (domai
 		Details: fmt.Sprintf("%s %s %.2f (%s)", order.Side, order.Symbol, order.Qty, order.ID),
 	})
 	e.mu.Unlock()
+
+	if recordFill && e.compliance != nil {
+		if recordErr := e.compliance.RecordFill(fillSide, fillQty, fillPrice, fillTime); recordErr != nil {
+			e.AddEvent("database_error", fmt.Sprintf("persist compliance settlement state: %v", recordErr))
+		}
+	}
 	e.dispatchEventSinks(emitted)
 	return order, nil
 }
@@ -297,7 +321,23 @@ func (e *Engine) SetComplianceGate(gate *ComplianceGate) {
 	e.mu.Unlock()
 }
 
+func (e *Engine) SetComplianceSettlementStore(store ComplianceSettlementStore) error {
+	e.mu.RLock()
+	gate := e.compliance
+	e.mu.RUnlock()
+	if gate == nil {
+		return nil
+	}
+	return gate.SetSettlementStore(store)
+}
+
 func (e *Engine) applyTradeUpdate(update domain.TradeUpdate) {
+	var recordFill bool
+	var fillSide domain.Side
+	var fillQty float64
+	var fillPrice float64
+	var fillTime time.Time
+
 	e.mu.Lock()
 	ord, ok := e.orders[update.OrderID]
 	if !ok {
@@ -310,16 +350,69 @@ func (e *Engine) applyTradeUpdate(update domain.TradeUpdate) {
 		return
 	}
 
+	prevFilledQty := ord.FilledQty
 	ord.Status = update.Status
 	ord.FilledQty = update.FillQty
 	ord.UpdatedAt = update.Time
 	e.orders[ord.ID] = ord
+
+	filledDelta := update.FillQty - prevFilledQty
+	if filledDelta > 0 {
+		recordFill = true
+		fillSide = ord.Side
+		fillQty = filledDelta
+		fillPrice = estimateTradeUpdateFillPrice(ord, update, e.quotes[strings.ToUpper(strings.TrimSpace(ord.Symbol))])
+		fillTime = update.Time
+	}
+
 	emitted := e.addEventLocked(domain.Event{
 		Type:    "trade_update",
 		Details: fmt.Sprintf("%s status=%s filled=%.2f", ord.ID, ord.Status, ord.FilledQty),
 	})
 	e.mu.Unlock()
+
+	if recordFill && fillPrice > 0 && e.compliance != nil {
+		if recordErr := e.compliance.RecordFill(fillSide, fillQty, fillPrice, fillTime); recordErr != nil {
+			e.AddEvent("database_error", fmt.Sprintf("persist compliance settlement state: %v", recordErr))
+		}
+	}
 	e.dispatchEventSinks(emitted)
+}
+
+func estimateOrderFillPrice(order domain.Order, quote domain.Quote) float64 {
+	if order.LimitPrice != nil && *order.LimitPrice > 0 {
+		return *order.LimitPrice
+	}
+	return quoteReferencePrice(order.Side, quote)
+}
+
+func estimateTradeUpdateFillPrice(order domain.Order, update domain.TradeUpdate, cachedQuote domain.Quote) float64 {
+	if update.FillPrice != nil && *update.FillPrice > 0 {
+		return *update.FillPrice
+	}
+	if order.LimitPrice != nil && *order.LimitPrice > 0 {
+		return *order.LimitPrice
+	}
+	return quoteReferencePrice(order.Side, cachedQuote)
+}
+
+func quoteReferencePrice(side domain.Side, quote domain.Quote) float64 {
+	if side == domain.SideBuy {
+		if quote.Ask > 0 {
+			return quote.Ask
+		}
+		if quote.Last > 0 {
+			return quote.Last
+		}
+		return quote.Bid
+	}
+	if quote.Bid > 0 {
+		return quote.Bid
+	}
+	if quote.Last > 0 {
+		return quote.Last
+	}
+	return quote.Ask
 }
 
 func (e *Engine) addEventLocked(event domain.Event) domain.Event {

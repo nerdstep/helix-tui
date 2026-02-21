@@ -77,6 +77,9 @@ func validateConfig(cfg configfile.Config) error {
 	if cfg.Compliance.MinEquityForPDT < 0 {
 		return fmt.Errorf("compliance.min_equity_for_pdt must be >= 0")
 	}
+	if cfg.Compliance.SettlementDays <= 0 {
+		return fmt.Errorf("compliance.settlement_days must be > 0")
+	}
 	switch cfg.Agent.LLM.ContextLog {
 	case "", "off", "summary", "full":
 	default:

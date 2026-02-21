@@ -33,6 +33,7 @@ type Config struct {
 	ComplianceMaxDayTrades5D  int
 	ComplianceMinEquityForPDT float64
 	ComplianceAvoidGoodFaith  bool
+	ComplianceSettlementDays  int
 	Mode                      domain.Mode
 	Watchlist                 []string
 	AgentType                 string
@@ -85,6 +86,7 @@ func DefaultConfig() Config {
 		ComplianceMaxDayTrades5D:  3,
 		ComplianceMinEquityForPDT: 25000,
 		ComplianceAvoidGoodFaith:  false,
+		ComplianceSettlementDays:  1,
 		Mode:                      domain.ModeManual,
 		Watchlist:                 []string{"AAPL", "MSFT", "TSLA", "NVDA"},
 		AgentType:                 "heuristic",

@@ -177,6 +177,14 @@ func TestNormalizeAndValidateConfig_InvalidComplianceAccountType(t *testing.T) {
 	}
 }
 
+func TestNormalizeAndValidateConfig_InvalidComplianceSettlementDays(t *testing.T) {
+	cfg := configfile.Default()
+	cfg.Compliance.SettlementDays = -1
+	if err := normalizeAndValidateConfig(&cfg); err == nil {
+		t.Fatalf("expected invalid compliance settlement days error")
+	}
+}
+
 func TestRunHeadlessStopsOnCanceledContext(t *testing.T) {
 	oldStdout := os.Stdout
 	r, w, err := os.Pipe()

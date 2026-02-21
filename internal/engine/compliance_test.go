@@ -1,7 +1,10 @@
 package engine
 
 import (
+	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"helix-tui/internal/domain"
 )
@@ -105,4 +108,203 @@ func TestComplianceGateEvaluate_PDTFlaggedBlocksBuyBelowMinEquity(t *testing.T) 
 	if err == nil {
 		t.Fatalf("expected flagged PDT account to be blocked below minimum equity")
 	}
+}
+
+func TestComplianceGateEvaluate_GFVCashBlocksBuyUsingUnsettledProceeds(t *testing.T) {
+	g := NewComplianceGate(CompliancePolicy{
+		Enabled:        true,
+		AccountType:    "cash",
+		AvoidGoodFaith: true,
+		SettlementDays: 1,
+	})
+	fillTime := time.Date(2026, time.February, 20, 10, 0, 0, 0, time.UTC)
+	g.now = func() time.Time { return fillTime }
+	if err := g.RecordFill(domain.SideSell, 100, 10, fillTime); err != nil { // unsettled proceeds: 1000
+		t.Fatalf("record fill failed: %v", err)
+	}
+
+	err := g.Evaluate(
+		domain.OrderRequest{Symbol: "AAPL", Side: domain.SideBuy, Qty: 120, Type: domain.OrderTypeMarket},
+		domain.Quote{Symbol: "AAPL", Ask: 10, Last: 10},
+		domain.Snapshot{
+			Account: domain.Account{
+				Cash:        1500,
+				BuyingPower: 1500,
+				Multiplier:  1,
+			},
+		},
+	)
+	if err == nil {
+		t.Fatalf("expected gfv guard rejection")
+	}
+	if !strings.Contains(err.Error(), "gfv guard") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestComplianceGateEvaluate_GFVCashAllowsAfterSettlement(t *testing.T) {
+	g := NewComplianceGate(CompliancePolicy{
+		Enabled:        true,
+		AccountType:    "cash",
+		AvoidGoodFaith: true,
+		SettlementDays: 1,
+	})
+	fillTime := time.Date(2026, time.February, 20, 10, 0, 0, 0, time.UTC) // Friday
+	g.now = func() time.Time { return fillTime }
+	if err := g.RecordFill(domain.SideSell, 100, 10, fillTime); err != nil {
+		t.Fatalf("record fill failed: %v", err)
+	}
+
+	// T+1 business-day settlement from Friday resolves on Monday.
+	g.now = func() time.Time { return time.Date(2026, time.February, 23, 10, 0, 0, 0, time.UTC) }
+	err := g.Evaluate(
+		domain.OrderRequest{Symbol: "AAPL", Side: domain.SideBuy, Qty: 120, Type: domain.OrderTypeMarket},
+		domain.Quote{Symbol: "AAPL", Ask: 10, Last: 10},
+		domain.Snapshot{
+			Account: domain.Account{
+				Cash:        1500,
+				BuyingPower: 1500,
+				Multiplier:  1,
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("expected buy to pass after settlement, got %v", err)
+	}
+}
+
+func TestComplianceGateEvaluate_GFVSkippedForMarginAccounts(t *testing.T) {
+	g := NewComplianceGate(CompliancePolicy{
+		Enabled:        true,
+		AccountType:    "margin",
+		AvoidGoodFaith: true,
+		SettlementDays: 1,
+	})
+	fillTime := time.Date(2026, time.February, 20, 10, 0, 0, 0, time.UTC)
+	g.now = func() time.Time { return fillTime }
+	if err := g.RecordFill(domain.SideSell, 100, 10, fillTime); err != nil {
+		t.Fatalf("record fill failed: %v", err)
+	}
+
+	err := g.Evaluate(
+		domain.OrderRequest{Symbol: "AAPL", Side: domain.SideBuy, Qty: 500, Type: domain.OrderTypeMarket},
+		domain.Quote{Symbol: "AAPL", Ask: 10, Last: 10},
+		domain.Snapshot{
+			Account: domain.Account{
+				Cash:        500,
+				BuyingPower: 10000,
+				Multiplier:  2,
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("expected margin account to skip gfv guard, got %v", err)
+	}
+}
+
+func TestSettlementTime_TPlusOneSkipsWeekend(t *testing.T) {
+	friday := time.Date(2026, time.February, 20, 15, 30, 0, 0, time.UTC)
+	settles := settlementTime(friday, 1)
+	if settles.Weekday() != time.Monday {
+		t.Fatalf("expected Monday settlement, got %s", settles.Weekday())
+	}
+}
+
+func TestComplianceGate_SetSettlementStoreLoadsUnsettled(t *testing.T) {
+	now := time.Date(2026, time.February, 21, 10, 0, 0, 0, time.UTC)
+	store := &stubSettlementStore{
+		lots: []UnsettledSellProceeds{
+			{Amount: 900, SettlesAt: now.Add(24 * time.Hour)},
+		},
+	}
+	g := NewComplianceGate(CompliancePolicy{
+		Enabled:        true,
+		AccountType:    "cash",
+		AvoidGoodFaith: true,
+		SettlementDays: 1,
+	})
+	g.now = func() time.Time { return now }
+	if err := g.SetSettlementStore(store); err != nil {
+		t.Fatalf("set settlement store failed: %v", err)
+	}
+
+	err := g.Evaluate(
+		domain.OrderRequest{Symbol: "AAPL", Side: domain.SideBuy, Qty: 95, Type: domain.OrderTypeMarket},
+		domain.Quote{Symbol: "AAPL", Ask: 10},
+		domain.Snapshot{Account: domain.Account{Cash: 1000, BuyingPower: 1000, Multiplier: 1}},
+	)
+	if err == nil {
+		t.Fatalf("expected gfv guard rejection from loaded unsettled state")
+	}
+}
+
+func TestComplianceGate_RecordFillPersistsViaSettlementStore(t *testing.T) {
+	now := time.Date(2026, time.February, 21, 10, 0, 0, 0, time.UTC)
+	store := &stubSettlementStore{}
+	g := NewComplianceGate(CompliancePolicy{
+		Enabled:        true,
+		AccountType:    "cash",
+		AvoidGoodFaith: true,
+		SettlementDays: 1,
+	})
+	g.now = func() time.Time { return now }
+	if err := g.SetSettlementStore(store); err != nil {
+		t.Fatalf("set settlement store failed: %v", err)
+	}
+	if err := g.RecordFill(domain.SideSell, 10, 15, now); err != nil {
+		t.Fatalf("record fill failed: %v", err)
+	}
+	if len(store.appended) != 1 {
+		t.Fatalf("expected 1 appended lot, got %d", len(store.appended))
+	}
+	if store.appended[0].Amount != 150 {
+		t.Fatalf("unexpected appended amount: %#v", store.appended[0])
+	}
+}
+
+func TestComplianceGate_RecordFillStoreErrorReturned(t *testing.T) {
+	now := time.Date(2026, time.February, 21, 10, 0, 0, 0, time.UTC)
+	store := &stubSettlementStore{appendErr: fmt.Errorf("boom")}
+	g := NewComplianceGate(CompliancePolicy{
+		Enabled:        true,
+		AccountType:    "cash",
+		AvoidGoodFaith: true,
+		SettlementDays: 1,
+	})
+	g.now = func() time.Time { return now }
+	if err := g.SetSettlementStore(store); err != nil {
+		t.Fatalf("set settlement store failed: %v", err)
+	}
+	if err := g.RecordFill(domain.SideSell, 10, 15, now); err == nil {
+		t.Fatalf("expected record fill error")
+	}
+}
+
+type stubSettlementStore struct {
+	lots      []UnsettledSellProceeds
+	appended  []UnsettledSellProceeds
+	loadErr   error
+	appendErr error
+	pruneErr  error
+}
+
+func (s *stubSettlementStore) LoadUnsettledSellProceeds(_ time.Time) ([]UnsettledSellProceeds, error) {
+	if s.loadErr != nil {
+		return nil, s.loadErr
+	}
+	out := make([]UnsettledSellProceeds, len(s.lots))
+	copy(out, s.lots)
+	return out, nil
+}
+
+func (s *stubSettlementStore) AppendUnsettledSellProceeds(lot UnsettledSellProceeds, _ time.Time) error {
+	if s.appendErr != nil {
+		return s.appendErr
+	}
+	s.appended = append(s.appended, lot)
+	return nil
+}
+
+func (s *stubSettlementStore) PruneSettledSellProceeds(_ time.Time) error {
+	return s.pruneErr
 }

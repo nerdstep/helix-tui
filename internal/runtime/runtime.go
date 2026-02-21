@@ -28,6 +28,9 @@ func Run(ctx context.Context, args []string, stderr io.Writer) error {
 	if err != nil {
 		system.Engine.AddEvent("database_error", err.Error())
 	} else {
+		if setErr := system.Engine.SetComplianceSettlementStore(complianceStateAdapter{repo: store.ComplianceState()}); setErr != nil {
+			system.Engine.AddEvent("database_error", fmt.Sprintf("load compliance settlement state: %v", setErr))
+		}
 		persistor := newTradeEventPersistor(store.Events(), system.Engine.AddStructuredEvent)
 		system.Engine.AddEventSink(persistor.HandleEvent)
 		defer persistor.Close()

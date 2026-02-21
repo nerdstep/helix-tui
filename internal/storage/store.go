@@ -22,6 +22,7 @@ type Store struct {
 	db     *gorm.DB
 	equity *EquityRepository
 	events *TradeEventRepository
+	state  *ComplianceStateRepository
 }
 
 func Open(cfg Config) (*Store, error) {
@@ -49,6 +50,7 @@ func Open(cfg Config) (*Store, error) {
 		db:     db,
 		equity: &EquityRepository{db: db},
 		events: &TradeEventRepository{db: db},
+		state:  &ComplianceStateRepository{db: db},
 	}, nil
 }
 
@@ -82,6 +84,13 @@ func (s *Store) Events() *TradeEventRepository {
 		return nil
 	}
 	return s.events
+}
+
+func (s *Store) ComplianceState() *ComplianceStateRepository {
+	if s == nil {
+		return nil
+	}
+	return s.state
 }
 
 func ensureParentDir(path string) error {

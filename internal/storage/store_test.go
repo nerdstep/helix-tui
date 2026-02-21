@@ -27,6 +27,10 @@ func TestStoreOpenMigrateAppendListAndReopen(t *testing.T) {
 	if eventRepo == nil {
 		t.Fatalf("expected trade event repository")
 	}
+	stateRepo := store.ComplianceState()
+	if stateRepo == nil {
+		t.Fatalf("expected compliance state repository")
+	}
 
 	p1 := EquityPoint{Time: time.Now().UTC(), Equity: 100000}
 	p2 := EquityPoint{Time: time.Now().UTC().Add(time.Second), Equity: 100120.5}
@@ -43,6 +47,12 @@ func TestStoreOpenMigrateAppendListAndReopen(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("append trade event failed: %v", err)
 	}
+	if err := stateRepo.AppendUnsettledSell(ComplianceUnsettledSell{
+		Amount:    250,
+		SettlesAt: time.Now().UTC().Add(24 * time.Hour),
+	}); err != nil {
+		t.Fatalf("append compliance state failed: %v", err)
+	}
 
 	points, err := repo.List()
 	if err != nil {
@@ -57,6 +67,13 @@ func TestStoreOpenMigrateAppendListAndReopen(t *testing.T) {
 	}
 	if len(events) != 1 || events[0].Type != "order_placed" {
 		t.Fatalf("unexpected persisted events: %#v", events)
+	}
+	unsettled, err := stateRepo.ListUnsettledSells(time.Now().UTC())
+	if err != nil {
+		t.Fatalf("list unsettled sells failed: %v", err)
+	}
+	if len(unsettled) != 1 {
+		t.Fatalf("expected 1 unsettled sell, got %d", len(unsettled))
 	}
 
 	_ = store.Close()
@@ -81,6 +98,13 @@ func TestStoreOpenMigrateAppendListAndReopen(t *testing.T) {
 	}
 	if len(events) != 1 || events[0].Type != "order_placed" {
 		t.Fatalf("unexpected persisted events after reopen: %#v", events)
+	}
+	unsettled, err = reopened.ComplianceState().ListUnsettledSells(time.Now().UTC())
+	if err != nil {
+		t.Fatalf("list unsettled sells after reopen failed: %v", err)
+	}
+	if len(unsettled) != 1 {
+		t.Fatalf("expected 1 unsettled sell after reopen, got %d", len(unsettled))
 	}
 }
 

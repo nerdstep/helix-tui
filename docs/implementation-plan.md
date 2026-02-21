@@ -1,6 +1,6 @@
 # helix-tui Implementation Plan
 
-Last updated: 2026-02-20
+Last updated: 2026-02-21
 
 This is the running backlog for product/architecture ideas that are approved, in progress, or parked for later.
 
@@ -42,7 +42,7 @@ Status values:
 
 | ID | Item | Priority | Status | Notes |
 |---|---|---|---|---|
-| COMPLIANCE-001 | Live-trading compliance guardrails (PDT/GFV) | high | in_progress | Phase 1 PDT guard implemented; Phase 2 GFV settled-cash checks pending |
+| COMPLIANCE-001 | Live-trading compliance guardrails (PDT/GFV) | high | in_progress | Phase 1 PDT guard implemented; Phase 2 GFV settled-cash checks now enforced in-session |
 
 ## Compliance Rollout Plan (Phased)
 
@@ -66,17 +66,17 @@ Status values:
   - [x] Tests cover PDT-block and allow paths.
   - [x] README and architecture docs updated.
 
-### Phase 2: Cash-account settlement/GFV guard (planned)
+### Phase 2: Cash-account settlement/GFV guard (implemented)
 
-- Status: `next`
+- Status: `done`
 - Scope:
   - Build settled/unsettled cash ledger from fills + settlement rules (T+1 baseline).
   - Block buy orders that would consume unsettled proceeds in a way likely to trigger GFV/freeriding restrictions.
   - Emit explicit rejection reasons (`gfv_guard`) and add TUI counters.
 - Completion criteria:
-  - [ ] Persisted fill/settlement state model in SQLite.
-  - [ ] Deterministic pre-trade checks with unit tests for common cash-account flows.
-  - [ ] Configurable strictness and account-type overrides.
+  - [x] Persisted fill/settlement state model in SQLite.
+  - [x] Deterministic pre-trade checks with unit tests for common cash-account flows.
+  - [x] Configurable strictness and account-type overrides.
 
 ### Phase 3: Broker-aware compliance reconciliation (planned)
 

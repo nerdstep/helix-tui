@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"helix-tui/internal/broker/paper"
 	"helix-tui/internal/domain"
 )
 
@@ -257,6 +258,95 @@ func TestPlaceOrder_ComplianceRejectedEmitsEvent(t *testing.T) {
 	}
 }
 
+func TestPlaceOrder_ComplianceGFVRejectsBuyUsingUnsettledProceeds(t *testing.T) {
+	b := paper.New(1000)
+	b.SetPrice("AAPL", 10)
+
+	e := New(b, NewRiskGate(Policy{
+		AllowMarketOrders:   true,
+		MaxNotionalPerTrade: 100000,
+		MaxNotionalPerDay:   100000,
+	}))
+	e.SetComplianceGate(NewComplianceGate(CompliancePolicy{
+		Enabled:        true,
+		AccountType:    "cash",
+		AvoidGoodFaith: true,
+		SettlementDays: 1,
+	}))
+	if err := e.Sync(context.Background()); err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+
+	// Seed and then liquidate a position to create unsettled sell proceeds.
+	if _, err := e.PlaceOrder(context.Background(), domain.OrderRequest{
+		Symbol: "AAPL", Side: domain.SideBuy, Qty: 10, Type: domain.OrderTypeMarket,
+	}); err != nil {
+		t.Fatalf("seed buy failed: %v", err)
+	}
+	if _, err := e.PlaceOrder(context.Background(), domain.OrderRequest{
+		Symbol: "AAPL", Side: domain.SideSell, Qty: 10, Type: domain.OrderTypeMarket,
+	}); err != nil {
+		t.Fatalf("seed sell failed: %v", err)
+	}
+
+	_, err := e.PlaceOrder(context.Background(), domain.OrderRequest{
+		Symbol: "AAPL", Side: domain.SideBuy, Qty: 95, Type: domain.OrderTypeMarket,
+	})
+	if err == nil {
+		t.Fatalf("expected gfv guard rejection")
+	}
+	if !strings.Contains(err.Error(), "gfv guard") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hasEngineEvent(e.Snapshot().Events, "compliance_rejected") {
+		t.Fatalf("expected compliance_rejected event")
+	}
+}
+
+func TestSetComplianceSettlementStore_WiresStore(t *testing.T) {
+	e := New(&engineStubBroker{}, NewRiskGate(Policy{AllowMarketOrders: true}))
+	e.SetComplianceGate(NewComplianceGate(CompliancePolicy{Enabled: true, AvoidGoodFaith: true}))
+	store := &stubComplianceSettlementStore{}
+	if err := e.SetComplianceSettlementStore(store); err != nil {
+		t.Fatalf("set compliance settlement store failed: %v", err)
+	}
+	if store.loadCalls != 1 {
+		t.Fatalf("expected settlement store load call, got %d", store.loadCalls)
+	}
+}
+
+func TestPlaceOrder_ComplianceSettlementPersistErrorEmitsDatabaseEvent(t *testing.T) {
+	b := &engineStubBroker{
+		account:     domain.Account{Cash: 10000, BuyingPower: 10000, Equity: 10000, Multiplier: 1},
+		quotes:      map[string]domain.Quote{"AAPL": {Symbol: "AAPL", Last: 10, Bid: 9.99, Ask: 10.01}},
+		fillOnPlace: true,
+	}
+	e := New(b, NewRiskGate(Policy{AllowMarketOrders: true, MaxNotionalPerTrade: 100000, MaxNotionalPerDay: 100000}))
+	e.SetComplianceGate(NewComplianceGate(CompliancePolicy{
+		Enabled:        true,
+		AccountType:    "cash",
+		AvoidGoodFaith: true,
+		SettlementDays: 1,
+	}))
+	store := &stubComplianceSettlementStore{appendErr: errors.New("write failed")}
+	if err := e.SetComplianceSettlementStore(store); err != nil {
+		t.Fatalf("set compliance settlement store failed: %v", err)
+	}
+	if err := e.Sync(context.Background()); err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+
+	_, err := e.PlaceOrder(context.Background(), domain.OrderRequest{
+		Symbol: "AAPL", Side: domain.SideSell, Qty: 1, Type: domain.OrderTypeMarket,
+	})
+	if err != nil {
+		t.Fatalf("sell failed: %v", err)
+	}
+	if !hasEngineEvent(e.Snapshot().Events, "database_error") {
+		t.Fatalf("expected database_error event")
+	}
+}
+
 func TestFlatten(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		b := &engineStubBroker{
@@ -462,8 +552,35 @@ type engineStubBroker struct {
 	streamErr    error
 	streamCh     chan domain.TradeUpdate
 	quoteCalls   int
+	fillOnPlace  bool
 
 	placedRequests []domain.OrderRequest
+}
+
+type stubComplianceSettlementStore struct {
+	loadCalls int
+	loadLots  []UnsettledSellProceeds
+	loadErr   error
+	appendErr error
+	pruneErr  error
+}
+
+func (s *stubComplianceSettlementStore) LoadUnsettledSellProceeds(_ time.Time) ([]UnsettledSellProceeds, error) {
+	s.loadCalls++
+	if s.loadErr != nil {
+		return nil, s.loadErr
+	}
+	out := make([]UnsettledSellProceeds, len(s.loadLots))
+	copy(out, s.loadLots)
+	return out, nil
+}
+
+func (s *stubComplianceSettlementStore) AppendUnsettledSellProceeds(UnsettledSellProceeds, time.Time) error {
+	return s.appendErr
+}
+
+func (s *stubComplianceSettlementStore) PruneSettledSellProceeds(time.Time) error {
+	return s.pruneErr
 }
 
 func (b *engineStubBroker) GetAccount(context.Context) (domain.Account, error) {
@@ -507,13 +624,20 @@ func (b *engineStubBroker) PlaceOrder(_ context.Context, req domain.OrderRequest
 		return domain.Order{}, b.placeErr
 	}
 	b.placedRequests = append(b.placedRequests, req)
+	status := domain.OrderStatusNew
+	filledQty := 0.0
+	if b.fillOnPlace {
+		status = domain.OrderStatusFilled
+		filledQty = req.Qty
+	}
 	return domain.Order{
 		ID:        fmt.Sprintf("ord-%d", len(b.placedRequests)),
 		Symbol:    req.Symbol,
 		Side:      req.Side,
 		Qty:       req.Qty,
+		FilledQty: filledQty,
 		Type:      req.Type,
-		Status:    domain.OrderStatusNew,
+		Status:    status,
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),
 	}, nil

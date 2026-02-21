@@ -15,8 +15,9 @@ const maxSnapshotEvents = 500
 const cachedQuoteFreshFor = 20 * time.Second
 
 type Engine struct {
-	broker domain.Broker
-	gate   *RiskGate
+	broker     domain.Broker
+	gate       *RiskGate
+	compliance *ComplianceGate
 
 	mu         sync.RWMutex
 	account    domain.Account
@@ -100,6 +101,13 @@ func (e *Engine) PlaceOrder(ctx context.Context, req domain.OrderRequest) (domai
 	}
 	if err := e.gate.Evaluate(req, quote); err != nil {
 		return domain.Order{}, err
+	}
+	if e.compliance != nil {
+		snapshot := e.Snapshot()
+		if err := e.compliance.Evaluate(req, quote, snapshot); err != nil {
+			e.AddEvent("compliance_rejected", fmt.Sprintf("%s %s %.2f: %v", req.Side, req.Symbol, req.Qty, err))
+			return domain.Order{}, err
+		}
 	}
 	order, err := e.broker.PlaceOrder(ctx, req)
 	if err != nil {
@@ -281,6 +289,12 @@ func (e *Engine) AddEventSink(sink func(domain.Event)) {
 
 func (e *Engine) AllowSymbol(symbol string) {
 	e.gate.AllowSymbol(symbol)
+}
+
+func (e *Engine) SetComplianceGate(gate *ComplianceGate) {
+	e.mu.Lock()
+	e.compliance = gate
+	e.mu.Unlock()
 }
 
 func (e *Engine) applyTradeUpdate(update domain.TradeUpdate) {

@@ -109,6 +109,7 @@ func TestNormalizeAndValidateConfig(t *testing.T) {
 	cfg.Agent.LLM.ContextLog = " SUMMARY "
 	cfg.Logging.Mode = " APPEND "
 	cfg.Logging.Level = " DEBUG "
+	cfg.Compliance.AccountType = " MARGIN "
 
 	if err := normalizeAndValidateConfig(&cfg); err != nil {
 		t.Fatalf("normalizeAndValidateConfig failed: %v", err)
@@ -130,6 +131,9 @@ func TestNormalizeAndValidateConfig(t *testing.T) {
 	}
 	if cfg.Agent.LLM.ContextLog != "summary" {
 		t.Fatalf("unexpected context log mode: %q", cfg.Agent.LLM.ContextLog)
+	}
+	if cfg.Compliance.AccountType != "margin" {
+		t.Fatalf("unexpected compliance account type: %q", cfg.Compliance.AccountType)
 	}
 }
 
@@ -162,6 +166,14 @@ func TestNormalizeAndValidateConfig_InvalidLLMContextLog(t *testing.T) {
 	cfg.Agent.LLM.ContextLog = "verbose"
 	if err := normalizeAndValidateConfig(&cfg); err == nil {
 		t.Fatalf("expected invalid llm context log error")
+	}
+}
+
+func TestNormalizeAndValidateConfig_InvalidComplianceAccountType(t *testing.T) {
+	cfg := configfile.Default()
+	cfg.Compliance.AccountType = "prime"
+	if err := normalizeAndValidateConfig(&cfg); err == nil {
+		t.Fatalf("expected invalid compliance account type error")
 	}
 }
 

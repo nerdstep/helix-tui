@@ -17,6 +17,7 @@ flowchart LR
     EVTDB[(SQLite trade_events)]
     EVTSINK[runtime trade event persistor]
     RISK[engine.RiskGate]
+    COMPLIANCE[engine.ComplianceGate<br/>Phase 1: PDT guard]
     KEYRING[credentials keyring]
     AB[(Broker Interface)]
     PBRK[paper Broker]
@@ -39,6 +40,7 @@ flowchart LR
     QSC --> ENGINE
     QSC --> ABRK
     ENGINE --> RISK
+    ENGINE --> COMPLIANCE
     ENGINE --> EVTSINK
     EVTSINK --> EVTDB
     ENGINE --> AB
@@ -57,6 +59,7 @@ sequenceDiagram
     participant A as Agent Runner
     participant E as Engine
     participant R as RiskGate
+    participant C as ComplianceGate
     participant B as Broker (paper/alpaca)
     participant X as Alpaca API
 
@@ -78,6 +81,8 @@ sequenceDiagram
     B-->>E: Quote
     E->>R: Evaluate(request, quote)
     R-->>E: allow/reject
+    E->>C: Evaluate(request, quote, snapshot)
+    C-->>E: allow/reject
 
     alt Allowed
         E->>B: PlaceOrder(request)

@@ -20,14 +20,15 @@ import (
 const DefaultPath = "config.toml"
 
 type Config struct {
-	Broker   string       `koanf:"broker"`
-	Mode     string       `koanf:"mode"`
-	Alpaca   AlpacaConfig `koanf:"alpaca"`
-	Keyring  Keyring      `koanf:"keyring"`
-	Risk     RiskConfig   `koanf:"risk"`
-	Agent    AgentConfig  `koanf:"agent"`
-	Logging  Logging      `koanf:"logging"`
-	Database Database     `koanf:"database"`
+	Broker     string           `koanf:"broker"`
+	Mode       string           `koanf:"mode"`
+	Alpaca     AlpacaConfig     `koanf:"alpaca"`
+	Keyring    Keyring          `koanf:"keyring"`
+	Risk       RiskConfig       `koanf:"risk"`
+	Compliance ComplianceConfig `koanf:"compliance"`
+	Agent      AgentConfig      `koanf:"agent"`
+	Logging    Logging          `koanf:"logging"`
+	Database   Database         `koanf:"database"`
 }
 
 type AlpacaConfig struct {
@@ -49,6 +50,15 @@ type Keyring struct {
 type RiskConfig struct {
 	MaxTradeNotional float64 `koanf:"max_trade_notional"`
 	MaxDayNotional   float64 `koanf:"max_day_notional"`
+}
+
+type ComplianceConfig struct {
+	Enabled         bool    `koanf:"enabled"`
+	AccountType     string  `koanf:"account_type"`
+	AvoidPDT        bool    `koanf:"avoid_pdt"`
+	MaxDayTrades5D  int     `koanf:"max_day_trades_5d"`
+	MinEquityForPDT float64 `koanf:"min_equity_for_pdt"`
+	AvoidGoodFaith  bool    `koanf:"avoid_gfv"`
 }
 
 type AgentConfig struct {
@@ -107,6 +117,14 @@ func Default() Config {
 			MaxTradeNotional: d.MaxNotionalPerTrade,
 			MaxDayNotional:   d.MaxNotionalPerDay,
 		},
+		Compliance: ComplianceConfig{
+			Enabled:         d.ComplianceEnabled,
+			AccountType:     d.ComplianceAccountType,
+			AvoidPDT:        d.ComplianceAvoidPDT,
+			MaxDayTrades5D:  d.ComplianceMaxDayTrades5D,
+			MinEquityForPDT: d.ComplianceMinEquityForPDT,
+			AvoidGoodFaith:  d.ComplianceAvoidGoodFaith,
+		},
 		Agent: AgentConfig{
 			Type:         d.AgentType,
 			Watchlist:    cloneStrings(d.Watchlist),
@@ -140,40 +158,46 @@ func Default() Config {
 
 func (c Config) ToAppConfig() app.Config {
 	return app.Config{
-		Broker:              c.Broker,
-		AlpacaAPIKey:        c.Alpaca.APIKey,
-		AlpacaAPISecret:     c.Alpaca.APISecret,
-		AlpacaEnv:           c.Alpaca.Env,
-		AlpacaBaseURL:       c.Alpaca.BaseURL,
-		AlpacaDataURL:       c.Alpaca.DataURL,
-		AlpacaFeed:          c.Alpaca.Feed,
-		UseKeyring:          c.Keyring.Use,
-		SaveToKeyring:       c.Keyring.Save,
-		KeyringService:      c.Keyring.Service,
-		KeyringUser:         c.Keyring.User,
-		MaxNotionalPerTrade: c.Risk.MaxTradeNotional,
-		MaxNotionalPerDay:   c.Risk.MaxDayNotional,
-		Mode:                domain.Mode(c.Mode),
-		Watchlist:           cloneStrings(c.Agent.Watchlist),
-		AgentType:           c.Agent.Type,
-		AgentInterval:       c.Agent.Interval,
-		AgentOrderQty:       c.Agent.Qty,
-		AgentMovePct:        c.Agent.MovePct,
-		AgentMinGainPct:     c.Agent.MinGainPct,
-		MaxAgentIntents:     c.Agent.MaxIntents,
-		AgentDryRun:         c.Agent.DryRun,
-		SyncTimeout:         c.Agent.SyncTimeout,
-		OrderTimeout:        c.Agent.OrderTimeout,
-		LogFile:             c.Logging.File,
-		LogMode:             c.Logging.Mode,
-		LogLevel:            c.Logging.Level,
-		DatabasePath:        c.Database.Path,
-		LLMAPIKey:           c.Agent.LLM.APIKey,
-		LLMBaseURL:          c.Agent.LLM.BaseURL,
-		LLMModel:            c.Agent.LLM.Model,
-		LLMTimeout:          c.Agent.LLM.Timeout,
-		LLMSystemPrompt:     c.Agent.LLM.SystemPrompt,
-		LLMContextLog:       c.Agent.LLM.ContextLog,
+		Broker:                    c.Broker,
+		AlpacaAPIKey:              c.Alpaca.APIKey,
+		AlpacaAPISecret:           c.Alpaca.APISecret,
+		AlpacaEnv:                 c.Alpaca.Env,
+		AlpacaBaseURL:             c.Alpaca.BaseURL,
+		AlpacaDataURL:             c.Alpaca.DataURL,
+		AlpacaFeed:                c.Alpaca.Feed,
+		UseKeyring:                c.Keyring.Use,
+		SaveToKeyring:             c.Keyring.Save,
+		KeyringService:            c.Keyring.Service,
+		KeyringUser:               c.Keyring.User,
+		MaxNotionalPerTrade:       c.Risk.MaxTradeNotional,
+		MaxNotionalPerDay:         c.Risk.MaxDayNotional,
+		ComplianceEnabled:         c.Compliance.Enabled,
+		ComplianceAccountType:     c.Compliance.AccountType,
+		ComplianceAvoidPDT:        c.Compliance.AvoidPDT,
+		ComplianceMaxDayTrades5D:  c.Compliance.MaxDayTrades5D,
+		ComplianceMinEquityForPDT: c.Compliance.MinEquityForPDT,
+		ComplianceAvoidGoodFaith:  c.Compliance.AvoidGoodFaith,
+		Mode:                      domain.Mode(c.Mode),
+		Watchlist:                 cloneStrings(c.Agent.Watchlist),
+		AgentType:                 c.Agent.Type,
+		AgentInterval:             c.Agent.Interval,
+		AgentOrderQty:             c.Agent.Qty,
+		AgentMovePct:              c.Agent.MovePct,
+		AgentMinGainPct:           c.Agent.MinGainPct,
+		MaxAgentIntents:           c.Agent.MaxIntents,
+		AgentDryRun:               c.Agent.DryRun,
+		SyncTimeout:               c.Agent.SyncTimeout,
+		OrderTimeout:              c.Agent.OrderTimeout,
+		LogFile:                   c.Logging.File,
+		LogMode:                   c.Logging.Mode,
+		LogLevel:                  c.Logging.Level,
+		DatabasePath:              c.Database.Path,
+		LLMAPIKey:                 c.Agent.LLM.APIKey,
+		LLMBaseURL:                c.Agent.LLM.BaseURL,
+		LLMModel:                  c.Agent.LLM.Model,
+		LLMTimeout:                c.Agent.LLM.Timeout,
+		LLMSystemPrompt:           c.Agent.LLM.SystemPrompt,
+		LLMContextLog:             c.Agent.LLM.ContextLog,
 	}
 }
 
@@ -190,6 +214,7 @@ func (c *Config) Normalize() {
 
 	c.Keyring.Service = strings.TrimSpace(c.Keyring.Service)
 	c.Keyring.User = strings.TrimSpace(c.Keyring.User)
+	c.Compliance.AccountType = strings.ToLower(strings.TrimSpace(c.Compliance.AccountType))
 
 	c.Agent.Type = strings.ToLower(strings.TrimSpace(c.Agent.Type))
 	c.Agent.Watchlist = symbols.Normalize(c.Agent.Watchlist)

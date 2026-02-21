@@ -23,6 +23,14 @@ user = "alpaca"
 max_trade_notional = 1000
 max_day_notional = 10000
 
+[compliance]
+enabled = false
+account_type = "auto" # auto | margin | cash
+avoid_pdt = true
+max_day_trades_5d = 3
+min_equity_for_pdt = 25000
+avoid_gfv = false # phase 2 (planned): settled-cash checks for cash accounts
+
 [agent]
 type = "heuristic" # heuristic | llm
 # Watchlist is the effective risk allowlist.

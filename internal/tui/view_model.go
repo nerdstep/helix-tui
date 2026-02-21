@@ -309,6 +309,7 @@ func (m Model) systemAgentData() []systemKV {
 		{key: "cycles", value: fmt.Sprintf("%d", countEventsByType(m.snapshot.Events, "agent_cycle_complete"))},
 		{key: "requests", value: fmt.Sprintf("ok=%d failed=%d", countEventsByType(m.snapshot.Events, "agent_proposal"), countEventsByType(m.snapshot.Events, "agent_cycle_error"))},
 		{key: "intents", value: fmt.Sprintf("executed=%d rejected=%d dry_run=%d", countEventsByType(m.snapshot.Events, "agent_intent_executed"), countEventsByType(m.snapshot.Events, "agent_intent_rejected"), countEventsByType(m.snapshot.Events, "agent_intent_dry_run"))},
+		{key: "compliance", value: fmt.Sprintf("rejected=%d", countEventsByType(m.snapshot.Events, "compliance_rejected"))},
 		{key: "last proposal", value: lastProposal},
 		{key: "heartbeat", value: heartbeat},
 		{key: "last error", value: lastError},

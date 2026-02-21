@@ -14,40 +14,46 @@ import (
 )
 
 type Config struct {
-	Broker              string
-	AlpacaAPIKey        string
-	AlpacaAPISecret     string
-	AlpacaEnv           string
-	AlpacaBaseURL       string
-	AlpacaDataURL       string
-	AlpacaFeed          string
-	UseKeyring          bool
-	SaveToKeyring       bool
-	KeyringService      string
-	KeyringUser         string
-	MaxNotionalPerTrade float64
-	MaxNotionalPerDay   float64
-	Mode                domain.Mode
-	Watchlist           []string
-	AgentType           string
-	AgentInterval       time.Duration
-	AgentOrderQty       float64
-	AgentMovePct        float64
-	AgentMinGainPct     float64
-	MaxAgentIntents     int
-	AgentDryRun         bool
-	SyncTimeout         time.Duration
-	OrderTimeout        time.Duration
-	LogFile             string
-	LogMode             string
-	LogLevel            string
-	DatabasePath        string
-	LLMAPIKey           string
-	LLMBaseURL          string
-	LLMModel            string
-	LLMTimeout          time.Duration
-	LLMSystemPrompt     string
-	LLMContextLog       string
+	Broker                    string
+	AlpacaAPIKey              string
+	AlpacaAPISecret           string
+	AlpacaEnv                 string
+	AlpacaBaseURL             string
+	AlpacaDataURL             string
+	AlpacaFeed                string
+	UseKeyring                bool
+	SaveToKeyring             bool
+	KeyringService            string
+	KeyringUser               string
+	MaxNotionalPerTrade       float64
+	MaxNotionalPerDay         float64
+	ComplianceEnabled         bool
+	ComplianceAccountType     string
+	ComplianceAvoidPDT        bool
+	ComplianceMaxDayTrades5D  int
+	ComplianceMinEquityForPDT float64
+	ComplianceAvoidGoodFaith  bool
+	Mode                      domain.Mode
+	Watchlist                 []string
+	AgentType                 string
+	AgentInterval             time.Duration
+	AgentOrderQty             float64
+	AgentMovePct              float64
+	AgentMinGainPct           float64
+	MaxAgentIntents           int
+	AgentDryRun               bool
+	SyncTimeout               time.Duration
+	OrderTimeout              time.Duration
+	LogFile                   string
+	LogMode                   string
+	LogLevel                  string
+	DatabasePath              string
+	LLMAPIKey                 string
+	LLMBaseURL                string
+	LLMModel                  string
+	LLMTimeout                time.Duration
+	LLMSystemPrompt           string
+	LLMContextLog             string
 }
 
 type System struct {
@@ -64,32 +70,38 @@ const defaultAlpacaWatchlistName = "helix-tui"
 
 func DefaultConfig() Config {
 	return Config{
-		Broker:              "paper",
-		AlpacaEnv:           alpaca.EnvPaper,
-		AlpacaFeed:          "iex",
-		UseKeyring:          true,
-		SaveToKeyring:       true,
-		KeyringService:      credentials.DefaultService,
-		KeyringUser:         credentials.DefaultUser,
-		MaxNotionalPerTrade: 5000,
-		MaxNotionalPerDay:   20000,
-		Mode:                domain.ModeManual,
-		Watchlist:           []string{"AAPL", "MSFT", "TSLA", "NVDA"},
-		AgentType:           "heuristic",
-		AgentInterval:       10 * time.Second,
-		AgentOrderQty:       1,
-		AgentMovePct:        0.01,
-		AgentMinGainPct:     0,
-		MaxAgentIntents:     1,
-		SyncTimeout:         15 * time.Second,
-		OrderTimeout:        15 * time.Second,
-		LogMode:             "append",
-		LogLevel:            "info",
-		DatabasePath:        storage.DefaultPath,
-		LLMBaseURL:          "https://api.openai.com/v1",
-		LLMModel:            "gpt-4.1-mini",
-		LLMTimeout:          20 * time.Second,
-		LLMContextLog:       "off",
+		Broker:                    "paper",
+		AlpacaEnv:                 alpaca.EnvPaper,
+		AlpacaFeed:                "iex",
+		UseKeyring:                true,
+		SaveToKeyring:             true,
+		KeyringService:            credentials.DefaultService,
+		KeyringUser:               credentials.DefaultUser,
+		MaxNotionalPerTrade:       5000,
+		MaxNotionalPerDay:         20000,
+		ComplianceEnabled:         false,
+		ComplianceAccountType:     "auto",
+		ComplianceAvoidPDT:        true,
+		ComplianceMaxDayTrades5D:  3,
+		ComplianceMinEquityForPDT: 25000,
+		ComplianceAvoidGoodFaith:  false,
+		Mode:                      domain.ModeManual,
+		Watchlist:                 []string{"AAPL", "MSFT", "TSLA", "NVDA"},
+		AgentType:                 "heuristic",
+		AgentInterval:             10 * time.Second,
+		AgentOrderQty:             1,
+		AgentMovePct:              0.01,
+		AgentMinGainPct:           0,
+		MaxAgentIntents:           1,
+		SyncTimeout:               15 * time.Second,
+		OrderTimeout:              15 * time.Second,
+		LogMode:                   "append",
+		LogLevel:                  "info",
+		DatabasePath:              storage.DefaultPath,
+		LLMBaseURL:                "https://api.openai.com/v1",
+		LLMModel:                  "gpt-4.1-mini",
+		LLMTimeout:                20 * time.Second,
+		LLMContextLog:             "off",
 	}
 }
 

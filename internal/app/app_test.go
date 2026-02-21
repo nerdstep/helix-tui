@@ -57,6 +57,15 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.LLMContextLog != "off" {
 		t.Fatalf("unexpected llm context log default: %q", cfg.LLMContextLog)
 	}
+	if cfg.ComplianceEnabled {
+		t.Fatalf("expected compliance disabled by default")
+	}
+	if cfg.ComplianceAccountType != "auto" {
+		t.Fatalf("unexpected compliance account type default: %q", cfg.ComplianceAccountType)
+	}
+	if !cfg.ComplianceAvoidPDT {
+		t.Fatalf("expected avoid_pdt default true")
+	}
 }
 
 func TestNewSystem_PaperManual(t *testing.T) {

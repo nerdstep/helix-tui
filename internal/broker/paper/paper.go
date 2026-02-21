@@ -27,6 +27,7 @@ func New(initialCash float64) *Broker {
 			Cash:        initialCash,
 			BuyingPower: initialCash,
 			Equity:      initialCash,
+			Multiplier:  1,
 		},
 		positions: map[string]domain.Position{},
 		orders:    map[string]domain.Order{},

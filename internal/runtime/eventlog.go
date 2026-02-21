@@ -189,7 +189,7 @@ func normalizedLogLevel(level string) string {
 func eventLogLevel(eventType string) zerolog.Level {
 	eventType = strings.ToLower(strings.TrimSpace(eventType))
 	switch eventType {
-	case "agent_intent_rejected", "trade_update_unknown_order", "watchlist_sync_error":
+	case "agent_intent_rejected", "trade_update_unknown_order", "watchlist_sync_error", "compliance_rejected":
 		return zerolog.WarnLevel
 	case "sync", "trade_update", "agent_cycle_start", "agent_proposal", "agent_cycle_complete", "agent_heartbeat", "agent_context_changed", "agent_context_unchanged", "agent_context_summary", "quote_stream_start", "quote_stream_stop", "event_persist_stats":
 		return zerolog.DebugLevel

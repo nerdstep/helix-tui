@@ -134,9 +134,12 @@ func (b *Broker) GetAccount(ctx context.Context) (domain.Account, error) {
 		return domain.Account{}, err
 	}
 	return domain.Account{
-		Cash:        account.Cash.InexactFloat64(),
-		BuyingPower: account.BuyingPower.InexactFloat64(),
-		Equity:      account.Equity.InexactFloat64(),
+		Cash:             account.Cash.InexactFloat64(),
+		BuyingPower:      account.BuyingPower.InexactFloat64(),
+		Equity:           account.Equity.InexactFloat64(),
+		Multiplier:       account.Multiplier.InexactFloat64(),
+		PatternDayTrader: account.PatternDayTrader,
+		DayTradeCount:    int(account.DaytradeCount),
 	}, nil
 }
 

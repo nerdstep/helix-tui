@@ -39,6 +39,10 @@ type Account struct {
 	Cash        float64
 	BuyingPower float64
 	Equity      float64
+	Multiplier  float64
+
+	PatternDayTrader bool
+	DayTradeCount    int
 }
 
 type Position struct {

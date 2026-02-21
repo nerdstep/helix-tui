@@ -96,6 +96,14 @@ func buildEngine(cfg Config, broker domain.Broker, allowSymbols map[string]struc
 	})
 
 	e := engine.New(broker, risk)
+	e.SetComplianceGate(engine.NewComplianceGate(engine.CompliancePolicy{
+		Enabled:         cfg.ComplianceEnabled,
+		AccountType:     cfg.ComplianceAccountType,
+		AvoidPDT:        cfg.ComplianceAvoidPDT,
+		MaxDayTrades5D:  cfg.ComplianceMaxDayTrades5D,
+		MinEquityForPDT: cfg.ComplianceMinEquityForPDT,
+		AvoidGoodFaith:  cfg.ComplianceAvoidGoodFaith,
+	}))
 	syncTimeout := cfg.SyncTimeout
 	if syncTimeout <= 0 {
 		syncTimeout = 15 * time.Second
@@ -104,6 +112,19 @@ func buildEngine(cfg Config, broker domain.Broker, allowSymbols map[string]struc
 	defer cancel()
 	if err := e.Sync(ctx); err != nil {
 		return nil, err
+	}
+	if cfg.ComplianceEnabled {
+		e.AddEvent(
+			"compliance_config",
+			fmt.Sprintf(
+				"enabled=true account_type=%s avoid_pdt=%t max_day_trades_5d=%d min_equity_for_pdt=%.2f avoid_gfv=%t",
+				strings.ToLower(strings.TrimSpace(cfg.ComplianceAccountType)),
+				cfg.ComplianceAvoidPDT,
+				cfg.ComplianceMaxDayTrades5D,
+				cfg.ComplianceMinEquityForPDT,
+				cfg.ComplianceAvoidGoodFaith,
+			),
+		)
 	}
 	if err := e.StartTradeUpdateLoop(context.Background()); err != nil {
 		// Streaming is optional in this scaffold. Sync still works without it.

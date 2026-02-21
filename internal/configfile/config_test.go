@@ -29,6 +29,9 @@ func TestDefaultAndToAppConfig(t *testing.T) {
 	if appCfg.LLMContextLog != cfg.Agent.LLM.ContextLog {
 		t.Fatalf("llm context log mismatch: app=%q cfg=%q", appCfg.LLMContextLog, cfg.Agent.LLM.ContextLog)
 	}
+	if appCfg.ComplianceEnabled != cfg.Compliance.Enabled {
+		t.Fatalf("compliance enabled mismatch: app=%t cfg=%t", appCfg.ComplianceEnabled, cfg.Compliance.Enabled)
+	}
 }
 
 func TestLoad_MissingOptionalFile(t *testing.T) {
@@ -79,6 +82,14 @@ user = "paper"
 [risk]
 max_trade_notional = 1111
 max_day_notional = 2222
+
+[compliance]
+enabled = true
+account_type = "margin"
+avoid_pdt = true
+max_day_trades_5d = 3
+min_equity_for_pdt = 25000
+avoid_gfv = false
 
 [agent]
 type = "llm"
@@ -142,6 +153,12 @@ path = "data/helix.db"
 	}
 	if cfg.Risk.MaxTradeNotional != 1111 || cfg.Risk.MaxDayNotional != 2222 {
 		t.Fatalf("unexpected risk settings: %f / %f", cfg.Risk.MaxTradeNotional, cfg.Risk.MaxDayNotional)
+	}
+	if !cfg.Compliance.Enabled || cfg.Compliance.AccountType != "margin" || !cfg.Compliance.AvoidPDT {
+		t.Fatalf("unexpected compliance settings: %#v", cfg.Compliance)
+	}
+	if cfg.Compliance.MaxDayTrades5D != 3 || cfg.Compliance.MinEquityForPDT != 25000 {
+		t.Fatalf("unexpected compliance limits: %#v", cfg.Compliance)
 	}
 	if !reflect.DeepEqual(cfg.Agent.Watchlist, []string{"tsla", "TSLA", " nvda "}) {
 		t.Fatalf("unexpected watchlist: %#v", cfg.Agent.Watchlist)

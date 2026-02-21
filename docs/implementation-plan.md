@@ -1,6 +1,6 @@
 # helix-tui Implementation Plan
 
-Last updated: 2026-02-19
+Last updated: 2026-02-20
 
 This is the running backlog for product/architecture ideas that are approved, in progress, or parked for later.
 
@@ -42,7 +42,52 @@ Status values:
 
 | ID | Item | Priority | Status | Notes |
 |---|---|---|---|---|
-| _(none)_ |  |  |  |  |
+| COMPLIANCE-001 | Live-trading compliance guardrails (PDT/GFV) | high | in_progress | Phase 1 PDT guard implemented; Phase 2 GFV settled-cash checks pending |
+
+## Compliance Rollout Plan (Phased)
+
+### Phase 1: PDT-aware pre-trade guard (implemented)
+
+- Status: `done`
+- Scope:
+  - Add `ComplianceGate` invoked by `Engine.PlaceOrder` after `RiskGate`.
+  - Add config surface under `[compliance]`:
+    - `enabled`
+    - `account_type`
+    - `avoid_pdt`
+    - `max_day_trades_5d`
+    - `min_equity_for_pdt`
+    - `avoid_gfv` (reserved for later phase)
+  - Emit `compliance_rejected` events on blocked orders.
+  - Surface compliance rejection counts in TUI System tab.
+- Completion criteria:
+  - [x] Manual and autonomous orders both pass through compliance checks.
+  - [x] Config parsing/normalization/validation covers compliance fields.
+  - [x] Tests cover PDT-block and allow paths.
+  - [x] README and architecture docs updated.
+
+### Phase 2: Cash-account settlement/GFV guard (planned)
+
+- Status: `next`
+- Scope:
+  - Build settled/unsettled cash ledger from fills + settlement rules (T+1 baseline).
+  - Block buy orders that would consume unsettled proceeds in a way likely to trigger GFV/freeriding restrictions.
+  - Emit explicit rejection reasons (`gfv_guard`) and add TUI counters.
+- Completion criteria:
+  - [ ] Persisted fill/settlement state model in SQLite.
+  - [ ] Deterministic pre-trade checks with unit tests for common cash-account flows.
+  - [ ] Configurable strictness and account-type overrides.
+
+### Phase 3: Broker-aware compliance reconciliation (planned)
+
+- Status: `proposed`
+- Scope:
+  - Reconcile local compliance state with broker/account flags each sync cycle.
+  - Include broker-reported PDT indicators in system status and decision context.
+- Completion criteria:
+  - [ ] Startup/system events include broker compliance posture.
+  - [ ] Drift detection between local estimates and broker-reported values.
+  - [ ] Operator runbook updates for live cutover and incident response.
 
 ## Done
 

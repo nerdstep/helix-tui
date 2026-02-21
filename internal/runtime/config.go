@@ -66,6 +66,17 @@ func validateConfig(cfg configfile.Config) error {
 	if cfg.Agent.MinGainPct < 0 {
 		return fmt.Errorf("agent.min_gain_pct must be >= 0")
 	}
+	switch cfg.Compliance.AccountType {
+	case "", "auto", "margin", "cash":
+	default:
+		return fmt.Errorf("compliance.account_type must be one of auto|margin|cash")
+	}
+	if cfg.Compliance.MaxDayTrades5D < 0 {
+		return fmt.Errorf("compliance.max_day_trades_5d must be >= 0")
+	}
+	if cfg.Compliance.MinEquityForPDT < 0 {
+		return fmt.Errorf("compliance.min_equity_for_pdt must be >= 0")
+	}
 	switch cfg.Agent.LLM.ContextLog {
 	case "", "off", "summary", "full":
 	default:

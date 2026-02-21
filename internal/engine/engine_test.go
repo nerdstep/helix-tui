@@ -221,6 +221,42 @@ func TestCancelOrder(t *testing.T) {
 	})
 }
 
+func TestPlaceOrder_ComplianceRejectedEmitsEvent(t *testing.T) {
+	b := &engineStubBroker{
+		account: domain.Account{
+			Cash:          1000,
+			BuyingPower:   2000,
+			Equity:        1000,
+			Multiplier:    2,
+			DayTradeCount: 2,
+		},
+		quotes: map[string]domain.Quote{
+			"AAPL": {Symbol: "AAPL", Last: 100},
+		},
+	}
+	e := New(b, NewRiskGate(Policy{AllowMarketOrders: true}))
+	e.SetComplianceGate(NewComplianceGate(CompliancePolicy{
+		Enabled:         true,
+		AccountType:     "margin",
+		AvoidPDT:        true,
+		MaxDayTrades5D:  3,
+		MinEquityForPDT: 25000,
+	}))
+	if err := e.Sync(context.Background()); err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+
+	_, err := e.PlaceOrder(context.Background(), domain.OrderRequest{
+		Symbol: "AAPL", Side: domain.SideBuy, Qty: 1, Type: domain.OrderTypeMarket,
+	})
+	if err == nil {
+		t.Fatalf("expected compliance rejection")
+	}
+	if !hasEngineEvent(e.Snapshot().Events, "compliance_rejected") {
+		t.Fatalf("expected compliance_rejected event")
+	}
+}
+
 func TestFlatten(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		b := &engineStubBroker{

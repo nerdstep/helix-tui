@@ -193,6 +193,60 @@ func TestProposeTradesIncludesRiskContextInPayload(t *testing.T) {
 	}
 }
 
+func TestProposeTradesIncludesIdentityContextInPayload(t *testing.T) {
+	capture := &captureChatClient{
+		content: `{"intents":[]}`,
+	}
+	agent, err := newWithClient(testBroker{
+		quotes: map[string]domain.Quote{
+			"AAPL": {Symbol: "AAPL", Last: 100, Bid: 99, Ask: 101, Time: time.Now().UTC()},
+		},
+	}, Config{
+		APIKey:     "test-key",
+		Model:      "test-model",
+		HumanName:  "Justin Doe",
+		HumanAlias: "@justwebdev",
+		AgentName:  "Nimbus",
+	}, capture)
+	if err != nil {
+		t.Fatalf("newWithClient failed: %v", err)
+	}
+
+	_, err = agent.ProposeTrades(context.Background(), domain.AgentInput{
+		Mode:      domain.ModeAuto,
+		Watchlist: []string{"AAPL"},
+		Snapshot:  domain.Snapshot{},
+	})
+	if err != nil {
+		t.Fatalf("ProposeTrades failed: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(capture.userPrompt), &payload); err != nil {
+		t.Fatalf("expected JSON payload in user prompt, got error: %v", err)
+	}
+	rawIdentity, ok := payload["identity"]
+	if !ok {
+		t.Fatalf("expected identity section in payload")
+	}
+	identity, ok := rawIdentity.(map[string]any)
+	if !ok {
+		t.Fatalf("expected identity object in payload, got %#v", rawIdentity)
+	}
+	if got, _ := identity["human_name"].(string); got != "Justin Doe" {
+		t.Fatalf("unexpected human_name: %#v", identity["human_name"])
+	}
+	if got, _ := identity["human_alias"].(string); got != "@justwebdev" {
+		t.Fatalf("unexpected human_alias: %#v", identity["human_alias"])
+	}
+	if got, _ := identity["agent_name"].(string); got != "Nimbus" {
+		t.Fatalf("unexpected agent_name: %#v", identity["agent_name"])
+	}
+	if !strings.Contains(capture.systemPrompt, "You are Nimbus, the execution agent for Justin Doe (@justwebdev).") {
+		t.Fatalf("expected identity context in system prompt, got: %q", capture.systemPrompt)
+	}
+}
+
 func TestProposeTradesIncludesRejectionReasonInRecentEvents(t *testing.T) {
 	capture := &captureChatClient{
 		content: `{"intents":[]}`,
@@ -287,6 +341,19 @@ func TestRecentEventsForPromptTruncatesDetails(t *testing.T) {
 	}
 	if !strings.HasSuffix(got[0].Details, "...") {
 		t.Fatalf("expected ellipsis suffix, got %#v", got[0].Details)
+	}
+}
+
+func TestNormalizedIdentityDefaults(t *testing.T) {
+	identity := normalizedIdentity("", "", "")
+	if identity.HumanName != "Operator" {
+		t.Fatalf("unexpected default human name: %q", identity.HumanName)
+	}
+	if identity.AgentName != "Helix" {
+		t.Fatalf("unexpected default agent name: %q", identity.AgentName)
+	}
+	if identity.HumanAlias != "" {
+		t.Fatalf("unexpected default human alias: %q", identity.HumanAlias)
 	}
 }
 

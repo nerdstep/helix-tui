@@ -31,6 +31,9 @@ type Config struct {
 	MaxTradeNotional float64
 	MaxDayNotional   float64
 	MinGainPct       float64
+	HumanName        string
+	HumanAlias       string
+	AgentName        string
 }
 
 type Agent struct {
@@ -40,6 +43,7 @@ type Agent struct {
 	timeout      time.Duration
 	systemPrompt string
 	risk         riskInput
+	identity     identityInput
 	maxWatchlist int
 	maxEvents    int
 }
@@ -72,6 +76,8 @@ func newWithClient(broker domain.Broker, cfg Config, client chatClient) (*Agent,
 	if systemPrompt == "" {
 		systemPrompt = defaultSystemPrompt
 	}
+	identity := normalizedIdentity(cfg.HumanName, cfg.HumanAlias, cfg.AgentName)
+	systemPrompt = buildIdentitySystemPrompt(systemPrompt, identity)
 
 	return &Agent{
 		broker:       broker,
@@ -84,6 +90,7 @@ func newWithClient(broker domain.Broker, cfg Config, client chatClient) (*Agent,
 			MaxDayNotional:   cfg.MaxDayNotional,
 			MinGainPct:       cfg.MinGainPct,
 		},
+		identity:     identity,
 		maxWatchlist: 12,
 		maxEvents:    defaultMaxPromptEvents,
 	}, nil
@@ -137,6 +144,7 @@ func (a *Agent) ProposeTrades(ctx context.Context, input domain.AgentInput) ([]d
 		Quotes:      quotes,
 		QuoteErrors: quoteErrors,
 		Risk:        a.risk,
+		Identity:    a.identity,
 		RecentEvents: recentEventsForPrompt(
 			input.Snapshot.Events,
 			a.maxEvents,
@@ -226,7 +234,14 @@ type llmInput struct {
 	Quotes       []quoteInput      `json:"quotes"`
 	QuoteErrors  []string          `json:"quote_errors"`
 	Risk         riskInput         `json:"risk"`
+	Identity     identityInput     `json:"identity"`
 	RecentEvents []eventInput      `json:"recent_events"`
+}
+
+type identityInput struct {
+	HumanName  string `json:"human_name"`
+	HumanAlias string `json:"human_alias,omitempty"`
+	AgentName  string `json:"agent_name"`
 }
 
 type riskInput struct {
@@ -361,6 +376,38 @@ func sanitizeRejectionReasonForLLM(reason string) string {
 	}
 	runes := []rune(reason)
 	return string(runes[:maxRejectionReasonChars]) + "..."
+}
+
+func normalizedIdentity(humanName, humanAlias, agentName string) identityInput {
+	identity := identityInput{
+		HumanName:  strings.TrimSpace(humanName),
+		HumanAlias: strings.TrimSpace(humanAlias),
+		AgentName:  strings.TrimSpace(agentName),
+	}
+	if identity.HumanName == "" {
+		identity.HumanName = "Operator"
+	}
+	if identity.AgentName == "" {
+		identity.AgentName = "Helix"
+	}
+	return identity
+}
+
+func buildIdentitySystemPrompt(base string, identity identityInput) string {
+	base = strings.TrimSpace(base)
+	identityBlock := fmt.Sprintf(
+		"Identity context: You are %s, the execution agent for %s",
+		identity.AgentName,
+		identity.HumanName,
+	)
+	if identity.HumanAlias != "" {
+		identityBlock += " (" + identity.HumanAlias + ")"
+	}
+	identityBlock += "."
+	if base == "" {
+		return identityBlock
+	}
+	return identityBlock + "\n" + base
 }
 
 type llmOutput struct {

@@ -22,6 +22,7 @@ const DefaultPath = "config.toml"
 type Config struct {
 	Broker     string           `koanf:"broker"`
 	Mode       string           `koanf:"mode"`
+	Identity   IdentityConfig   `koanf:"identity"`
 	Alpaca     AlpacaConfig     `koanf:"alpaca"`
 	Keyring    Keyring          `koanf:"keyring"`
 	Risk       RiskConfig       `koanf:"risk"`
@@ -30,6 +31,12 @@ type Config struct {
 	Strategy   StrategyConfig   `koanf:"strategy"`
 	Logging    Logging          `koanf:"logging"`
 	Database   Database         `koanf:"database"`
+}
+
+type IdentityConfig struct {
+	HumanName  string `koanf:"human_name"`
+	HumanAlias string `koanf:"human_alias"`
+	AgentName  string `koanf:"agent_name"`
 }
 
 type AlpacaConfig struct {
@@ -125,6 +132,11 @@ func Default() Config {
 	return Config{
 		Broker: d.Broker,
 		Mode:   string(d.Mode),
+		Identity: IdentityConfig{
+			HumanName:  d.HumanName,
+			HumanAlias: d.HumanAlias,
+			AgentName:  d.AgentName,
+		},
 		Alpaca: AlpacaConfig{
 			Env:       d.AlpacaEnv,
 			BaseURL:   d.AlpacaBaseURL,
@@ -205,6 +217,9 @@ func Default() Config {
 func (c Config) ToAppConfig() app.Config {
 	return app.Config{
 		Broker:                     c.Broker,
+		HumanName:                  c.Identity.HumanName,
+		HumanAlias:                 c.Identity.HumanAlias,
+		AgentName:                  c.Identity.AgentName,
 		AlpacaAPIKey:               c.Alpaca.APIKey,
 		AlpacaAPISecret:            c.Alpaca.APISecret,
 		AlpacaEnv:                  c.Alpaca.Env,
@@ -264,6 +279,9 @@ func (c Config) ToAppConfig() app.Config {
 func (c *Config) Normalize() {
 	c.Broker = strings.TrimSpace(c.Broker)
 	c.Mode = strings.ToLower(strings.TrimSpace(c.Mode))
+	c.Identity.HumanName = strings.TrimSpace(c.Identity.HumanName)
+	c.Identity.HumanAlias = strings.TrimSpace(c.Identity.HumanAlias)
+	c.Identity.AgentName = strings.TrimSpace(c.Identity.AgentName)
 
 	c.Alpaca.Env = strings.TrimSpace(c.Alpaca.Env)
 	c.Alpaca.BaseURL = strings.TrimSpace(c.Alpaca.BaseURL)

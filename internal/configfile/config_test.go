@@ -23,6 +23,15 @@ func TestDefaultAndToAppConfig(t *testing.T) {
 	if appCfg.AgentInterval != cfg.Agent.Interval {
 		t.Fatalf("agent interval mismatch: app=%s cfg=%s", appCfg.AgentInterval, cfg.Agent.Interval)
 	}
+	if appCfg.HumanName != cfg.Identity.HumanName {
+		t.Fatalf("human name mismatch: app=%q cfg=%q", appCfg.HumanName, cfg.Identity.HumanName)
+	}
+	if appCfg.HumanAlias != cfg.Identity.HumanAlias {
+		t.Fatalf("human alias mismatch: app=%q cfg=%q", appCfg.HumanAlias, cfg.Identity.HumanAlias)
+	}
+	if appCfg.AgentName != cfg.Identity.AgentName {
+		t.Fatalf("agent name mismatch: app=%q cfg=%q", appCfg.AgentName, cfg.Identity.AgentName)
+	}
 	if appCfg.LLMTimeout != cfg.Agent.LLM.Timeout {
 		t.Fatalf("llm timeout mismatch: app=%s cfg=%s", appCfg.LLMTimeout, cfg.Agent.LLM.Timeout)
 	}
@@ -76,6 +85,11 @@ func TestLoad_AppliesConfigValues(t *testing.T) {
 	content := `
 broker = "alpaca"
 mode = "AUTO"
+
+[identity]
+human_name = "Justin Doe"
+human_alias = "@justwebdev"
+agent_name = "Nimbus"
 
 [alpaca]
 env = "live"
@@ -164,6 +178,9 @@ path = "data/helix.db"
 	}
 	if cfg.Mode != "AUTO" {
 		t.Fatalf("unexpected mode: %q", cfg.Mode)
+	}
+	if cfg.Identity.HumanName != "Justin Doe" || cfg.Identity.HumanAlias != "@justwebdev" || cfg.Identity.AgentName != "Nimbus" {
+		t.Fatalf("unexpected identity settings: %#v", cfg.Identity)
 	}
 	if cfg.Alpaca.APIKey != "key123" || cfg.Alpaca.APISecret != "sec123" {
 		t.Fatalf("unexpected alpaca credentials: %q / %q", cfg.Alpaca.APIKey, cfg.Alpaca.APISecret)

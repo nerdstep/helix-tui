@@ -65,6 +65,9 @@ The app can load runtime settings from a TOML file.
   - `[compliance].avoid_gfv`
   - `[compliance].settlement_days` (T+N business days for cash-settlement guard)
 - Agent selection/config keys:
+  - `[identity].human_name`
+  - `[identity].human_alias` (optional X/GitHub/operator handle)
+  - `[identity].agent_name`
   - `[agent].type` (`heuristic` or `llm`)
   - `[agent].qty` (heuristic agent only)
   - `[agent].move_pct` (heuristic agent only)
@@ -214,6 +217,7 @@ Agent tuning notes:
 - `[agent.llm].system_prompt`: primary instruction channel for LLM behavior and goals.
 - `[agent.llm].context_log`: request-context logging for LLM mode (`summary` recommended for debugging, `full` emits full JSON payload events).
 - LLM request context includes risk limits from `[risk]` (`max_trade_notional`, `max_day_notional`) so the model can size intents within policy.
+- Identity context (`[identity].human_name`, `[identity].human_alias`, `[identity].agent_name`) is injected into execution and strategy LLM prompts/payloads.
 - Rejected intents are included in `recent_events` with a dedicated `rejection_reason` field (separate from event `details`).
 - System tab now surfaces agent request counters (`ok`/`failed`) and DB event persistence health (`queue`, `flush_ok`, `flush_failed`, `events_ok`, `events_failed`, `dropped`).
 - Compliance guard can reject orders with `compliance_rejected` when PDT/GFV protection blocks risky buys.

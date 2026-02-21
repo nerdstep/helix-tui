@@ -480,6 +480,16 @@ func (m Model) systemRuntimeData() []systemKV {
 }
 
 func (m Model) systemAgentData() []systemKV {
+	identity := "n/a"
+	if e := latestEventByType(m.snapshot.Events, "identity_config"); e != nil {
+		fields := parseEventFields(e.Details)
+		agent := restoreEventField(fields["agent"])
+		human := restoreEventField(fields["human"])
+		alias := restoreEventField(fields["alias"])
+		if agent != "" || human != "" || alias != "" {
+			identity = fmt.Sprintf("agent=%s human=%s alias=%s", nonEmpty(identityValue(agent), "n/a"), nonEmpty(identityValue(human), "n/a"), nonEmpty(identityValue(alias), "n/a"))
+		}
+	}
 	lastProposal := "n/a"
 	if e := latestEventByType(m.snapshot.Events, "agent_proposal"); e != nil && strings.TrimSpace(e.Details) != "" {
 		lastProposal = e.Details
@@ -504,6 +514,7 @@ func (m Model) systemAgentData() []systemKV {
 		)
 	}
 	return []systemKV{
+		{key: "identity", value: identity},
 		{key: "cycles", value: fmt.Sprintf("%d", countEventsByType(m.snapshot.Events, "agent_cycle_complete"))},
 		{key: "requests", value: fmt.Sprintf("ok=%d failed=%d", countEventsByType(m.snapshot.Events, "agent_proposal"), countEventsByType(m.snapshot.Events, "agent_cycle_error"))},
 		{key: "intents", value: fmt.Sprintf("executed=%d rejected=%d dry_run=%d", countEventsByType(m.snapshot.Events, "agent_intent_executed"), countEventsByType(m.snapshot.Events, "agent_intent_rejected"), countEventsByType(m.snapshot.Events, "agent_intent_dry_run"))},
@@ -513,6 +524,26 @@ func (m Model) systemAgentData() []systemKV {
 		{key: "heartbeat", value: heartbeat},
 		{key: "last error", value: lastError},
 	}
+}
+
+func restoreEventField(value string) string {
+	return strings.ReplaceAll(strings.TrimSpace(value), "_", " ")
+}
+
+func identityValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "n/a"
+	}
+	return value
+}
+
+func nonEmpty(value string, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	return value
 }
 
 func (m Model) systemPersistenceData() []systemKV {

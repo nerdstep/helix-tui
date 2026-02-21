@@ -115,6 +115,9 @@ func TestApplyEnvOverrides(t *testing.T) {
 func TestNormalizeAndValidateConfig(t *testing.T) {
 	cfg := configfile.Default()
 	cfg.Mode = " AUTO "
+	cfg.Identity.HumanName = "  Justin  "
+	cfg.Identity.HumanAlias = "  @justwebdev  "
+	cfg.Identity.AgentName = "  Nimbus  "
 	cfg.Agent.Type = " LLM "
 	cfg.Agent.Watchlist = []string{"tsla", " TSLA ", "nvda"}
 	cfg.Agent.LLM.ContextLog = " SUMMARY "
@@ -127,6 +130,15 @@ func TestNormalizeAndValidateConfig(t *testing.T) {
 	}
 	if cfg.Mode != "auto" {
 		t.Fatalf("unexpected normalized mode: %q", cfg.Mode)
+	}
+	if cfg.Identity.HumanName != "Justin" {
+		t.Fatalf("unexpected normalized human name: %q", cfg.Identity.HumanName)
+	}
+	if cfg.Identity.HumanAlias != "@justwebdev" {
+		t.Fatalf("unexpected normalized human alias: %q", cfg.Identity.HumanAlias)
+	}
+	if cfg.Identity.AgentName != "Nimbus" {
+		t.Fatalf("unexpected normalized agent name: %q", cfg.Identity.AgentName)
 	}
 	if cfg.Agent.Type != "llm" {
 		t.Fatalf("unexpected normalized agent type: %q", cfg.Agent.Type)

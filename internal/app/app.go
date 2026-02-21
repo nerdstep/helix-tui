@@ -16,6 +16,9 @@ import (
 
 type Config struct {
 	Broker                     string
+	HumanName                  string
+	HumanAlias                 string
+	AgentName                  string
 	AlpacaAPIKey               string
 	AlpacaAPISecret            string
 	AlpacaEnv                  string
@@ -88,6 +91,9 @@ const defaultAlpacaWatchlistName = "helix-tui"
 func DefaultConfig() Config {
 	return Config{
 		Broker:                     "alpaca",
+		HumanName:                  "Operator",
+		HumanAlias:                 "",
+		AgentName:                  "Helix",
 		AlpacaEnv:                  alpaca.EnvPaper,
 		AlpacaFeed:                 "iex",
 		UseKeyring:                 true,
@@ -150,6 +156,7 @@ func NewSystem(cfg Config) (*System, error) {
 	if brokerSpec.isAlpaca {
 		addAlpacaConfigEvent(e, cfg, brokerSpec.credentialSource)
 	}
+	addIdentityConfigEvent(e, cfg)
 	if watchlistPullErr != nil {
 		e.AddEvent("watchlist_sync_error", fmt.Sprintf("pull: %v", watchlistPullErr))
 	}

@@ -2,6 +2,11 @@
 
 mode = "manual" # manual | assist | auto
 
+[identity]
+human_name = "Operator" # shown to/used by LLM agents
+human_alias = "" # optional X/GitHub/user handle
+agent_name = "Helix" # execution + strategy agent identity
+
 [alpaca]
 env = "paper" # paper | live
 base_url = "" # optional override; defaults by env

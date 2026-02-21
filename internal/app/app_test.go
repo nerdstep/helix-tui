@@ -18,6 +18,12 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Broker != "alpaca" {
 		t.Fatalf("unexpected broker default: %q", cfg.Broker)
 	}
+	if cfg.HumanName != "Operator" {
+		t.Fatalf("unexpected human name default: %q", cfg.HumanName)
+	}
+	if cfg.AgentName != "Helix" {
+		t.Fatalf("unexpected agent name default: %q", cfg.AgentName)
+	}
 	if cfg.AlpacaFeed != "iex" {
 		t.Fatalf("unexpected feed default: %q", cfg.AlpacaFeed)
 	}
@@ -103,6 +109,9 @@ func TestNewSystem_PaperManual(t *testing.T) {
 	}
 	if !hasEventType(sys.Engine.Snapshot().Events, "sync") {
 		t.Fatalf("expected sync event")
+	}
+	if !hasEventType(sys.Engine.Snapshot().Events, "identity_config") {
+		t.Fatalf("expected identity_config event")
 	}
 }
 

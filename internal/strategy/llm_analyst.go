@@ -27,6 +27,9 @@ type LLMAnalystConfig struct {
 	Timeout            time.Duration
 	SystemPrompt       string
 	MaxRecommendations int
+	HumanName          string
+	HumanAlias         string
+	AgentName          string
 }
 
 type LLMAnalyst struct {
@@ -35,6 +38,7 @@ type LLMAnalyst struct {
 	timeout            time.Duration
 	systemPrompt       string
 	maxRecommendations int
+	identity           strategyIdentityInput
 }
 
 func NewLLMAnalyst(cfg LLMAnalystConfig) (*LLMAnalyst, error) {
@@ -53,6 +57,8 @@ func NewLLMAnalyst(cfg LLMAnalystConfig) (*LLMAnalyst, error) {
 	if systemPrompt == "" {
 		systemPrompt = defaultStrategySystemPrompt
 	}
+	identity := normalizedStrategyIdentity(cfg.HumanName, cfg.HumanAlias, cfg.AgentName)
+	systemPrompt = buildStrategyIdentitySystemPrompt(systemPrompt, identity)
 	maxRecommendations := cfg.MaxRecommendations
 	if maxRecommendations <= 0 {
 		maxRecommendations = 8
@@ -68,20 +74,28 @@ func NewLLMAnalyst(cfg LLMAnalystConfig) (*LLMAnalyst, error) {
 		timeout:            timeout,
 		systemPrompt:       systemPrompt,
 		maxRecommendations: maxRecommendations,
+		identity:           identity,
 	}, nil
 }
 
 type llmStrategyInput struct {
-	GeneratedAt        string            `json:"generated_at"`
-	Objective          string            `json:"objective"`
-	MaxRecommendations int               `json:"max_recommendations"`
-	Watchlist          []string          `json:"watchlist"`
-	CurrentPlan        *llmCurrentPlan   `json:"current_plan,omitempty"`
-	Account            domain.Account    `json:"account"`
-	Positions          []domain.Position `json:"positions"`
-	OpenOrders         []domain.Order    `json:"open_orders"`
-	Quotes             []domain.Quote    `json:"quotes"`
-	RecentEvents       []domain.Event    `json:"recent_events"`
+	GeneratedAt        string                `json:"generated_at"`
+	Objective          string                `json:"objective"`
+	MaxRecommendations int                   `json:"max_recommendations"`
+	Watchlist          []string              `json:"watchlist"`
+	CurrentPlan        *llmCurrentPlan       `json:"current_plan,omitempty"`
+	Account            domain.Account        `json:"account"`
+	Positions          []domain.Position     `json:"positions"`
+	OpenOrders         []domain.Order        `json:"open_orders"`
+	Quotes             []domain.Quote        `json:"quotes"`
+	Identity           strategyIdentityInput `json:"identity"`
+	RecentEvents       []domain.Event        `json:"recent_events"`
+}
+
+type strategyIdentityInput struct {
+	HumanName  string `json:"human_name"`
+	HumanAlias string `json:"human_alias,omitempty"`
+	AgentName  string `json:"agent_name"`
 }
 
 type llmStrategyOutput struct {
@@ -128,6 +142,7 @@ func (a *LLMAnalyst) BuildPlan(ctx context.Context, input Input) (Plan, error) {
 		Positions:          input.Snapshot.Positions,
 		OpenOrders:         input.Snapshot.Orders,
 		Quotes:             input.Quotes,
+		Identity:           a.identity,
 		RecentEvents:       trimRecentEvents(input.RecentEvents, 24),
 	}
 	if payload.Objective == "" {
@@ -281,4 +296,36 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func normalizedStrategyIdentity(humanName, humanAlias, agentName string) strategyIdentityInput {
+	identity := strategyIdentityInput{
+		HumanName:  strings.TrimSpace(humanName),
+		HumanAlias: strings.TrimSpace(humanAlias),
+		AgentName:  strings.TrimSpace(agentName),
+	}
+	if identity.HumanName == "" {
+		identity.HumanName = "Operator"
+	}
+	if identity.AgentName == "" {
+		identity.AgentName = "Helix"
+	}
+	return identity
+}
+
+func buildStrategyIdentitySystemPrompt(base string, identity strategyIdentityInput) string {
+	base = strings.TrimSpace(base)
+	identityBlock := fmt.Sprintf(
+		"Identity context: You are %s, the strategy analyst for %s",
+		identity.AgentName,
+		identity.HumanName,
+	)
+	if identity.HumanAlias != "" {
+		identityBlock += " (" + identity.HumanAlias + ")"
+	}
+	identityBlock += "."
+	if base == "" {
+		return identityBlock
+	}
+	return identityBlock + "\n" + base
 }

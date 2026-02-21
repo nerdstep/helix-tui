@@ -155,6 +155,38 @@ func addAlpacaConfigEvent(e *engine.Engine, cfg Config, credentialSource string)
 	)
 }
 
+func addIdentityConfigEvent(e *engine.Engine, cfg Config) {
+	agentName := strings.TrimSpace(cfg.AgentName)
+	if agentName == "" {
+		agentName = "Helix"
+	}
+	humanName := strings.TrimSpace(cfg.HumanName)
+	if humanName == "" {
+		humanName = "Operator"
+	}
+	humanAlias := strings.TrimSpace(cfg.HumanAlias)
+	if humanAlias == "" {
+		humanAlias = "n/a"
+	}
+	e.AddEvent(
+		"identity_config",
+		fmt.Sprintf(
+			"agent=%s human=%s alias=%s",
+			sanitizeEventField(agentName),
+			sanitizeEventField(humanName),
+			sanitizeEventField(humanAlias),
+		),
+	)
+}
+
+func sanitizeEventField(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "n/a"
+	}
+	return strings.ReplaceAll(value, " ", "_")
+}
+
 func buildWatchlistHandlers(watchlistSyncBroker *alpaca.Broker) (func() ([]string, error), func([]string) error) {
 	if watchlistSyncBroker == nil {
 		return nil, nil
@@ -225,6 +257,9 @@ func buildAgent(cfg Config, broker domain.Broker) (domain.Agent, string, error) 
 			MaxTradeNotional: cfg.MaxNotionalPerTrade,
 			MaxDayNotional:   cfg.MaxNotionalPerDay,
 			MinGainPct:       cfg.AgentMinGainPct,
+			HumanName:        cfg.HumanName,
+			HumanAlias:       cfg.HumanAlias,
+			AgentName:        cfg.AgentName,
 		})
 		if err != nil {
 			return nil, "", err
@@ -274,6 +309,9 @@ func buildStrategyRunner(cfg Config, e *engine.Engine, watchlist []string) (*str
 		Timeout:            cfg.StrategyTimeout,
 		SystemPrompt:       cfg.StrategySystemPrompt,
 		MaxRecommendations: cfg.StrategyMaxRecommendations,
+		HumanName:          cfg.HumanName,
+		HumanAlias:         cfg.HumanAlias,
+		AgentName:          cfg.AgentName,
 	})
 	if err != nil {
 		return nil, err

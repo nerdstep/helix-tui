@@ -42,7 +42,6 @@ Status values:
 | ID | Item | Priority | Status | Notes |
 |---|---|---|---|---|
 | COMPLIANCE-001 | Live-trading compliance guardrails (PDT/GFV) | high | in_progress | Phase 1 + Phase 2 implemented; Alpaca calendar now used as settlement source in broker=alpaca mode |
-| AGENT-005 | Strategy Analyst overseer (deep research + plan memory) | high | in_progress | Phase 1 implemented: SQLite-backed strategy memory (`strategy_plans` + `strategy_recommendations`) with typed repository + activation/supersede flow |
 
 ## Strategy Analyst Rollout Plan (Phased)
 
@@ -72,17 +71,17 @@ Status values:
   - [x] Unit tests cover strategy runner persistence/activation path.
   - [x] Add stale-plan indicators + explicit last-run health status.
 
-### Phase 3: Execution integration + operator controls (planned)
+### Phase 3: Execution integration + operator controls (implemented)
 
-- Status: `proposed`
+- Status: `done`
 - Scope:
   - Execution agent consumes only active strategy constraints.
   - Add approve/reject/archive controls for strategy plans (initially via TUI commands).
   - Surface active strategy summary in TUI/System.
 - Completion criteria:
-  - [ ] Execution intents are policy-checked against active strategy constraints.
-  - [ ] Operator can promote/supersede/archive plans with clear audit events.
-  - [ ] Docs/runbooks cover strategy handoff and incident rollback.
+  - [x] Execution intents are policy-checked against active strategy constraints.
+  - [x] Operator can promote/supersede/archive plans with clear audit events.
+  - [x] Docs/runbooks cover strategy handoff and incident rollback.
 
 ## Compliance Rollout Plan (Phased)
 
@@ -137,6 +136,7 @@ Status values:
 | AGENT-001 | Pluggable agent type (`heuristic` / `llm`) | 2026-02-19 | Config + CLI wired; runner uses selected agent |
 | AGENT-002 | LLM agent implementation with strict JSON intent parsing | 2026-02-19 | Intents filtered by watchlist; still executed only through risk-gated engine |
 | AGENT-003 | Official OpenAI Go SDK integration (`openai-go`) | 2026-02-19 | Replaced raw HTTP client in LLM adapter |
+| AGENT-005 | Strategy Analyst overseer (deep research + plan memory) | 2026-02-21 | Phase 1-3 completed: DB memory, analyst runner + Strategy tab, active-plan execution constraints, and TUI strategy plan controls |
 
 ## Item Template
 

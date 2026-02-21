@@ -15,7 +15,7 @@ Run autonomous sessions with explicit mode and monitoring choices.
 Example:
 
 ```bash
-go run ./cmd/helix -broker=paper -mode=auto -dry-run -watchlist=AAPL,MSFT,TSLA -agent-interval=5s
+go run ./cmd/helix -dry-run
 ```
 
 ## Choose Runtime Shape
@@ -25,7 +25,7 @@ go run ./cmd/helix -broker=paper -mode=auto -dry-run -watchlist=AAPL,MSFT,TSLA -
 Example headless run:
 
 ```bash
-go run ./cmd/helix -broker=paper -mode=auto -headless -watchlist=AAPL,MSFT -agent-interval=10s
+go run ./cmd/helix -headless
 ```
 
 ## Tune Autonomous Behavior
@@ -50,7 +50,22 @@ go run ./cmd/helix -broker=paper -mode=auto -headless -watchlist=AAPL,MSFT -agen
 - Use `sync` for immediate reconciliation.
 - Use `cancel <ORDER_ID>` to stop a pending order.
 - Use `flatten` to exit positions quickly.
+- Use strategy controls for handoff:
+  - `strategy status`
+  - `strategy approve <PLAN_ID>` to promote a plan active
+  - `strategy reject <PLAN_ID>` to supersede a plan
+  - `strategy archive <PLAN_ID>` to remove stale plans from active consideration
 - Use `q` to quit TUI.
+
+## Strategy Handoff + Rollback
+- Handoff flow:
+  - Run `strategy run` to generate/update recommendations.
+  - Validate in Strategy tab (`summary`, `recommendations`, `health`).
+  - Promote with `strategy approve <PLAN_ID>`.
+- Incident rollback flow:
+  - `strategy reject <PLAN_ID>` to supersede a bad plan quickly.
+  - If positions/orders are unstable, execute `cancel` and `flatten`.
+  - Optionally `strategy archive <PLAN_ID>` after incident review.
 
 ## Validation
 - Run:

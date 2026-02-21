@@ -93,6 +93,32 @@ func runTUI(system *app.System, store *storage.Store, updateQuoteStream func([]s
 	}
 
 	if store != nil {
+		strategyRepo := store.Strategy()
+		if strategyRepo != nil {
+			model = model.
+				WithStrategyApproveHandler(func(planID uint) error {
+					if err := strategyRepo.SetPlanStatus(planID, storage.StrategyPlanStatusActive); err != nil {
+						return err
+					}
+					system.Engine.AddEvent("strategy_plan_approved", fmt.Sprintf("id=%d status=active source=tui", planID))
+					return nil
+				}).
+				WithStrategyRejectHandler(func(planID uint) error {
+					if err := strategyRepo.SetPlanStatus(planID, storage.StrategyPlanStatusSuperseded); err != nil {
+						return err
+					}
+					system.Engine.AddEvent("strategy_plan_rejected", fmt.Sprintf("id=%d status=superseded source=tui", planID))
+					return nil
+				}).
+				WithStrategyArchiveHandler(func(planID uint) error {
+					if err := strategyRepo.SetPlanStatus(planID, storage.StrategyPlanStatusArchived); err != nil {
+						return err
+					}
+					system.Engine.AddEvent("strategy_plan_archived", fmt.Sprintf("id=%d status=archived source=tui", planID))
+					return nil
+				})
+		}
+
 		dbPoints, loadErr := store.EquityHistory().List()
 		if loadErr != nil {
 			system.Engine.AddEvent("equity_history_error", loadErr.Error())
@@ -117,7 +143,7 @@ func runTUI(system *app.System, store *storage.Store, updateQuoteStream func([]s
 		}
 		model = model.WithEquityHistory(equityHistory, appendPoint)
 		model = model.WithStrategyLoader(func() (tui.StrategySnapshot, error) {
-			return loadStrategySnapshot(store.Strategy())
+			return loadStrategySnapshot(strategyRepo)
 		})
 	}
 

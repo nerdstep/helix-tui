@@ -20,7 +20,6 @@ func TestParseCoreCommand(t *testing.T) {
 		wantNil   bool
 	}{
 		{name: "empty", raw: "", wantNil: true},
-		{name: "help", raw: "help", wantType: coreCommandHelp},
 		{name: "quit", raw: "quit", wantType: coreCommandQuit},
 		{name: "sync", raw: "sync", wantType: coreCommandSync},
 		{name: "flatten", raw: "flatten", wantType: coreCommandFlatten},
@@ -190,6 +189,7 @@ func TestParseStrategyCommand(t *testing.T) {
 		raw       string
 		wantSeen  bool
 		wantType  strategyCommandType
+		wantID    uint
 		wantErr   bool
 		wantErrIn string
 	}{
@@ -197,6 +197,10 @@ func TestParseStrategyCommand(t *testing.T) {
 		{name: "default status", raw: "strategy", wantSeen: true, wantType: strategyCommandStatus},
 		{name: "run", raw: "strategy run", wantSeen: true, wantType: strategyCommandRun},
 		{name: "status", raw: "strategy status", wantSeen: true, wantType: strategyCommandStatus},
+		{name: "approve", raw: "strategy approve 12", wantSeen: true, wantType: strategyCommandApprove, wantID: 12},
+		{name: "reject", raw: "strategy reject 9", wantSeen: true, wantType: strategyCommandReject, wantID: 9},
+		{name: "archive", raw: "strategy archive 3", wantSeen: true, wantType: strategyCommandArchive, wantID: 3},
+		{name: "invalid id", raw: "strategy approve nope", wantSeen: true, wantErr: true, wantErrIn: "strategy plan id must"},
 		{name: "usage", raw: "strategy nope", wantSeen: true, wantErr: true, wantErrIn: "usage: strategy"},
 	}
 	for _, tt := range tests {
@@ -228,6 +232,9 @@ func TestParseStrategyCommand(t *testing.T) {
 			}
 			if cmd.Type != tt.wantType {
 				t.Fatalf("unexpected type: got %v want %v", cmd.Type, tt.wantType)
+			}
+			if tt.wantID > 0 && cmd.PlanID != tt.wantID {
+				t.Fatalf("unexpected plan id: got %d want %d", cmd.PlanID, tt.wantID)
 			}
 		})
 	}

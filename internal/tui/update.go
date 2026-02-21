@@ -141,6 +141,17 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyCtrlC:
 		return m, tea.Quit
 	case tea.KeyRunes:
+		if len(msg.Runes) == 1 && msg.Runes[0] == '?' && strings.TrimSpace(m.input) == "" {
+			m.showFullHelp = !m.showFullHelp
+			if m.showFullHelp {
+				m.status = "help: expanded"
+			} else {
+				m.status = "help: collapsed"
+			}
+			m.statusError = false
+			m.syncWidgets()
+			return m, nil
+		}
 		m.input += msg.String()
 		return m, nil
 	case tea.KeyBackspace, tea.KeyCtrlH:
@@ -155,32 +166,64 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.toggleTab()
 		return m, nil
 	case tea.KeyPgUp:
-		m.scrollEvents(m.eventPageSize())
+		m.scrollPageActiveTab(1)
 		return m, nil
 	case tea.KeyPgDown:
-		m.scrollEvents(-m.eventPageSize())
+		m.scrollPageActiveTab(-1)
 		return m, nil
 	case tea.KeyUp:
-		m.scrollEvents(1)
+		m.scrollLineActiveTab(1)
 		return m, nil
 	case tea.KeyDown:
-		m.scrollEvents(-1)
+		m.scrollLineActiveTab(-1)
 		return m, nil
 	case tea.KeyHome:
-		m.setEventScroll(m.maxEventScroll())
-		m.status = m.eventScrollStatus()
-		m.statusError = false
+		m.scrollTopActiveTab()
 		return m, nil
 	case tea.KeyEnd:
-		m.setEventScroll(0)
-		m.status = m.eventScrollStatus()
-		m.statusError = false
+		m.scrollBottomActiveTab()
 		return m, nil
 	case tea.KeyEnter:
 		return m.submitInput()
 	default:
 		return m, nil
 	}
+}
+
+func (m *Model) scrollPageActiveTab(direction int) {
+	if m.activeTab == tabStrategy {
+		m.scrollStrategyPage(direction)
+		return
+	}
+	m.scrollEvents(direction * m.eventPageSize())
+}
+
+func (m *Model) scrollLineActiveTab(direction int) {
+	if m.activeTab == tabStrategy {
+		m.scrollStrategyLine(direction)
+		return
+	}
+	m.scrollEvents(direction)
+}
+
+func (m *Model) scrollTopActiveTab() {
+	if m.activeTab == tabStrategy {
+		m.setStrategyScrollTop()
+		return
+	}
+	m.setEventScroll(m.maxEventScroll())
+	m.status = m.eventScrollStatus()
+	m.statusError = false
+}
+
+func (m *Model) scrollBottomActiveTab() {
+	if m.activeTab == tabStrategy {
+		m.setStrategyScrollBottom()
+		return
+	}
+	m.setEventScroll(0)
+	m.status = m.eventScrollStatus()
+	m.statusError = false
 }
 
 func (m Model) submitInput() (tea.Model, tea.Cmd) {

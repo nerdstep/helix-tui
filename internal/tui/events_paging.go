@@ -22,8 +22,11 @@ func (m Model) logsReservedHeight() int {
 	if tabHeight < 1 {
 		tabHeight = 1
 	}
-	// status + input + footer plus panel borders and static rows around viewport.
-	return headerHeight + tabHeight + 5 + panelStyle.GetVerticalFrameSize() + 2
+	statusInputHeight := 2
+	footerHeight := maxInt(1, m.footerHeight())
+	// panel title + viewport hint plus panel borders.
+	panelOverhead := panelStyle.GetVerticalFrameSize() + 2
+	return headerHeight + tabHeight + statusInputHeight + footerHeight + panelOverhead
 }
 
 func (m Model) maxEventScroll() int {

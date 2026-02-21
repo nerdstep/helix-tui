@@ -2,8 +2,6 @@ package tui
 
 import "strings"
 
-const helpCommandText = "buy/sell/cancel/flatten/sync/watch/strategy/events/tab (cancel <id|prefix|#row>, watch list|add|remove|sync, strategy run|status, events up|down|top|tail, tab overview|logs|strategy|system)"
-
 type statusOnlyMsg struct {
 	status  string
 	isErr   bool

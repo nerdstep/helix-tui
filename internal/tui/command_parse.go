@@ -12,7 +12,6 @@ type coreCommandType uint8
 
 const (
 	coreCommandQuit coreCommandType = iota + 1
-	coreCommandHelp
 	coreCommandSync
 	coreCommandFlatten
 	coreCommandCancel
@@ -60,10 +59,14 @@ type strategyCommandType uint8
 const (
 	strategyCommandRun strategyCommandType = iota + 1
 	strategyCommandStatus
+	strategyCommandApprove
+	strategyCommandReject
+	strategyCommandArchive
 )
 
 type strategyCommand struct {
-	Type strategyCommandType
+	Type   strategyCommandType
+	PlanID uint
 }
 
 func parseCoreCommand(raw string) (*coreCommand, *statusOnlyMsg) {
@@ -75,8 +78,6 @@ func parseCoreCommand(raw string) (*coreCommand, *statusOnlyMsg) {
 	switch strings.ToLower(args[0]) {
 	case "q", "quit", "exit":
 		return &coreCommand{Type: coreCommandQuit}, nil
-	case "help":
-		return &coreCommand{Type: coreCommandHelp}, nil
 	case "sync":
 		return &coreCommand{Type: coreCommandSync}, nil
 	case "flatten":
@@ -105,7 +106,7 @@ func parseCoreCommand(raw string) (*coreCommand, *statusOnlyMsg) {
 			Qty:    qty,
 		}, nil
 	default:
-		return nil, statusError("unknown command; type help")
+		return nil, statusError("unknown command; use ? for help")
 	}
 }
 
@@ -174,14 +175,31 @@ func parseStrategyCommand(raw string) (*strategyCommand, bool, *statusOnlyMsg) {
 	if len(args) == 1 {
 		return &strategyCommand{Type: strategyCommandStatus}, true, nil
 	}
-	if len(args) != 2 {
+	if len(args) == 2 {
+		switch args[1] {
+		case "run":
+			return &strategyCommand{Type: strategyCommandRun}, true, nil
+		case "status":
+			return &strategyCommand{Type: strategyCommandStatus}, true, nil
+		default:
+			return nil, true, statusError(strategyCommandUsage)
+		}
+	}
+	if len(args) != 3 {
 		return nil, true, statusError(strategyCommandUsage)
 	}
+	planID64, err := strconv.ParseUint(strings.TrimSpace(args[2]), 10, 64)
+	if err != nil || planID64 == 0 {
+		return nil, true, statusError("strategy plan id must be a positive integer")
+	}
+	planID := uint(planID64)
 	switch args[1] {
-	case "run":
-		return &strategyCommand{Type: strategyCommandRun}, true, nil
-	case "status":
-		return &strategyCommand{Type: strategyCommandStatus}, true, nil
+	case "approve", "activate":
+		return &strategyCommand{Type: strategyCommandApprove, PlanID: planID}, true, nil
+	case "reject", "supersede":
+		return &strategyCommand{Type: strategyCommandReject, PlanID: planID}, true, nil
+	case "archive":
+		return &strategyCommand{Type: strategyCommandArchive, PlanID: planID}, true, nil
 	default:
 		return nil, true, statusError(strategyCommandUsage)
 	}

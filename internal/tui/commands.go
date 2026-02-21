@@ -32,8 +32,6 @@ func (m Model) executeCoreCommand(ctx context.Context, cmd coreCommand) tea.Msg 
 	switch cmd.Type {
 	case coreCommandQuit:
 		return quitMsg{}
-	case coreCommandHelp:
-		return statusOnlyMsg{status: helpCommandText}
 	case coreCommandSync:
 		return m.executeSync(ctx)
 	case coreCommandFlatten:
@@ -43,7 +41,7 @@ func (m Model) executeCoreCommand(ctx context.Context, cmd coreCommand) tea.Msg 
 	case coreCommandOrder:
 		return m.executeOrder(ctx, cmd)
 	default:
-		return statusOnlyMsg{status: "unknown command; type help", isErr: true}
+		return statusOnlyMsg{status: "unknown command; use ? for help", isErr: true}
 	}
 }
 

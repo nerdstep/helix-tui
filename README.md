@@ -170,6 +170,9 @@ go run ./cmd/helix \
 - `watch sync` (or `watch pull`)
 - `strategy run` (queue immediate strategy analyst cycle)
 - `strategy status`
+- `strategy approve <PLAN_ID>` (promote to active)
+- `strategy reject <PLAN_ID>` (mark superseded)
+- `strategy archive <PLAN_ID>`
 - `help`
 - `q`
 
@@ -225,6 +228,7 @@ These checks are enforced in `internal/engine/risk.go` and `internal/engine/comp
 - LLM agent can be enabled with `[agent].type = "llm"`.
 - LLM credentials can be supplied via `OPENAI_API_KEY`, config, or keyring.
 - LLM output only proposes intents; all execution still goes through `Runner -> Engine -> RiskGate`.
+- When strategy mode is enabled and a strategy store is available, autonomous execution intents are additionally constrained by the active strategy plan (symbol/bias/max_notional).
 - LLM/manual order execution still passes through pre-trade controls; when enabled, `ComplianceGate` runs after `RiskGate`.
 - `avoid_gfv` uses a SQLite-backed unsettled-proceeds ledger built from observed sell fills (cash accounts), with settlement based on `[compliance].settlement_days`.
 - Settlement-day resolution for GFV guardrails uses Alpaca calendar API data as source of truth.
@@ -241,6 +245,7 @@ These checks are enforced in `internal/engine/risk.go` and `internal/engine/comp
 - The TUI now includes a dedicated `Strategy` tab for active plan, recommendations, recent plan history, and strategy health/staleness status.
 - Strategy runner skips scheduled/startup analysis when the latest stored plan is still within `[strategy].interval`; use `strategy run` to force an immediate cycle.
 - Strategy analyst supports a no-change outcome (`strategy_plan_unchanged`) to retain the current plan instead of creating a new plan record.
+- Strategy lifecycle events (`strategy_plan_approved`, `strategy_plan_rejected`, `strategy_plan_archived`) are emitted for TUI operator actions.
 - Equity trend rendering uses `github.com/NimbleMarkets/ntcharts` (sparkline) for higher fidelity terminal charts.
 - Event history supports keyboard paging (`PgUp`, `PgDn`, `Home`, `End`) and retains a larger recent window for scrollback.
 - Autonomous mode emits periodic `agent_heartbeat` summary events so idle-but-healthy loops are visible in logs.

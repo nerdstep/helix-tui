@@ -48,6 +48,9 @@ func Run(ctx context.Context, args []string, stderr io.Writer) error {
 		}()
 		if system.Runner != nil {
 			system.Runner.SetEventHistory(store.Events())
+			if system.StrategyRunner != nil {
+				system.Runner.SetStrategyPolicyProvider(strategyPolicyAdapter{repo: store.Strategy()})
+			}
 		}
 		if system.StrategyRunner != nil {
 			system.StrategyRunner.SetStore(store.Strategy())

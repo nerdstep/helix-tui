@@ -264,6 +264,114 @@ func TestHandleIntent_UnknownMode(t *testing.T) {
 	}
 }
 
+func TestHandleIntent_StrategyPolicyRejectsWithoutActivePlan(t *testing.T) {
+	r, _ := newRunnerTestHarness(domain.ModeAuto, false)
+	r.SetStrategyPolicyProvider(fakeStrategyPolicyProvider{})
+	err := r.handleIntent(context.Background(), domain.TradeIntent{
+		Symbol: "AAPL",
+		Side:   domain.SideBuy,
+		Qty:    1,
+	})
+	if err == nil {
+		t.Fatalf("expected strategy policy rejection")
+	}
+	if !strings.Contains(err.Error(), "requires an active strategy plan") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestHandleIntent_StrategyPolicyRejectsUnknownSymbol(t *testing.T) {
+	r, _ := newRunnerTestHarness(domain.ModeAuto, false)
+	r.SetStrategyPolicyProvider(fakeStrategyPolicyProvider{
+		policy: &ActiveStrategyPolicy{
+			PlanID: 1,
+			Recommendations: []StrategyConstraint{
+				{Symbol: "MSFT", Bias: "buy", MaxNotional: 5000},
+			},
+		},
+	})
+	err := r.handleIntent(context.Background(), domain.TradeIntent{
+		Symbol: "AAPL",
+		Side:   domain.SideBuy,
+		Qty:    1,
+	})
+	if err == nil {
+		t.Fatalf("expected strategy policy rejection")
+	}
+	if !strings.Contains(err.Error(), "no recommendation for symbol") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestHandleIntent_StrategyPolicyRejectsSideMismatch(t *testing.T) {
+	r, _ := newRunnerTestHarness(domain.ModeAuto, false)
+	r.SetStrategyPolicyProvider(fakeStrategyPolicyProvider{
+		policy: &ActiveStrategyPolicy{
+			PlanID: 1,
+			Recommendations: []StrategyConstraint{
+				{Symbol: "AAPL", Bias: "sell", MaxNotional: 5000},
+			},
+		},
+	})
+	err := r.handleIntent(context.Background(), domain.TradeIntent{
+		Symbol: "AAPL",
+		Side:   domain.SideBuy,
+		Qty:    1,
+	})
+	if err == nil {
+		t.Fatalf("expected strategy policy rejection")
+	}
+	if !strings.Contains(err.Error(), "rejects buy") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestHandleIntent_StrategyPolicyRejectsOverNotional(t *testing.T) {
+	r, _ := newRunnerTestHarness(domain.ModeAuto, false)
+	r.SetStrategyPolicyProvider(fakeStrategyPolicyProvider{
+		policy: &ActiveStrategyPolicy{
+			PlanID: 1,
+			Recommendations: []StrategyConstraint{
+				{Symbol: "AAPL", Bias: "buy", MaxNotional: 50},
+			},
+		},
+	})
+	err := r.handleIntent(context.Background(), domain.TradeIntent{
+		Symbol: "AAPL",
+		Side:   domain.SideBuy,
+		Qty:    1,
+	})
+	if err == nil {
+		t.Fatalf("expected strategy policy rejection")
+	}
+	if !strings.Contains(err.Error(), "exceeds max") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestHandleIntent_StrategyPolicyAllowsMatchingIntent(t *testing.T) {
+	r, broker := newRunnerTestHarness(domain.ModeAuto, false)
+	r.SetStrategyPolicyProvider(fakeStrategyPolicyProvider{
+		policy: &ActiveStrategyPolicy{
+			PlanID: 1,
+			Recommendations: []StrategyConstraint{
+				{Symbol: "AAPL", Bias: "buy", MaxNotional: 5000},
+			},
+		},
+	})
+	err := r.handleIntent(context.Background(), domain.TradeIntent{
+		Symbol: "AAPL",
+		Side:   domain.SideBuy,
+		Qty:    1,
+	})
+	if err != nil {
+		t.Fatalf("expected intent to pass strategy policy: %v", err)
+	}
+	if broker.placeCalls != 1 {
+		t.Fatalf("expected one placement, got %d", broker.placeCalls)
+	}
+}
+
 func TestRunCycle_UsesMaxPerCycleAndPassesAgentInput(t *testing.T) {
 	r, broker := newRunnerTestHarness(domain.ModeAuto, false)
 	agent := &fakeAgent{
@@ -475,6 +583,11 @@ type fakeEventHistoryStore struct {
 	listRecentErr error
 }
 
+type fakeStrategyPolicyProvider struct {
+	policy *ActiveStrategyPolicy
+	err    error
+}
+
 func (f *fakeEventHistoryStore) ListRecent(_ int) ([]domain.Event, error) {
 	if f.listRecentErr != nil {
 		return nil, f.listRecentErr
@@ -482,6 +595,13 @@ func (f *fakeEventHistoryStore) ListRecent(_ int) ([]domain.Event, error) {
 	out := make([]domain.Event, len(f.listRecentOut))
 	copy(out, f.listRecentOut)
 	return out, nil
+}
+
+func (f fakeStrategyPolicyProvider) GetActiveStrategyPolicy() (*ActiveStrategyPolicy, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.policy, nil
 }
 
 func (a *fakeAgent) ProposeTrades(_ context.Context, input domain.AgentInput) ([]domain.TradeIntent, error) {

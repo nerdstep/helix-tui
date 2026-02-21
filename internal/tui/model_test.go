@@ -117,7 +117,7 @@ func TestRunCommandCoverage(t *testing.T) {
 		wantErr bool
 		wantSub string
 	}{
-		{name: "help", raw: "help", wantSub: "buy/sell/cancel/flatten/sync/watch"},
+		{name: "help removed", raw: "help", wantErr: true, wantSub: "use ? for help"},
 		{name: "unknown", raw: "xyz", wantErr: true, wantSub: "unknown command"},
 		{name: "cancel usage", raw: "cancel", wantErr: true, wantSub: "usage: cancel"},
 		{name: "buy usage", raw: "buy AAPL", wantErr: true, wantSub: "usage: buy"},
@@ -178,7 +178,7 @@ func TestRefreshCmdAndView(t *testing.T) {
 		Details: "generated=1 attempted=1 executed=1 rejected=0 approvals=0 dry_run=0 skipped=0",
 	})
 	view := m.View()
-	if !strings.Contains(view, "Cash:") || !strings.Contains(view, "Commands:") {
+	if !strings.Contains(view, "Cash:") || !strings.Contains(view, "buy <sym> <qty>") {
 		t.Fatalf("unexpected view output: %q", view)
 	}
 	if !strings.Contains(view, "Overview") || !strings.Contains(view, "Logs") || !strings.Contains(view, "Strategy") || !strings.Contains(view, "System") {
@@ -389,6 +389,86 @@ func TestEventsKeyScroll(t *testing.T) {
 	}
 }
 
+func TestStrategyKeyScroll(t *testing.T) {
+	m := New(newTestEngine())
+	m.width = 120
+	m.height = 22
+	m.activeTab = tabStrategy
+	recs := make([]StrategyRecommendationView, 0, 24)
+	for i := 0; i < 24; i++ {
+		recs = append(recs, StrategyRecommendationView{
+			Priority:     i + 1,
+			Symbol:       "SYM" + strconv.Itoa(i),
+			Bias:         "buy",
+			Confidence:   0.61,
+			MaxNotional:  1000,
+			Thesis:       "thesis line",
+			Invalidation: "invalid line",
+		})
+	}
+	m.strategy = StrategySnapshot{
+		Active: &StrategyPlanView{
+			ID:              1,
+			GeneratedAt:     time.Now().UTC(),
+			UpdatedAt:       time.Now().UTC(),
+			Status:          "active",
+			AnalystModel:    "gpt-5",
+			PromptVersion:   "v1",
+			Confidence:      0.7,
+			Recommendations: recs,
+		},
+	}
+	m.syncWidgets()
+	if m.strategyViewport.TotalLineCount() <= m.strategyViewport.VisibleLineCount() {
+		t.Fatalf("expected overflow for strategy recommendations viewport")
+	}
+
+	before := m.strategyViewport.YOffset
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m1 := model.(Model)
+	if m1.strategyViewport.YOffset <= before {
+		t.Fatalf("expected strategy down key to scroll viewport")
+	}
+	if !strings.Contains(m1.status, "strategy: showing") {
+		t.Fatalf("expected strategy status update, got %q", m1.status)
+	}
+
+	model, _ = m1.Update(tea.KeyMsg{Type: tea.KeyHome})
+	m2 := model.(Model)
+	if m2.strategyViewport.YOffset != 0 {
+		t.Fatalf("expected strategy home key to jump to top")
+	}
+
+	model, _ = m2.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	m3 := model.(Model)
+	if m3.strategyViewport.YOffset <= 0 {
+		t.Fatalf("expected strategy end key to jump to bottom")
+	}
+}
+
+func TestHelpToggleKey(t *testing.T) {
+	m := New(newTestEngine())
+	m.width = 140
+	m.height = 40
+	m.syncWidgets()
+
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m1 := model.(Model)
+	if !m1.showFullHelp {
+		t.Fatalf("expected full help to be enabled")
+	}
+	view := m1.View()
+	if !strings.Contains(view, "toggle help") {
+		t.Fatalf("expected expanded help content in footer, got %q", view)
+	}
+
+	model, _ = m1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m2 := model.(Model)
+	if m2.showFullHelp {
+		t.Fatalf("expected full help to be disabled")
+	}
+}
+
 func TestTabSwitching(t *testing.T) {
 	m := New(newTestEngine())
 	now := time.Now().UTC()
@@ -437,6 +517,9 @@ func TestTabSwitching(t *testing.T) {
 	}
 	if !strings.Contains(systemView, "requests") {
 		t.Fatalf("expected request counters in system panel: %q", systemView)
+	}
+	if !strings.Contains(systemView, "strategy") {
+		t.Fatalf("expected strategy summary in system panel: %q", systemView)
 	}
 
 	m3.input = "tab overview"
@@ -524,6 +607,62 @@ func TestStrategyRunLoadingCompletesOnPlanUnchangedEvent(t *testing.T) {
 	}
 	if m2.statusError || !strings.Contains(m2.status, "no changes") {
 		t.Fatalf("unexpected status after unchanged completion: %q", m2.status)
+	}
+}
+
+func TestStrategyStatusControlsInvokeHandlers(t *testing.T) {
+	var approved, rejected, archived uint
+	m := New(newTestEngine()).
+		WithStrategyApproveHandler(func(id uint) error {
+			approved = id
+			return nil
+		}).
+		WithStrategyRejectHandler(func(id uint) error {
+			rejected = id
+			return nil
+		}).
+		WithStrategyArchiveHandler(func(id uint) error {
+			archived = id
+			return nil
+		})
+
+	m.input = "strategy approve 11"
+	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m1 := model.(Model)
+	if approved != 11 {
+		t.Fatalf("expected approve handler with id=11, got %d", approved)
+	}
+	if cmd == nil {
+		t.Fatalf("expected refresh command for approve")
+	}
+	if m1.statusError || !strings.Contains(m1.status, "strategy approve #11") {
+		t.Fatalf("unexpected approve status: %q", m1.status)
+	}
+
+	m1.input = "strategy reject 12"
+	model, cmd = m1.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2 := model.(Model)
+	if rejected != 12 {
+		t.Fatalf("expected reject handler with id=12, got %d", rejected)
+	}
+	if cmd == nil {
+		t.Fatalf("expected refresh command for reject")
+	}
+	if m2.statusError || !strings.Contains(m2.status, "strategy reject #12") {
+		t.Fatalf("unexpected reject status: %q", m2.status)
+	}
+
+	m2.input = "strategy archive 13"
+	model, cmd = m2.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m3 := model.(Model)
+	if archived != 13 {
+		t.Fatalf("expected archive handler with id=13, got %d", archived)
+	}
+	if cmd == nil {
+		t.Fatalf("expected refresh command for archive")
+	}
+	if m3.statusError || !strings.Contains(m3.status, "strategy archive #13") {
+		t.Fatalf("unexpected archive status: %q", m3.status)
 	}
 }
 

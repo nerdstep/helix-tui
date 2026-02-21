@@ -116,12 +116,18 @@ func (m Model) systemPersistencePanelWidth() int {
 	return m.computeLayoutSpec().usableWidth
 }
 
+func (m Model) strategyRecommendationsPanelWidth() int {
+	return m.computeLayoutSpec().usableWidth
+}
+
 func (m *Model) syncWidgets() {
 	m.syncPositionsTable()
 	m.syncOrdersTable()
 	m.syncWatchlistTable()
 	m.syncSystemTables()
 	m.syncEventsViewport()
+	m.syncStrategyViewport()
+	m.syncHelpModel()
 }
 
 func (m *Model) syncEventsViewport() {
@@ -149,6 +155,25 @@ func (m Model) buildEventViewportLines() []string {
 		rows = append(rows, runewidth.Truncate(line, maxWidth, "…"))
 	}
 	return rows
+}
+
+func (m *Model) syncStrategyViewport() {
+	width := panelInnerWidth(m.strategyRecommendationsPanelWidth())
+	height := m.strategyPageSize()
+	if height < 1 {
+		height = 1
+	}
+	m.strategyViewport.Width = width
+	m.strategyViewport.Height = height
+	lines := m.buildStrategyRecommendationBodyRows()
+	if len(lines) == 0 {
+		lines = []string{mutedStyle.Render("(none)")}
+	}
+	m.strategyViewport.SetContent(strings.Join(lines, "\n"))
+}
+
+func (m *Model) syncHelpModel() {
+	m.helpModel.Width = maxInt(1, m.computeLayoutSpec().usableWidth)
 }
 
 func newPositionsTable() table.Model {

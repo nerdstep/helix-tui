@@ -141,6 +141,27 @@ flowchart TD
     FORCE -->|No| SKIP
 ```
 
+## Strategy-Constrained Execution Flow
+
+```mermaid
+sequenceDiagram
+    participant A as autonomy.Runner
+    participant SP as Strategy Policy Adapter
+    participant DB as SQLite strategy_plans
+    participant E as engine.Engine
+
+    A->>SP: GetActiveStrategyPolicy()
+    SP->>DB: GetActivePlan + recommendations
+    DB-->>SP: active plan constraints
+    SP-->>A: plan_id + symbol/bias/max_notional
+    A->>A: Validate intent against constraints
+    alt Allowed by active plan
+        A->>E: PlaceOrder(...)
+    else Rejected by strategy policy
+        A->>E: Emit agent_intent_rejected (rejection_reason)
+    end
+```
+
 ## Event Persistence + LLM Context
 
 ```mermaid

@@ -42,12 +42,29 @@ type Runner struct {
 
 	eventHistory     eventHistoryStore
 	eventHistorySize int
+	strategyPolicy   strategyPolicyProvider
 }
 
 type contextLogMode string
 
 type eventHistoryStore interface {
 	ListRecent(limit int) ([]domain.Event, error)
+}
+
+type StrategyConstraint struct {
+	Symbol      string
+	Bias        string
+	MaxNotional float64
+}
+
+type ActiveStrategyPolicy struct {
+	PlanID          uint
+	GeneratedAt     time.Time
+	Recommendations []StrategyConstraint
+}
+
+type strategyPolicyProvider interface {
+	GetActiveStrategyPolicy() (*ActiveStrategyPolicy, error)
 }
 
 const (
@@ -134,6 +151,12 @@ func NewRunner(
 func (r *Runner) SetEventHistory(store eventHistoryStore) {
 	r.mu.Lock()
 	r.eventHistory = store
+	r.mu.Unlock()
+}
+
+func (r *Runner) SetStrategyPolicyProvider(provider strategyPolicyProvider) {
+	r.mu.Lock()
+	r.strategyPolicy = provider
 	r.mu.Unlock()
 }
 
@@ -321,6 +344,9 @@ func (r *Runner) handleIntent(ctx context.Context, intent domain.TradeIntent) er
 		intent.OrderType = domain.OrderTypeMarket
 		intent.LimitPrice = nil
 	}
+	if err := r.enforceStrategyPolicy(ctx, intent); err != nil {
+		return err
+	}
 	if err := r.enforceMinExpectedGain(ctx, intent); err != nil {
 		return err
 	}
@@ -357,6 +383,105 @@ func (r *Runner) handleIntent(ctx context.Context, intent domain.TradeIntent) er
 	default:
 		return fmt.Errorf("unknown mode %q", r.mode)
 	}
+}
+
+func (r *Runner) enforceStrategyPolicy(ctx context.Context, intent domain.TradeIntent) error {
+	provider := r.getStrategyPolicyProvider()
+	if provider == nil {
+		return nil
+	}
+	policy, err := provider.GetActiveStrategyPolicy()
+	if err != nil {
+		return fmt.Errorf("strategy policy lookup: %w", err)
+	}
+	if policy == nil {
+		return fmt.Errorf("strategy policy requires an active strategy plan")
+	}
+	constraint, ok := matchStrategyConstraint(policy, intent.Symbol)
+	if !ok {
+		return fmt.Errorf("strategy policy plan=%d has no recommendation for symbol %s", policy.PlanID, intent.Symbol)
+	}
+	bias := strings.ToLower(strings.TrimSpace(constraint.Bias))
+	switch intent.Side {
+	case domain.SideBuy:
+		if bias != "buy" {
+			return fmt.Errorf("strategy policy plan=%d rejects buy %s (bias=%s)", policy.PlanID, intent.Symbol, bias)
+		}
+	case domain.SideSell:
+		if bias != "sell" {
+			return fmt.Errorf("strategy policy plan=%d rejects sell %s (bias=%s)", policy.PlanID, intent.Symbol, bias)
+		}
+	default:
+		return fmt.Errorf("strategy policy plan=%d unsupported side %s", policy.PlanID, intent.Side)
+	}
+	if constraint.MaxNotional > 0 {
+		referencePrice, err := intentReferencePrice(ctx, r.engine, intent)
+		if err != nil {
+			return fmt.Errorf("strategy policy price lookup: %w", err)
+		}
+		notional := intent.Qty * referencePrice
+		if notional > constraint.MaxNotional {
+			return fmt.Errorf(
+				"strategy policy plan=%d notional %.2f exceeds max %.2f for %s",
+				policy.PlanID,
+				notional,
+				constraint.MaxNotional,
+				intent.Symbol,
+			)
+		}
+	}
+	return nil
+}
+
+func matchStrategyConstraint(policy *ActiveStrategyPolicy, symbol string) (StrategyConstraint, bool) {
+	if policy == nil {
+		return StrategyConstraint{}, false
+	}
+	for _, rec := range policy.Recommendations {
+		if strings.EqualFold(strings.TrimSpace(rec.Symbol), strings.TrimSpace(symbol)) {
+			return rec, true
+		}
+	}
+	return StrategyConstraint{}, false
+}
+
+func intentReferencePrice(ctx context.Context, eng *engine.Engine, intent domain.TradeIntent) (float64, error) {
+	if intent.OrderType == domain.OrderTypeLimit && intent.LimitPrice != nil && *intent.LimitPrice > 0 {
+		return *intent.LimitPrice, nil
+	}
+	quote, err := eng.GetQuote(ctx, intent.Symbol)
+	if err != nil {
+		return 0, err
+	}
+	switch intent.Side {
+	case domain.SideBuy:
+		if quote.Ask > 0 {
+			return quote.Ask, nil
+		}
+		if quote.Last > 0 {
+			return quote.Last, nil
+		}
+		if quote.Bid > 0 {
+			return quote.Bid, nil
+		}
+	case domain.SideSell:
+		if quote.Bid > 0 {
+			return quote.Bid, nil
+		}
+		if quote.Last > 0 {
+			return quote.Last, nil
+		}
+		if quote.Ask > 0 {
+			return quote.Ask, nil
+		}
+	}
+	return 0, fmt.Errorf("no reference quote for %s", intent.Symbol)
+}
+
+func (r *Runner) getStrategyPolicyProvider() strategyPolicyProvider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.strategyPolicy
 }
 
 func (r *Runner) cancelOpenOrdersForIntent(ctx context.Context, intent domain.TradeIntent) error {

@@ -52,7 +52,7 @@ func (m Model) buildViewModel() viewModel {
 		status:            m.status,
 		statusError:       m.statusError,
 		input:             m.input,
-		footer:            footerStyle.Render("Commands: buy/sell/cancel/flatten/sync/watch/events/tab/help/q | tabs: Tab key (overview/logs/strategy/system)"),
+		footer:            m.buildFooter(),
 	}
 }
 
@@ -82,11 +82,29 @@ func (m Model) buildStrategyOverviewRows() []string {
 
 func (m Model) buildStrategyRecommendationsRows() []string {
 	rows := []string{panelTitleStyle.Render("Recommendations")}
-	active := m.strategy.Active
-	if active == nil || len(active.Recommendations) == 0 {
+	view := strings.TrimRight(m.strategyViewport.View(), "\n")
+	if view == "" {
+		view = strings.Join(m.buildStrategyRecommendationBodyRows(), "\n")
+	}
+	if strings.TrimSpace(view) == "" {
 		rows = append(rows, mutedStyle.Render("(none)"))
 		return rows
 	}
+	rows = append(rows, strings.Split(view, "\n")...)
+	start, end, total := m.strategyWindow()
+	if total > maxInt(1, m.strategyViewport.VisibleLineCount()) {
+		rows = append(rows, mutedStyle.Render(fmt.Sprintf("showing %d-%d of %d (Up/Down/PgUp/PgDn/Home/End)", start+1, end, total)))
+	}
+	return rows
+}
+
+func (m Model) buildStrategyRecommendationBodyRows() []string {
+	active := m.strategy.Active
+	if active == nil || len(active.Recommendations) == 0 {
+		return []string{mutedStyle.Render("(none)")}
+	}
+
+	rows := make([]string, 0, len(active.Recommendations)*4)
 	for _, rec := range active.Recommendations {
 		head := fmt.Sprintf("%d) %s %-4s conf=%.2f max_notional=%.2f", rec.Priority, rec.Symbol, strings.ToUpper(rec.Bias), rec.Confidence, rec.MaxNotional)
 		rows = append(rows, head)
@@ -461,11 +479,23 @@ func (m Model) systemAgentData() []systemKV {
 	if e := latestEventByType(m.snapshot.Events, "agent_cycle_error"); e != nil {
 		lastError = fmt.Sprintf("%s %s", formatLocalClock(e.Time), e.Details)
 	}
+	strategySummary := "none"
+	if m.strategy.Active != nil {
+		active := m.strategy.Active
+		strategySummary = fmt.Sprintf(
+			"active #%d status=%s recs=%d conf=%.2f",
+			active.ID,
+			strings.ToLower(strings.TrimSpace(active.Status)),
+			len(active.Recommendations),
+			active.Confidence,
+		)
+	}
 	return []systemKV{
 		{key: "cycles", value: fmt.Sprintf("%d", countEventsByType(m.snapshot.Events, "agent_cycle_complete"))},
 		{key: "requests", value: fmt.Sprintf("ok=%d failed=%d", countEventsByType(m.snapshot.Events, "agent_proposal"), countEventsByType(m.snapshot.Events, "agent_cycle_error"))},
 		{key: "intents", value: fmt.Sprintf("executed=%d rejected=%d dry_run=%d", countEventsByType(m.snapshot.Events, "agent_intent_executed"), countEventsByType(m.snapshot.Events, "agent_intent_rejected"), countEventsByType(m.snapshot.Events, "agent_intent_dry_run"))},
 		{key: "compliance", value: fmt.Sprintf("rejected=%d", countEventsByType(m.snapshot.Events, "compliance_rejected"))},
+		{key: "strategy", value: strategySummary},
 		{key: "last proposal", value: lastProposal},
 		{key: "heartbeat", value: heartbeat},
 		{key: "last error", value: lastError},
@@ -509,6 +539,17 @@ func (m Model) buildEventRows() []string {
 	start, end, total := m.eventWindow()
 	rows = append(rows, mutedStyle.Render(fmt.Sprintf("showing %d-%d of %d (events up/down/top/tail [N], Up/Down/PgUp/PgDn/Home/End)", start+1, end, total)))
 	return rows
+}
+
+func (m Model) buildFooter() string {
+	helper := m.helpModel
+	helper.ShowAll = m.showFullHelp
+	helper.Width = maxInt(1, m.computeLayoutSpec().usableWidth)
+	helpText := strings.TrimSpace(helper.View(m.helpKeys))
+	if helpText == "" {
+		helpText = "? toggle help"
+	}
+	return footerStyle.Render(helpText)
 }
 
 func latestEventByType(events []domain.Event, eventType string) *domain.Event {

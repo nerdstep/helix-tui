@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -83,16 +84,23 @@ type Model struct {
 	onWatchlistChanged func([]string) error
 	onWatchlistSync    func([]string) ([]string, error)
 	onStrategyRun      func() error
+	onStrategyApprove  func(uint) error
+	onStrategyReject   func(uint) error
+	onStrategyArchive  func(uint) error
 	onEquityPoint      func(EquityPoint) error
 	onStrategyLoad     func() (StrategySnapshot, error)
 	eventScroll        int
 	eventsViewport     viewport.Model
+	strategyViewport   viewport.Model
 	positionsTable     table.Model
 	ordersTable        table.Model
 	watchlistTable     table.Model
 	systemRuntimeTable table.Model
 	systemAgentTable   table.Model
 	systemPersistTable table.Model
+	helpModel          help.Model
+	helpKeys           dashboardKeyMap
+	showFullHelp       bool
 	quotes             map[string]domain.Quote
 	quoteSeenAt        map[string]time.Time
 	prevLast           map[string]float64
@@ -127,17 +135,20 @@ func New(engine *engine.Engine, watchlist ...string) Model {
 		prevLast:        map[string]float64{},
 		quoteErr:        map[string]string{},
 		equityMaxPoints: 1000,
-		status:          "Type 'help' for commands.",
+		status:          "Type ? for commands.",
 		activeTab:       tabOverview,
 		spinner:         spin,
 	}
 	m.eventsViewport = viewport.New(1, m.eventPageSize())
+	m.strategyViewport = viewport.New(1, m.strategyPageSize())
 	m.positionsTable = newPositionsTable()
 	m.ordersTable = newOrdersTable()
 	m.watchlistTable = newWatchlistTable()
 	m.systemRuntimeTable = newSystemTable()
 	m.systemAgentTable = newSystemTable()
 	m.systemPersistTable = newSystemTable()
+	m.helpModel = help.New()
+	m.helpKeys = newDashboardKeyMap()
 	m.syncWidgets()
 	return m
 }
@@ -154,6 +165,21 @@ func (m Model) WithWatchlistSyncHandler(fn func([]string) ([]string, error)) Mod
 
 func (m Model) WithStrategyRunHandler(fn func() error) Model {
 	m.onStrategyRun = fn
+	return m
+}
+
+func (m Model) WithStrategyApproveHandler(fn func(uint) error) Model {
+	m.onStrategyApprove = fn
+	return m
+}
+
+func (m Model) WithStrategyRejectHandler(fn func(uint) error) Model {
+	m.onStrategyReject = fn
+	return m
+}
+
+func (m Model) WithStrategyArchiveHandler(fn func(uint) error) Model {
+	m.onStrategyArchive = fn
 	return m
 }
 

@@ -139,6 +139,7 @@ func (a *Agent) ProposeTrades(ctx context.Context, input domain.AgentInput) ([]d
 		Mode:        string(input.Mode),
 		Watchlist:   watchlist,
 		Account:     input.Snapshot.Account,
+		Compliance:  toComplianceInput(input.Compliance),
 		Positions:   input.Snapshot.Positions,
 		OpenOrders:  openOrdersForPrompt(input.Snapshot.Orders),
 		Quotes:      quotes,
@@ -219,6 +220,7 @@ const forcedJSONInstruction = "Return strict JSON: {\"intents\":[{\"symbol\":\"A
 	"Avoid dust-sized orders when possible. " +
 	"Respect risk.max_trade_notional and risk.max_day_notional from the JSON input. " +
 	"Respect risk.min_gain_pct from the JSON input and avoid intents expected below that threshold. " +
+	"Respect compliance fields from the JSON input, especially PDT/GFV posture and any drift flags. " +
 	"For each intent, size qty so estimated notional stays within risk.max_trade_notional. " +
 	"Keep rationale concise and tied to the provided quote and position data." +
 	"Only propose watchlist symbols. Keep qty positive. " +
@@ -229,6 +231,7 @@ type llmInput struct {
 	Mode         string            `json:"mode"`
 	Watchlist    []string          `json:"watchlist"`
 	Account      domain.Account    `json:"account"`
+	Compliance   *complianceInput  `json:"compliance,omitempty"`
 	Positions    []domain.Position `json:"positions"`
 	OpenOrders   []orderInput      `json:"open_orders"`
 	Quotes       []quoteInput      `json:"quotes"`
@@ -271,6 +274,50 @@ type eventInput struct {
 	Type            string `json:"type"`
 	Details         string `json:"details"`
 	RejectionReason string `json:"rejection_reason,omitempty"`
+}
+
+type complianceInput struct {
+	Enabled                 bool    `json:"enabled"`
+	AccountType             string  `json:"account_type"`
+	AvoidPDT                bool    `json:"avoid_pdt"`
+	AvoidGoodFaith          bool    `json:"avoid_gfv"`
+	PatternDayTrader        bool    `json:"pattern_day_trader"`
+	DayTradeCount           int     `json:"day_trade_count"`
+	MaxDayTrades5D          int     `json:"max_day_trades_5d"`
+	MinEquityForPDT         float64 `json:"min_equity_for_pdt"`
+	Equity                  float64 `json:"equity"`
+	LocalUnsettledProceeds  float64 `json:"local_unsettled_proceeds"`
+	BrokerUnsettledProceeds float64 `json:"broker_unsettled_proceeds"`
+	UnsettledDrift          float64 `json:"unsettled_drift"`
+	UnsettledDriftDetected  bool    `json:"unsettled_drift_detected"`
+	UnsettledDriftTolerance float64 `json:"unsettled_drift_tolerance"`
+	LastReconciledAt        string  `json:"last_reconciled_at,omitempty"`
+}
+
+func toComplianceInput(in *domain.ComplianceStatus) *complianceInput {
+	if in == nil {
+		return nil
+	}
+	out := &complianceInput{
+		Enabled:                 in.Enabled,
+		AccountType:             in.AccountType,
+		AvoidPDT:                in.AvoidPDT,
+		AvoidGoodFaith:          in.AvoidGoodFaith,
+		PatternDayTrader:        in.PatternDayTrader,
+		DayTradeCount:           in.DayTradeCount,
+		MaxDayTrades5D:          in.MaxDayTrades5D,
+		MinEquityForPDT:         in.MinEquityForPDT,
+		Equity:                  in.Equity,
+		LocalUnsettledProceeds:  in.LocalUnsettledProceeds,
+		BrokerUnsettledProceeds: in.BrokerUnsettledProceeds,
+		UnsettledDrift:          in.UnsettledDrift,
+		UnsettledDriftDetected:  in.UnsettledDriftDetected,
+		UnsettledDriftTolerance: in.UnsettledDriftTolerance,
+	}
+	if !in.LastReconciledAt.IsZero() {
+		out.LastReconciledAt = in.LastReconciledAt.UTC().Format(time.RFC3339)
+	}
+	return out
 }
 
 func openOrdersForPrompt(orders []domain.Order) []orderInput {

@@ -188,3 +188,12 @@ flowchart LR
 - Compliance checks run after risk checks before broker submission.
 - Autonomous execution can be globally dampened by low-power mode.
 - Strategy policy can further restrict autonomous execution decisions.
+
+## Compliance Reconciliation
+
+- On every engine sync, compliance posture is reconciled against broker account state.
+- Engine emits:
+  - `compliance_posture` when posture changes (account type, PDT flags/counters, guard settings, unsettled estimates).
+  - `compliance_drift_detected` / `compliance_drift_cleared` when local unsettled-proceeds estimates diverge from broker-implied unsettled funds.
+- System tab surfaces posture and drift summaries for operators.
+- Autonomous agent context now includes a structured `compliance` section, so LLM decisions can account for broker-reported PDT state and drift.

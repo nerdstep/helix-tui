@@ -193,6 +193,62 @@ func TestProposeTradesIncludesRiskContextInPayload(t *testing.T) {
 	}
 }
 
+func TestProposeTradesIncludesComplianceContextInPayload(t *testing.T) {
+	capture := &captureChatClient{
+		content: `{"intents":[]}`,
+	}
+	agent, err := newWithClient(testBroker{
+		quotes: map[string]domain.Quote{
+			"AAPL": {Symbol: "AAPL", Last: 100, Bid: 99, Ask: 101, Time: time.Now().UTC()},
+		},
+	}, Config{
+		APIKey: "test-key",
+		Model:  "test-model",
+	}, capture)
+	if err != nil {
+		t.Fatalf("newWithClient failed: %v", err)
+	}
+
+	_, err = agent.ProposeTrades(context.Background(), domain.AgentInput{
+		Mode:      domain.ModeAuto,
+		Watchlist: []string{"AAPL"},
+		Snapshot:  domain.Snapshot{},
+		Compliance: &domain.ComplianceStatus{
+			Enabled:                 true,
+			AccountType:             "cash",
+			AvoidPDT:                true,
+			AvoidGoodFaith:          true,
+			PatternDayTrader:        false,
+			DayTradeCount:           1,
+			LocalUnsettledProceeds:  1200,
+			BrokerUnsettledProceeds: 900,
+			UnsettledDriftDetected:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("ProposeTrades failed: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(capture.userPrompt), &payload); err != nil {
+		t.Fatalf("expected JSON payload in user prompt, got error: %v", err)
+	}
+	rawCompliance, ok := payload["compliance"]
+	if !ok {
+		t.Fatalf("expected compliance section in payload")
+	}
+	compliance, ok := rawCompliance.(map[string]any)
+	if !ok {
+		t.Fatalf("expected compliance object in payload, got %#v", rawCompliance)
+	}
+	if got, _ := compliance["account_type"].(string); got != "cash" {
+		t.Fatalf("unexpected compliance account_type: %#v", compliance["account_type"])
+	}
+	if got, _ := compliance["unsettled_drift_detected"].(bool); !got {
+		t.Fatalf("expected unsettled_drift_detected=true, got %#v", compliance["unsettled_drift_detected"])
+	}
+}
+
 func TestProposeTradesIncludesIdentityContextInPayload(t *testing.T) {
 	capture := &captureChatClient{
 		content: `{"intents":[]}`,

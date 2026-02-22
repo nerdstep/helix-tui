@@ -264,6 +264,7 @@ func (r *Runner) runCycle(ctx context.Context) error {
 		Mode:        r.mode,
 		Watchlist:   watchlist,
 		Snapshot:    snapshot,
+		Compliance:  r.complianceStatusSnapshot(),
 		Quotes:      quotes,
 		QuoteErrors: quoteErrors,
 	}
@@ -652,13 +653,14 @@ func summarizeRejectedIntent(i domain.TradeIntent) string {
 }
 
 type decisionContextDigest struct {
-	Mode        domain.Mode          `json:"mode"`
-	Watchlist   []string             `json:"watchlist"`
-	Account     domain.Account       `json:"account"`
-	Positions   []domain.Position    `json:"positions"`
-	OpenOrders  []decisionOrderInput `json:"open_orders"`
-	Quotes      []domain.Quote       `json:"quotes"`
-	QuoteErrors []string             `json:"quote_errors"`
+	Mode        domain.Mode              `json:"mode"`
+	Watchlist   []string                 `json:"watchlist"`
+	Account     domain.Account           `json:"account"`
+	Compliance  *domain.ComplianceStatus `json:"compliance,omitempty"`
+	Positions   []domain.Position        `json:"positions"`
+	OpenOrders  []decisionOrderInput     `json:"open_orders"`
+	Quotes      []domain.Quote           `json:"quotes"`
+	QuoteErrors []string                 `json:"quote_errors"`
 }
 
 type decisionOrderInput struct {
@@ -674,6 +676,7 @@ func hashDecisionContext(input domain.AgentInput) (string, int, error) {
 		Mode:        input.Mode,
 		Watchlist:   append([]string{}, input.Watchlist...),
 		Account:     input.Snapshot.Account,
+		Compliance:  complianceForDecisionDigest(input.Compliance),
 		Positions:   append([]domain.Position{}, input.Snapshot.Positions...),
 		OpenOrders:  make([]decisionOrderInput, 0, len(input.Snapshot.Orders)),
 		Quotes:      append([]domain.Quote{}, input.Quotes...),
@@ -712,6 +715,35 @@ func hashDecisionContext(input domain.AgentInput) (string, int, error) {
 	}
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:]), len(payload), nil
+}
+
+func (r *Runner) complianceStatusSnapshot() *domain.ComplianceStatus {
+	if r == nil || r.engine == nil {
+		return nil
+	}
+	status, ok := r.engine.ComplianceStatus()
+	if !ok || status == nil {
+		return nil
+	}
+	return cloneComplianceStatus(status)
+}
+
+func cloneComplianceStatus(in *domain.ComplianceStatus) *domain.ComplianceStatus {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	return &out
+}
+
+func complianceForDecisionDigest(in *domain.ComplianceStatus) *domain.ComplianceStatus {
+	out := cloneComplianceStatus(in)
+	if out == nil {
+		return nil
+	}
+	// Timestamp churn is not a material decision input.
+	out.LastReconciledAt = time.Time{}
+	return out
 }
 
 func (r *Runner) collectQuotes(ctx context.Context, watchlist []string) ([]domain.Quote, []string) {

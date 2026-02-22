@@ -318,6 +318,93 @@ func TestComplianceGate_RecordFillCalendarErrorReturned(t *testing.T) {
 	}
 }
 
+func TestComplianceGate_ReconcileBrokerAccountBuildsStatus(t *testing.T) {
+	now := time.Date(2026, time.February, 21, 10, 0, 0, 0, time.UTC)
+	g := NewComplianceGate(CompliancePolicy{
+		Enabled:         true,
+		AccountType:     "cash",
+		AvoidPDT:        true,
+		MaxDayTrades5D:  3,
+		MinEquityForPDT: 25000,
+		AvoidGoodFaith:  true,
+		SettlementDays:  1,
+	})
+	g.now = func() time.Time { return now }
+	g.unsettledSells = []UnsettledSellProceeds{
+		{Amount: 900, SettlesAt: now.Add(24 * time.Hour)},
+	}
+	account := domain.Account{
+		Cash:             2000,
+		BuyingPower:      1500, // implied unsettled 500
+		Equity:           2000,
+		PatternDayTrader: true,
+		DayTradeCount:    2,
+	}
+
+	result := g.ReconcileBrokerAccount(account)
+	if !result.PostureChanged {
+		t.Fatalf("expected initial posture change")
+	}
+	if !result.DriftChanged {
+		t.Fatalf("expected initial drift state change")
+	}
+	if !result.Status.UnsettledDriftDetected {
+		t.Fatalf("expected drift detection from local/broker mismatch")
+	}
+	if result.Status.AccountType != "cash" {
+		t.Fatalf("expected cash account type, got %q", result.Status.AccountType)
+	}
+	if result.Status.LocalUnsettledProceeds != 900 {
+		t.Fatalf("unexpected local unsettled: %#v", result.Status)
+	}
+	if result.Status.BrokerUnsettledProceeds != 500 {
+		t.Fatalf("unexpected broker unsettled: %#v", result.Status)
+	}
+
+	got, ok := g.Status()
+	if !ok {
+		t.Fatalf("expected compliance status snapshot")
+	}
+	if got.LastReconciledAt.IsZero() {
+		t.Fatalf("expected reconciled timestamp")
+	}
+}
+
+func TestComplianceGate_ReconcileBrokerAccountDriftClears(t *testing.T) {
+	now := time.Date(2026, time.February, 21, 10, 0, 0, 0, time.UTC)
+	g := NewComplianceGate(CompliancePolicy{
+		Enabled:        true,
+		AccountType:    "cash",
+		AvoidGoodFaith: true,
+		SettlementDays: 1,
+	})
+	g.now = func() time.Time { return now }
+	g.unsettledSells = []UnsettledSellProceeds{
+		{Amount: 900, SettlesAt: now.Add(24 * time.Hour)},
+	}
+	initial := g.ReconcileBrokerAccount(domain.Account{
+		Cash:        2000,
+		BuyingPower: 1500,
+	})
+	if !initial.Status.UnsettledDriftDetected {
+		t.Fatalf("expected initial drift")
+	}
+
+	g.unsettledSells = []UnsettledSellProceeds{
+		{Amount: 500, SettlesAt: now.Add(24 * time.Hour)},
+	}
+	next := g.ReconcileBrokerAccount(domain.Account{
+		Cash:        2000,
+		BuyingPower: 1500,
+	})
+	if next.Status.UnsettledDriftDetected {
+		t.Fatalf("expected drift to clear")
+	}
+	if !next.DriftChanged {
+		t.Fatalf("expected drift state change")
+	}
+}
+
 type stubSettlementStore struct {
 	lots      []UnsettledSellProceeds
 	appended  []UnsettledSellProceeds

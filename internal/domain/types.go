@@ -109,6 +109,24 @@ type Event struct {
 	RejectionReason string
 }
 
+type ComplianceStatus struct {
+	Enabled                 bool
+	AccountType             string
+	AvoidPDT                bool
+	AvoidGoodFaith          bool
+	PatternDayTrader        bool
+	DayTradeCount           int
+	MaxDayTrades5D          int
+	MinEquityForPDT         float64
+	Equity                  float64
+	LocalUnsettledProceeds  float64
+	BrokerUnsettledProceeds float64
+	UnsettledDrift          float64
+	UnsettledDriftDetected  bool
+	UnsettledDriftTolerance float64
+	LastReconciledAt        time.Time
+}
+
 type Snapshot struct {
 	Account   Account
 	Positions []Position

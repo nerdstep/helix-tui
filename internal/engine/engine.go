@@ -75,20 +75,51 @@ func (e *Engine) sync(ctx context.Context, emitEvent bool) error {
 		orderMap[o.ID] = o
 	}
 
+	var complianceResult ComplianceReconcileResult
+	if e.compliance != nil {
+		complianceResult = e.compliance.ReconcileBrokerAccount(account)
+	}
+
 	var emitted domain.Event
+	var complianceEvents []domain.Event
 	e.mu.Lock()
 	e.account = account
 	e.positions = posMap
 	e.orders = orderMap
+	if complianceResult.Status.Enabled {
+		if complianceResult.PostureChanged {
+			complianceEvents = append(complianceEvents, domain.Event{
+				Type:    "compliance_posture",
+				Details: formatCompliancePostureDetails(complianceResult.Status),
+			})
+		}
+		if complianceResult.DriftChanged {
+			eventType := "compliance_drift_cleared"
+			if complianceResult.Status.UnsettledDriftDetected {
+				eventType = "compliance_drift_detected"
+			}
+			complianceEvents = append(complianceEvents, domain.Event{
+				Type:    eventType,
+				Details: formatComplianceDriftDetails(complianceResult.Status),
+			})
+		}
+	}
 	if emitEvent {
 		emitted = e.addEventLocked(domain.Event{
 			Type:    "sync",
 			Details: "reconciled account, positions, and orders",
 		})
 	}
+	dispatchedComplianceEvents := make([]domain.Event, 0, len(complianceEvents))
+	for _, evt := range complianceEvents {
+		dispatchedComplianceEvents = append(dispatchedComplianceEvents, e.addEventLocked(evt))
+	}
 	e.mu.Unlock()
 	if emitEvent {
 		e.dispatchEventSinks(emitted)
+	}
+	for _, evt := range dispatchedComplianceEvents {
+		e.dispatchEventSinks(evt)
 	}
 	return nil
 }
@@ -341,6 +372,21 @@ func (e *Engine) SetComplianceSettlementCalendar(calendar ComplianceSettlementCa
 	gate.SetSettlementCalendar(calendar)
 }
 
+func (e *Engine) ComplianceStatus() (*domain.ComplianceStatus, bool) {
+	e.mu.RLock()
+	gate := e.compliance
+	e.mu.RUnlock()
+	if gate == nil {
+		return nil, false
+	}
+	status, ok := gate.Status()
+	if !ok {
+		return nil, false
+	}
+	out := status
+	return &out, true
+}
+
 func (e *Engine) applyTradeUpdate(update domain.TradeUpdate) {
 	var recordFill bool
 	var fillSide domain.Side
@@ -423,6 +469,40 @@ func quoteReferencePrice(side domain.Side, quote domain.Quote) float64 {
 		return quote.Last
 	}
 	return quote.Ask
+}
+
+func formatCompliancePostureDetails(status domain.ComplianceStatus) string {
+	return fmt.Sprintf(
+		"enabled=%t account_type=%s avoid_pdt=%t avoid_gfv=%t pdt=%t day_trades=%d max_day_trades_5d=%d equity=%.2f min_equity_for_pdt=%.2f local_unsettled=%.2f broker_unsettled=%.2f drift_detected=%t",
+		status.Enabled,
+		status.AccountType,
+		status.AvoidPDT,
+		status.AvoidGoodFaith,
+		status.PatternDayTrader,
+		status.DayTradeCount,
+		status.MaxDayTrades5D,
+		status.Equity,
+		status.MinEquityForPDT,
+		status.LocalUnsettledProceeds,
+		status.BrokerUnsettledProceeds,
+		status.UnsettledDriftDetected,
+	)
+}
+
+func formatComplianceDriftDetails(status domain.ComplianceStatus) string {
+	state := "clear"
+	if status.UnsettledDriftDetected {
+		state = "detected"
+	}
+	return fmt.Sprintf(
+		"state=%s account_type=%s local_unsettled=%.2f broker_unsettled=%.2f drift=%.2f tolerance=%.2f",
+		state,
+		status.AccountType,
+		status.LocalUnsettledProceeds,
+		status.BrokerUnsettledProceeds,
+		status.UnsettledDrift,
+		status.UnsettledDriftTolerance,
+	)
 }
 
 func (e *Engine) addEventLocked(event domain.Event) domain.Event {

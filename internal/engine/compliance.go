@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +14,8 @@ const (
 	defaultPDTMinEquity   = 25000.0
 	defaultPDTMaxTrades5D = 3
 	defaultSettlementDays = 1
+	minComplianceDriftUSD = 25.0
+	maxComplianceDriftPct = 0.20
 )
 
 type CompliancePolicy struct {
@@ -32,7 +35,16 @@ type ComplianceGate struct {
 	unsettledSells []UnsettledSellProceeds
 	store          ComplianceSettlementStore
 	calendar       ComplianceSettlementCalendar
+	lastStatusHash string
+	lastDriftHash  string
+	status         domain.ComplianceStatus
 	now            func() time.Time
+}
+
+type ComplianceReconcileResult struct {
+	Status         domain.ComplianceStatus
+	PostureChanged bool
+	DriftChanged   bool
 }
 
 type UnsettledSellProceeds struct {
@@ -118,6 +130,69 @@ func (g *ComplianceGate) SetSettlementCalendar(calendar ComplianceSettlementCale
 	g.mu.Lock()
 	g.calendar = calendar
 	g.mu.Unlock()
+}
+
+func (g *ComplianceGate) ReconcileBrokerAccount(account domain.Account) ComplianceReconcileResult {
+	if g == nil || !g.policy.Enabled {
+		return ComplianceReconcileResult{}
+	}
+	now := g.now()
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.pruneSettledLocked(now)
+
+	accountType := g.resolvedAccountTypeLocked(account)
+	localUnsettled := unsettledTotal(g.unsettledSells)
+	brokerUnsettled := impliedBrokerUnsettledProceeds(account, accountType)
+	drift := localUnsettled - brokerUnsettled
+	driftTolerance := driftToleranceFor(localUnsettled, brokerUnsettled)
+	driftDetected := g.policy.AvoidGoodFaith &&
+		accountType == "cash" &&
+		(localUnsettled > 0.01 || brokerUnsettled > 0.01) &&
+		math.Abs(drift) > driftTolerance
+
+	status := domain.ComplianceStatus{
+		Enabled:                 true,
+		AccountType:             accountType,
+		AvoidPDT:                g.policy.AvoidPDT,
+		AvoidGoodFaith:          g.policy.AvoidGoodFaith,
+		PatternDayTrader:        account.PatternDayTrader,
+		DayTradeCount:           account.DayTradeCount,
+		MaxDayTrades5D:          g.policy.MaxDayTrades5D,
+		MinEquityForPDT:         g.policy.MinEquityForPDT,
+		Equity:                  account.Equity,
+		LocalUnsettledProceeds:  localUnsettled,
+		BrokerUnsettledProceeds: brokerUnsettled,
+		UnsettledDrift:          drift,
+		UnsettledDriftDetected:  driftDetected,
+		UnsettledDriftTolerance: driftTolerance,
+		LastReconciledAt:        now,
+	}
+
+	statusHash := complianceStatusHash(status)
+	driftHash := complianceDriftHash(status)
+	result := ComplianceReconcileResult{
+		Status:         status,
+		PostureChanged: g.lastStatusHash != statusHash,
+		DriftChanged:   g.lastDriftHash != driftHash,
+	}
+	g.status = status
+	g.lastStatusHash = statusHash
+	g.lastDriftHash = driftHash
+	return result
+}
+
+func (g *ComplianceGate) Status() (domain.ComplianceStatus, bool) {
+	if g == nil {
+		return domain.ComplianceStatus{}, false
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if !g.policy.Enabled || g.status.LastReconciledAt.IsZero() {
+		return domain.ComplianceStatus{}, false
+	}
+	return g.status, true
 }
 
 func (g *ComplianceGate) RecordFill(side domain.Side, qty, fillPrice float64, fillTime time.Time) error {
@@ -290,17 +365,86 @@ func (g *ComplianceGate) pruneSettledLocked(now time.Time) {
 }
 
 func (g *ComplianceGate) isMarginAccount(account domain.Account) bool {
-	switch normalizeComplianceAccountType(g.policy.AccountType) {
+	switch g.resolvedAccountTypeLocked(account) {
 	case "margin":
 		return true
 	case "cash":
 		return false
 	default:
-		if account.Multiplier > 1.0 {
-			return true
-		}
-		return account.BuyingPower > account.Cash+0.01
+		return false
 	}
+}
+
+func (g *ComplianceGate) resolvedAccountTypeLocked(account domain.Account) string {
+	switch normalizeComplianceAccountType(g.policy.AccountType) {
+	case "margin":
+		return "margin"
+	case "cash":
+		return "cash"
+	default:
+		if account.Multiplier > 1.0 {
+			return "margin"
+		}
+		if account.BuyingPower > account.Cash+0.01 {
+			return "margin"
+		}
+		return "cash"
+	}
+}
+
+func impliedBrokerUnsettledProceeds(account domain.Account, accountType string) float64 {
+	if accountType != "cash" {
+		return 0
+	}
+	unsettled := account.Cash - account.BuyingPower
+	if unsettled < 0 {
+		return 0
+	}
+	return unsettled
+}
+
+func unsettledTotal(lots []UnsettledSellProceeds) float64 {
+	total := 0.0
+	for _, lot := range lots {
+		total += lot.Amount
+	}
+	return total
+}
+
+func driftToleranceFor(local, broker float64) float64 {
+	base := math.Max(local, broker)
+	return math.Max(minComplianceDriftUSD, base*maxComplianceDriftPct)
+}
+
+func complianceStatusHash(status domain.ComplianceStatus) string {
+	return fmt.Sprintf(
+		"enabled=%t account_type=%s avoid_pdt=%t avoid_gfv=%t pdt=%t day_trades=%d max_day_trades=%d min_equity=%.2f equity=%.2f local_unsettled=%.2f broker_unsettled=%.2f drift=%.2f drift_detected=%t tolerance=%.2f",
+		status.Enabled,
+		status.AccountType,
+		status.AvoidPDT,
+		status.AvoidGoodFaith,
+		status.PatternDayTrader,
+		status.DayTradeCount,
+		status.MaxDayTrades5D,
+		status.MinEquityForPDT,
+		status.Equity,
+		status.LocalUnsettledProceeds,
+		status.BrokerUnsettledProceeds,
+		status.UnsettledDrift,
+		status.UnsettledDriftDetected,
+		status.UnsettledDriftTolerance,
+	)
+}
+
+func complianceDriftHash(status domain.ComplianceStatus) string {
+	return fmt.Sprintf(
+		"detected=%t drift=%.2f local=%.2f broker=%.2f tolerance=%.2f",
+		status.UnsettledDriftDetected,
+		status.UnsettledDrift,
+		status.LocalUnsettledProceeds,
+		status.BrokerUnsettledProceeds,
+		status.UnsettledDriftTolerance,
+	)
 }
 
 func settlementTime(fillTime time.Time, settlementDays int) time.Time {

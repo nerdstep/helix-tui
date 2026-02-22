@@ -118,16 +118,16 @@ Status values:
   - [x] Deterministic pre-trade checks with unit tests for common cash-account flows.
   - [x] Configurable strictness and account-type overrides.
 
-### Phase 3: Broker-aware compliance reconciliation (planned)
+### Phase 3: Broker-aware compliance reconciliation (implemented)
 
-- Status: `proposed`
+- Status: `done`
 - Scope:
   - Reconcile local compliance state with broker/account flags each sync cycle.
   - Include broker-reported PDT indicators in system status and decision context.
 - Completion criteria:
-  - [ ] Startup/system events include broker compliance posture.
-  - [ ] Drift detection between local estimates and broker-reported values.
-  - [ ] Operator runbook updates for live cutover and incident response.
+  - [x] Startup/system events include broker compliance posture.
+  - [x] Drift detection between local estimates and broker-reported values.
+  - [x] Operator runbook updates for live cutover and incident response.
 
 ## Done
 

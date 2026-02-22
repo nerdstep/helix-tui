@@ -36,6 +36,74 @@ func TestSync_Success(t *testing.T) {
 	}
 }
 
+func TestSync_ComplianceReconciliationEmitsPostureAndDriftEvents(t *testing.T) {
+	b := &engineStubBroker{
+		account: domain.Account{
+			Cash:          2000,
+			BuyingPower:   1500,
+			Equity:        2000,
+			DayTradeCount: 2,
+		},
+	}
+	e := New(b, NewRiskGate(Policy{AllowMarketOrders: true}))
+	gate := NewComplianceGate(CompliancePolicy{
+		Enabled:         true,
+		AccountType:     "cash",
+		AvoidPDT:        true,
+		MaxDayTrades5D:  3,
+		MinEquityForPDT: 25000,
+		AvoidGoodFaith:  true,
+		SettlementDays:  1,
+	})
+	now := time.Date(2026, time.February, 21, 10, 0, 0, 0, time.UTC)
+	gate.now = func() time.Time { return now }
+	gate.unsettledSells = []UnsettledSellProceeds{
+		{Amount: 900, SettlesAt: now.Add(24 * time.Hour)},
+	}
+	e.SetComplianceGate(gate)
+
+	if err := e.Sync(context.Background()); err != nil {
+		t.Fatalf("Sync failed: %v", err)
+	}
+	s := e.Snapshot()
+	if !hasEngineEvent(s.Events, "compliance_posture") {
+		t.Fatalf("expected compliance_posture event")
+	}
+	if !hasEngineEvent(s.Events, "compliance_drift_detected") {
+		t.Fatalf("expected compliance_drift_detected event")
+	}
+}
+
+func TestComplianceStatusSnapshotAvailableAfterSync(t *testing.T) {
+	b := &engineStubBroker{
+		account: domain.Account{
+			Cash:        1000,
+			BuyingPower: 1000,
+			Equity:      1000,
+		},
+	}
+	e := New(b, NewRiskGate(Policy{AllowMarketOrders: true}))
+	e.SetComplianceGate(NewComplianceGate(CompliancePolicy{
+		Enabled:        true,
+		AccountType:    "cash",
+		AvoidGoodFaith: true,
+	}))
+	if err := e.Sync(context.Background()); err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+
+	status, ok := e.ComplianceStatus()
+	if !ok || status == nil {
+		t.Fatalf("expected compliance status snapshot")
+	}
+	if !status.Enabled {
+		t.Fatalf("expected enabled compliance status")
+	}
+	if status.AccountType != "cash" {
+		t.Fatalf("expected cash account type, got %#v", status)
+	}
+}
+
 func TestSyncQuiet_SuccessWithoutSyncEvent(t *testing.T) {
 	b := &engineStubBroker{
 		account: domain.Account{Cash: 1000, BuyingPower: 1000, Equity: 1000},

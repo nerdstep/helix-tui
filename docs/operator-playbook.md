@@ -32,6 +32,8 @@ Operational guide for running `helix-tui` safely day-to-day.
   - `agent_intent_rejected`
   - `order_placed`
   - `trade_update`
+  - `compliance_posture`
+  - `compliance_drift_detected`
 - `Strategy` tab:
   - active plan summary
   - recommendations
@@ -39,6 +41,7 @@ Operational guide for running `helix-tui` safely day-to-day.
 - `System` tab:
   - request success/failure counts
   - persistence health
+  - compliance posture/drift status
 
 ## Operational Commands
 
@@ -72,6 +75,8 @@ Before `[alpaca].env = "live"`:
 - lower notional and intent limits
 - run extended paper validation
 - ensure incident procedures are ready
+- ensure `compliance_posture` reflects expected account type/PDT counters
+- resolve any active `compliance_drift_detected` signal before live cutover
 
 ## Useful Files
 

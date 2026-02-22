@@ -374,6 +374,11 @@ func TestHandleIntent_StrategyPolicyAllowsMatchingIntent(t *testing.T) {
 
 func TestRunCycle_UsesMaxPerCycleAndPassesAgentInput(t *testing.T) {
 	r, broker := newRunnerTestHarness(domain.ModeAuto, false)
+	r.engine.SetComplianceGate(engine.NewComplianceGate(engine.CompliancePolicy{
+		Enabled:        true,
+		AccountType:    "cash",
+		AvoidGoodFaith: true,
+	}))
 	agent := &fakeAgent{
 		intents: []domain.TradeIntent{
 			{Symbol: "AAPL", Side: domain.SideBuy, Qty: 1, OrderType: domain.OrderTypeMarket},
@@ -395,6 +400,12 @@ func TestRunCycle_UsesMaxPerCycleAndPassesAgentInput(t *testing.T) {
 	}
 	if len(agent.lastInput.Watchlist) != 2 {
 		t.Fatalf("unexpected agent input: %#v", agent.lastInput)
+	}
+	if agent.lastInput.Compliance == nil {
+		t.Fatalf("expected compliance status in agent input")
+	}
+	if agent.lastInput.Compliance.AccountType != "cash" {
+		t.Fatalf("unexpected compliance account type: %#v", agent.lastInput.Compliance)
 	}
 	if broker.placeCalls != 1 {
 		t.Fatalf("expected one placement due to maxPerCycle, got %d", broker.placeCalls)

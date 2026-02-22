@@ -499,6 +499,8 @@ func (m Model) systemAgentData() []systemKV {
 	if e := latestEventByType(m.snapshot.Events, "agent_cycle_error"); e != nil {
 		lastError = fmt.Sprintf("%s %s", formatLocalClock(e.Time), e.Details)
 	}
+	compliancePosture := m.compliancePostureSummary()
+	complianceDrift := m.complianceDriftSummary()
 	strategySummary := "none"
 	if m.strategy.Active != nil {
 		active := m.strategy.Active
@@ -516,11 +518,62 @@ func (m Model) systemAgentData() []systemKV {
 		{key: "requests", value: fmt.Sprintf("ok=%d failed=%d", countEventsByType(m.snapshot.Events, "agent_proposal"), countEventsByType(m.snapshot.Events, "agent_cycle_error"))},
 		{key: "intents", value: fmt.Sprintf("executed=%d rejected=%d dry_run=%d", countEventsByType(m.snapshot.Events, "agent_intent_executed"), countEventsByType(m.snapshot.Events, "agent_intent_rejected"), countEventsByType(m.snapshot.Events, "agent_intent_dry_run"))},
 		{key: "compliance", value: fmt.Sprintf("rejected=%d", countEventsByType(m.snapshot.Events, "compliance_rejected"))},
+		{key: "posture", value: compliancePosture},
+		{key: "drift", value: complianceDrift},
 		{key: "strategy", value: strategySummary},
 		{key: "last proposal", value: lastProposal},
 		{key: "heartbeat", value: heartbeat},
 		{key: "last error", value: lastError},
 	}
+}
+
+func (m Model) compliancePostureSummary() string {
+	e := latestEventByType(m.snapshot.Events, "compliance_posture")
+	if e == nil {
+		return fmt.Sprintf(
+			"acct=n/a pdt=%t day_trades=%d",
+			m.snapshot.Account.PatternDayTrader,
+			m.snapshot.Account.DayTradeCount,
+		)
+	}
+	fields := parseEventFields(e.Details)
+	accountType := strings.TrimSpace(fields["account_type"])
+	if accountType == "" {
+		accountType = "n/a"
+	}
+	pdt := strings.TrimSpace(fields["pdt"])
+	if pdt == "" {
+		pdt = "n/a"
+	}
+	dayTrades := strings.TrimSpace(fields["day_trades"])
+	if dayTrades == "" {
+		dayTrades = "n/a"
+	}
+	return fmt.Sprintf("acct=%s pdt=%s day_trades=%s", accountType, pdt, dayTrades)
+}
+
+func (m Model) complianceDriftSummary() string {
+	detected := latestEventByType(m.snapshot.Events, "compliance_drift_detected")
+	cleared := latestEventByType(m.snapshot.Events, "compliance_drift_cleared")
+	active := detected
+	state := "clear"
+	if newerEvent(cleared, detected) {
+		active = cleared
+		state = "clear"
+	} else if detected != nil {
+		state = "detected"
+	}
+	if active == nil {
+		return "clear"
+	}
+	fields := parseEventFields(active.Details)
+	local := strings.TrimSpace(fields["local_unsettled"])
+	broker := strings.TrimSpace(fields["broker_unsettled"])
+	drift := strings.TrimSpace(fields["drift"])
+	if local == "" && broker == "" && drift == "" {
+		return state
+	}
+	return fmt.Sprintf("%s local=%s broker=%s delta=%s", state, nonEmpty(local, "n/a"), nonEmpty(broker, "n/a"), nonEmpty(drift, "n/a"))
 }
 
 func restoreEventField(value string) string {

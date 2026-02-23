@@ -126,7 +126,7 @@ Safe progression:
 - `watch list|add <SYM>|remove <SYM>|sync`
 - `events up|down|top|tail [N]`
 - `strategy run|status|approve <ID>|reject <ID>|archive <ID>`
-- `tab overview|logs|strategy|system`
+- `tab overview|strategy|system|logs`
 - `q`
 - `?` toggle help
 

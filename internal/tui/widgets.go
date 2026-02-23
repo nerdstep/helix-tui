@@ -2,8 +2,10 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/lipgloss"
@@ -139,6 +141,9 @@ func (m *Model) syncEventsViewport() {
 	m.eventsViewport.Width = width
 	m.eventsViewport.Height = height
 	lines := m.buildEventViewportLines()
+	m.eventLines = append(m.eventLines[:0], lines...)
+	m.eventLinesReady = true
+	m.eventLinesEvents = len(m.snapshot.Events)
 	if len(lines) == 0 {
 		lines = []string{mutedStyle.Render("(none)")}
 	}
@@ -148,13 +153,322 @@ func (m *Model) syncEventsViewport() {
 }
 
 func (m Model) buildEventViewportLines() []string {
-	rows := make([]string, 0, len(m.snapshot.Events))
-	maxWidth := maxInt(1, m.eventsViewport.Width)
+	events := make([]domain.Event, 0, len(m.snapshot.Events))
 	for _, e := range m.snapshot.Events {
-		line := fmt.Sprintf("%s %-18s %s", formatLocalClock(e.Time), e.Type, e.Details)
-		rows = append(rows, runewidth.Truncate(line, maxWidth, "…"))
+		if includeEventInLogs(e.Type) {
+			events = append(events, e)
+		}
+	}
+	rows := make([]string, 0, len(events))
+	maxWidth := maxInt(1, m.eventsViewport.Width)
+	typeWidth := eventTypeColumnWidth(events, maxWidth)
+	for _, e := range events {
+		rows = append(rows, renderEventRows(e, typeWidth, maxWidth)...)
 	}
 	return rows
+}
+
+func includeEventInLogs(eventType string) bool {
+	switch strings.ToLower(strings.TrimSpace(eventType)) {
+	case "event_persist_stats":
+		return false
+	default:
+		return true
+	}
+}
+
+func eventTypeColumnWidth(events []domain.Event, panelWidth int) int {
+	minWidth := 14
+	maxWidth := 28
+	best := minWidth
+	for _, e := range events {
+		w := runewidth.StringWidth(strings.TrimSpace(e.Type))
+		if w > best {
+			best = w
+		}
+	}
+	best = minInt(best, maxWidth)
+	// Keep enough room for details.
+	maxByPanel := maxInt(minWidth, panelWidth-(8+1+minWidth+1+20))
+	return minInt(best, maxByPanel)
+}
+
+func renderEventRows(event domain.Event, typeWidth int, panelWidth int) []string {
+	timeText := formatLocalClock(event.Time)
+	typeText := strings.TrimSpace(event.Type)
+	if typeText == "" {
+		typeText = "-"
+	}
+	typeText = runewidth.Truncate(typeText, typeWidth, "…")
+	prefixPlain := fmt.Sprintf("%-8s %-*s ", timeText, typeWidth, typeText)
+	detailWidth := maxInt(12, panelWidth-runewidth.StringWidth(prefixPlain))
+	detailLines := renderDetailWrappedLines(event.Details, detailWidth)
+	if len(detailLines) == 0 {
+		detailLines = []renderedDetailLine{{plain: "-", styled: mutedStyle.Render("-")}}
+	}
+
+	typeStyled := eventTypeStyle(event.Type).Render(typeText)
+	prefixStyled := fmt.Sprintf("%-8s ", mutedStyle.Render(timeText)) + lipgloss.NewStyle().Width(typeWidth).MaxWidth(typeWidth).Render(typeStyled) + " "
+	contPrefixStyled := strings.Repeat(" ", runewidth.StringWidth(prefixPlain))
+
+	out := make([]string, 0, len(detailLines))
+	for i, d := range detailLines {
+		if i == 0 {
+			out = append(out, fitDisplayWidth(prefixStyled+d.styled, panelWidth))
+			continue
+		}
+		if d.plain == "" {
+			out = append(out, fitDisplayWidth(contPrefixStyled, panelWidth))
+			continue
+		}
+		out = append(out, fitDisplayWidth(contPrefixStyled+d.styled, panelWidth))
+	}
+	return out
+}
+
+func fitDisplayWidth(s string, width int) string {
+	_ = width
+	return s
+}
+
+type renderedDetailLine struct {
+	plain  string
+	styled string
+}
+
+type detailToken struct {
+	plain  string
+	styled string
+	width  int
+}
+
+func renderDetailWrappedLines(details string, width int) []renderedDetailLine {
+	width = maxInt(1, width)
+	details = strings.ReplaceAll(details, "\r\n", "\n")
+	if strings.TrimSpace(details) == "" {
+		return []renderedDetailLine{{plain: "-", styled: mutedStyle.Render("-")}}
+	}
+
+	physical := strings.Split(details, "\n")
+	out := make([]renderedDetailLine, 0, len(physical))
+	for _, line := range physical {
+		line = strings.TrimRight(line, "\r")
+		if strings.TrimSpace(line) == "" {
+			out = append(out, renderedDetailLine{plain: "", styled: ""})
+			continue
+		}
+		tokens := tokenizeDetailLine(line)
+		wrapped := wrapDetailTokens(tokens, width)
+		out = append(out, wrapped...)
+	}
+	return out
+}
+
+func tokenizeDetailLine(line string) []detailToken {
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return nil
+	}
+	out := make([]detailToken, 0, len(fields))
+	for _, tok := range fields {
+		styled := styleDetailToken(tok)
+		out = append(out, detailToken{
+			plain:  tok,
+			styled: styled,
+			width:  runewidth.StringWidth(tok),
+		})
+	}
+	return out
+}
+
+func wrapDetailTokens(tokens []detailToken, width int) []renderedDetailLine {
+	width = maxInt(1, width)
+	if len(tokens) == 0 {
+		return []renderedDetailLine{{plain: "", styled: ""}}
+	}
+	out := make([]renderedDetailLine, 0, 2)
+	currentPlain := make([]string, 0, len(tokens))
+	currentStyled := make([]string, 0, len(tokens))
+	currentWidth := 0
+	flush := func() {
+		if len(currentPlain) == 0 {
+			return
+		}
+		out = append(out, renderedDetailLine{
+			plain:  strings.Join(currentPlain, " "),
+			styled: strings.Join(currentStyled, " "),
+		})
+		currentPlain = currentPlain[:0]
+		currentStyled = currentStyled[:0]
+		currentWidth = 0
+	}
+
+	for _, tok := range tokens {
+		tokWidth := maxInt(1, tok.width)
+		sep := 0
+		if len(currentPlain) > 0 {
+			sep = 1
+		}
+		if len(currentPlain) > 0 && currentWidth+sep+tokWidth <= width {
+			currentPlain = append(currentPlain, tok.plain)
+			currentStyled = append(currentStyled, tok.styled)
+			currentWidth += sep + tokWidth
+			continue
+		}
+		if len(currentPlain) == 0 && tokWidth <= width {
+			currentPlain = append(currentPlain, tok.plain)
+			currentStyled = append(currentStyled, tok.styled)
+			currentWidth = tokWidth
+			continue
+		}
+		if len(currentPlain) > 0 {
+			flush()
+		}
+		if tokWidth <= width {
+			currentPlain = append(currentPlain, tok.plain)
+			currentStyled = append(currentStyled, tok.styled)
+			currentWidth = tokWidth
+			continue
+		}
+		// Very long token: hard-wrap by display width.
+		parts := splitTokenByDisplayWidth(tok.plain, width)
+		for _, part := range parts {
+			out = append(out, renderedDetailLine{
+				plain:  part,
+				styled: part,
+			})
+		}
+	}
+	flush()
+	if len(out) == 0 {
+		return []renderedDetailLine{{plain: "", styled: ""}}
+	}
+	return out
+}
+
+func splitTokenByDisplayWidth(token string, width int) []string {
+	width = maxInt(1, width)
+	remaining := token
+	out := make([]string, 0, 2)
+	for runewidth.StringWidth(remaining) > width {
+		part := firstDisplayWidthSegment(remaining, width)
+		if part == "" {
+			break
+		}
+		out = append(out, part)
+		remaining = remaining[len(part):]
+	}
+	if remaining != "" {
+		out = append(out, remaining)
+	}
+	if len(out) == 0 {
+		return []string{token}
+	}
+	return out
+}
+
+func firstDisplayWidthSegment(s string, maxWidth int) string {
+	maxWidth = maxInt(1, maxWidth)
+	width := 0
+	cut := 0
+	for i, r := range s {
+		rw := runewidth.RuneWidth(r)
+		if rw <= 0 {
+			rw = 1
+		}
+		if width+rw > maxWidth {
+			break
+		}
+		width += rw
+		cut = i + len(string(r))
+	}
+	if cut == 0 {
+		_, size := utf8.DecodeRuneInString(s)
+		if size <= 0 {
+			return s
+		}
+		return s[:size]
+	}
+	return s[:cut]
+}
+
+func eventTypeStyle(eventType string) lipgloss.Style {
+	t := strings.ToLower(strings.TrimSpace(eventType))
+	switch {
+	case strings.Contains(t, "error"), strings.Contains(t, "rejected"), strings.Contains(t, "failed"), strings.Contains(t, "panic"), strings.Contains(t, "drift_detected"):
+		return errStyle
+	case strings.Contains(t, "warn"), strings.Contains(t, "skipped"), strings.Contains(t, "idle"), strings.Contains(t, "canceled"):
+		return warnStyle
+	case strings.Contains(t, "executed"), strings.Contains(t, "placed"), strings.Contains(t, "created"), strings.Contains(t, "approved"):
+		return positiveStyle
+	default:
+		return headerValueStyle
+	}
+}
+
+func styleDetailToken(token string) string {
+	key, value, ok := strings.Cut(token, "=")
+	if !ok {
+		return token
+	}
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	if key == "" {
+		return token
+	}
+	keyStyled := headerLabelStyle.Render(key)
+	valueStyled := styleDetailValue(key, value)
+	return keyStyled + "=" + valueStyled
+}
+
+func styleDetailValue(key string, value string) string {
+	lk := strings.ToLower(strings.TrimSpace(key))
+	lv := strings.ToLower(strings.TrimSpace(strings.Trim(value, "\"")))
+	switch lv {
+	case "true", "yes", "ok", "active", "open":
+		return positiveStyle.Render(value)
+	case "false", "no", "none", "n/a", "idle", "clear":
+		return mutedStyle.Render(value)
+	case "error", "failed", "rejected":
+		return errStyle.Render(value)
+	}
+	switch lk {
+	case "reason", "error", "rejection_reason":
+		return warnStyle.Render(value)
+	case "state", "status":
+		if lv == "ok" || lv == "filled" || lv == "active" {
+			return positiveStyle.Render(value)
+		}
+		if lv == "error" || lv == "failed" || lv == "rejected" {
+			return errStyle.Render(value)
+		}
+		return warnStyle.Render(value)
+	case "pdt", "avoid_pdt", "avoid_gfv", "drift_detected":
+		if lv == "true" {
+			return warnStyle.Render(value)
+		}
+		return mutedStyle.Render(value)
+	}
+	if numericLike(value) {
+		if strings.HasPrefix(strings.TrimSpace(value), "-") {
+			return negativeStyle.Render(value)
+		}
+		if strings.HasPrefix(strings.TrimSpace(value), "+") {
+			return positiveStyle.Render(value)
+		}
+	}
+	return headerValueStyle.Render(value)
+}
+
+func numericLike(raw string) bool {
+	s := strings.TrimSpace(raw)
+	s = strings.TrimSuffix(s, "%")
+	s = strings.ReplaceAll(s, ",", "")
+	if s == "" {
+		return false
+	}
+	_, err := strconv.ParseFloat(s, 64)
+	return err == nil
 }
 
 func (m *Model) syncStrategyViewport() {

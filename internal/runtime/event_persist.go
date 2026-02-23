@@ -14,7 +14,7 @@ const (
 	tradeEventPersistBatchSize = 32
 	tradeEventPersistQueueSize = 512
 	tradeEventPersistFlush     = 500 * time.Millisecond
-	tradeEventPersistReport    = 2 * time.Second
+	tradeEventPersistReport    = 30 * time.Second
 )
 
 type tradeEventAppender interface {
@@ -81,6 +81,9 @@ func (p *tradeEventPersistor) run() {
 	defer ticker.Stop()
 	defer reportTicker.Stop()
 
+	lastReported := tradeEventPersistStats{}
+	lastReportedQueue := -1
+
 	flush := func() {
 		if len(batch) == 0 {
 			return
@@ -107,7 +110,7 @@ func (p *tradeEventPersistor) run() {
 		case event, ok := <-p.ch:
 			if !ok {
 				flush()
-				p.emitStats()
+				p.emitStats(true, &lastReported, &lastReportedQueue)
 				return
 			}
 			batch = append(batch, event)
@@ -117,7 +120,7 @@ func (p *tradeEventPersistor) run() {
 		case <-ticker.C:
 			flush()
 		case <-reportTicker.C:
-			p.emitStats()
+			p.emitStats(false, &lastReported, &lastReportedQueue)
 		}
 	}
 }
@@ -133,19 +136,23 @@ func (p *tradeEventPersistor) emitPersistError(err error) {
 	})
 }
 
-func (p *tradeEventPersistor) emitStats() {
+func (p *tradeEventPersistor) emitStats(force bool, lastReported *tradeEventPersistStats, lastReportedQueue *int) {
 	if p == nil || p.report == nil {
 		return
 	}
 	p.mu.Lock()
 	stats := p.stats
 	p.mu.Unlock()
+	queueDepth := len(p.ch)
+	if !force && lastReported != nil && lastReportedQueue != nil && *lastReported == stats && *lastReportedQueue == queueDepth {
+		return
+	}
 	p.report(domain.Event{
 		Type: "event_persist_stats",
 		Time: time.Now().UTC(),
 		Details: fmt.Sprintf(
 			"queue=%d flush_ok=%d flush_failed=%d events_ok=%d events_failed=%d dropped=%d",
-			len(p.ch),
+			queueDepth,
 			stats.FlushOK,
 			stats.FlushFailed,
 			stats.EventsOK,
@@ -153,6 +160,12 @@ func (p *tradeEventPersistor) emitStats() {
 			stats.Dropped,
 		),
 	})
+	if lastReported != nil {
+		*lastReported = stats
+	}
+	if lastReportedQueue != nil {
+		*lastReportedQueue = queueDepth
+	}
 }
 
 func isPersistedTradeEventType(eventType string) bool {

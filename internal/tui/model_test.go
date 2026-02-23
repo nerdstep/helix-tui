@@ -488,30 +488,44 @@ func TestTabSwitching(t *testing.T) {
 
 	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m1 := model.(Model)
-	if m1.activeTab != tabLogs {
-		t.Fatalf("expected active tab logs, got %s", m1.activeTab)
-	}
-	logsView := m1.View()
-	if !strings.Contains(logsView, "Recent Events") {
-		t.Fatalf("expected events on logs tab: %q", logsView)
+	if m1.activeTab != tabStrategy {
+		t.Fatalf("expected active tab strategy, got %s", m1.activeTab)
 	}
 
 	model, _ = m1.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m2 := model.(Model)
-	if m2.activeTab != tabStrategy {
-		t.Fatalf("expected active tab strategy, got %s", m2.activeTab)
-	}
-	strategyView := m2.View()
-	if !strings.Contains(strategyView, "Strategy Plan") || !strings.Contains(strategyView, "Recent Plans") || !strings.Contains(strategyView, "Health") {
-		t.Fatalf("expected strategy panel on strategy tab: %q", strategyView)
+	if m2.activeTab != tabSystem {
+		t.Fatalf("expected active tab system, got %s", m2.activeTab)
 	}
 
 	model, _ = m2.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m3 := model.(Model)
-	if m3.activeTab != tabSystem {
-		t.Fatalf("expected active tab system, got %s", m3.activeTab)
+	if m3.activeTab != tabLogs {
+		t.Fatalf("expected active tab logs, got %s", m3.activeTab)
 	}
-	systemView := m3.View()
+	logsView := m3.View()
+	if !strings.Contains(logsView, "Recent Events") {
+		t.Fatalf("expected events on logs tab: %q", logsView)
+	}
+
+	model, _ = m3.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m4 := model.(Model)
+	if m4.activeTab != tabOverview {
+		t.Fatalf("expected active tab overview, got %s", m4.activeTab)
+	}
+
+	m4.input = "tab strategy"
+	model, _ = m4.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m5 := model.(Model)
+	strategyView := m5.View()
+	if !strings.Contains(strategyView, "Strategy Plan") || !strings.Contains(strategyView, "Recent Plans") || !strings.Contains(strategyView, "Health") {
+		t.Fatalf("expected strategy panel on strategy tab: %q", strategyView)
+	}
+
+	m5.input = "tab system"
+	model, _ = m5.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m6 := model.(Model)
+	systemView := m6.View()
 	if !strings.Contains(systemView, "Runtime") || !strings.Contains(systemView, "watchlist") {
 		t.Fatalf("expected system panel on system tab: %q", systemView)
 	}
@@ -520,13 +534,6 @@ func TestTabSwitching(t *testing.T) {
 	}
 	if !strings.Contains(systemView, "strategy") {
 		t.Fatalf("expected strategy summary in system panel: %q", systemView)
-	}
-
-	m3.input = "tab overview"
-	model, _ = m3.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m4 := model.(Model)
-	if m4.activeTab != tabOverview {
-		t.Fatalf("expected active tab overview, got %s", m4.activeTab)
 	}
 }
 
@@ -729,6 +736,97 @@ func TestEventPageSizeExpandsOnLogsTab(t *testing.T) {
 	m.activeTab = tabLogs
 	if got := m.eventPageSize(); got <= 8 {
 		t.Fatalf("expected expanded logs page size, got %d", got)
+	}
+}
+
+func TestLogsWrapLongEventLines(t *testing.T) {
+	m := New(newTestEngine())
+	m.width = 120
+	m.height = 32
+	m.snapshot.Events = []domain.Event{
+		{
+			Time:    time.Now().UTC(),
+			Type:    "agent_cycle_error",
+			Details: strings.Repeat("this is a very long detail segment ", 10),
+		},
+	}
+	m.syncWidgets()
+	if got := m.eventsViewport.TotalLineCount(); got <= 1 {
+		t.Fatalf("expected wrapped event content to span multiple lines, got %d", got)
+	}
+	content := strings.Split(strings.TrimSpace(m.eventsViewport.View()), "\n")
+	for _, line := range content {
+		if lipgloss.Width(line) > m.eventsViewport.Width {
+			t.Fatalf("line exceeds viewport width: width=%d max=%d line=%q", lipgloss.Width(line), m.eventsViewport.Width, line)
+		}
+	}
+}
+
+func TestLogsFilterPersistStatsNoise(t *testing.T) {
+	m := New(newTestEngine())
+	m.width = 120
+	m.height = 32
+	now := time.Now().UTC()
+	m.snapshot.Events = []domain.Event{
+		{Time: now, Type: "event_persist_stats", Details: "queue=0"},
+		{Time: now.Add(time.Second), Type: "sync", Details: "ok"},
+	}
+	m.syncWidgets()
+	view := m.eventsViewport.View()
+	if strings.Contains(view, "event_persist_stats") {
+		t.Fatalf("expected event_persist_stats to be filtered from logs viewport, got %q", view)
+	}
+	if !strings.Contains(view, "sync") {
+		t.Fatalf("expected non-filtered events to remain visible, got %q", view)
+	}
+}
+
+func TestEventHintStaysSingleLineAtNarrowWidth(t *testing.T) {
+	m := New(newTestEngine())
+	m.width = 74
+	m.height = 24
+	m.activeTab = tabLogs
+	now := time.Now().UTC()
+	for i := 0; i < 23; i++ {
+		m.snapshot.Events = append(m.snapshot.Events, domain.Event{
+			Time:    now.Add(time.Duration(i) * time.Second),
+			Type:    "sync",
+			Details: "ok",
+		})
+	}
+	m.syncWidgets()
+	rows := m.buildEventRows()
+	if len(rows) == 0 {
+		t.Fatalf("expected event rows")
+	}
+	last := stripANSI(rows[len(rows)-1])
+	maxWidth := panelInnerWidth(m.eventsPanelWidth())
+	if got := lipgloss.Width(last); got > maxWidth {
+		t.Fatalf("expected hint width <= %d, got %d: %q", maxWidth, got, last)
+	}
+}
+
+func TestLogsViewHeightDoesNotOverflowWindow(t *testing.T) {
+	m := New(newTestEngine())
+	m.width = 128
+	m.height = 26
+	m.activeTab = tabLogs
+	m.snapshot.Events = []domain.Event{
+		{
+			Time:    time.Now().UTC(),
+			Type:    "compliance_posture",
+			Details: "enabled=true account_type=cash avoid_pdt=true avoid_gfv=false pdt=true day_trades=10 max_day_trades_5d=3 equity=99852.17 min_equity_for_pdt=25000.00 local_unsettled=0.00 broker_unsettled=0.00 drift_detected=false",
+		},
+		{
+			Time:    time.Now().UTC().Add(time.Second),
+			Type:    "agent_cycle_complete",
+			Details: "generated=0 attempted=0 executed=0 rejected=0 approvals=0 dry_run=0 skipped=0 reason=low_power_state",
+		},
+	}
+	m.syncWidgets()
+	view := m.View()
+	if got := lipgloss.Height(view); got > m.height {
+		t.Fatalf("expected logs view height <= window height (%d), got %d", m.height, got)
 	}
 }
 

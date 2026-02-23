@@ -50,7 +50,7 @@ Operational guide for running `helix-tui` safely day-to-day.
 - `cancel <ORDER_ID|ORDER_ID_PREFIX|#ROW>`
 - `flatten`
 - `strategy run|status|approve|reject|archive`
-- `tab overview|logs|strategy|system`
+- `tab overview|strategy|system|logs`
 
 ## Incident Response
 

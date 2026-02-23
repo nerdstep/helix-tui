@@ -90,6 +90,9 @@ type Model struct {
 	onEquityPoint      func(EquityPoint) error
 	onStrategyLoad     func() (StrategySnapshot, error)
 	eventScroll        int
+	eventLines         []string
+	eventLinesReady    bool
+	eventLinesEvents   int
 	eventsViewport     viewport.Model
 	strategyViewport   viewport.Model
 	positionsTable     table.Model

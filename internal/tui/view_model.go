@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 
 	"helix-tui/internal/domain"
 )
@@ -412,6 +413,9 @@ func (m Model) buildSystemRuntimeRows() []string {
 	if view == "" {
 		return append(rows, mutedStyle.Render("(loading...)"))
 	}
+	view = colorizeTableColumns(view, m.systemRuntimeTable.Columns(), map[int]func(string) string{
+		1: colorizeSystemValueCell,
+	})
 	rows = append(rows, strings.Split(view, "\n")...)
 	return rows
 }
@@ -422,6 +426,9 @@ func (m Model) buildSystemAgentRows() []string {
 	if view == "" {
 		return append(rows, mutedStyle.Render("(loading...)"))
 	}
+	view = colorizeTableColumns(view, m.systemAgentTable.Columns(), map[int]func(string) string{
+		1: colorizeSystemValueCell,
+	})
 	rows = append(rows, strings.Split(view, "\n")...)
 	return rows
 }
@@ -432,6 +439,9 @@ func (m Model) buildSystemPersistenceRows() []string {
 	if view == "" {
 		return append(rows, mutedStyle.Render("(loading...)"))
 	}
+	view = colorizeTableColumns(view, m.systemPersistTable.Columns(), map[int]func(string) string{
+		1: colorizeSystemValueCell,
+	})
 	rows = append(rows, strings.Split(view, "\n")...)
 	return rows
 }
@@ -623,7 +633,7 @@ func (m Model) systemPersistenceData() []systemKV {
 
 func (m Model) buildEventRows() []string {
 	rows := []string{panelTitleStyle.Render("Recent Events")}
-	if len(m.snapshot.Events) == 0 {
+	if m.eventLineCount() == 0 {
 		return append(rows, mutedStyle.Render("(none)"))
 	}
 	view := strings.TrimRight(m.eventsViewport.View(), "\n")
@@ -631,8 +641,64 @@ func (m Model) buildEventRows() []string {
 		rows = append(rows, strings.Split(view, "\n")...)
 	}
 	start, end, total := m.eventWindow()
-	rows = append(rows, mutedStyle.Render(fmt.Sprintf("showing %d-%d of %d (events up/down/top/tail [N], Up/Down/PgUp/PgDn/Home/End)", start+1, end, total)))
+	if total == 0 {
+		return append(rows, mutedStyle.Render("(none)"))
+	}
+	rows = append(rows, m.singleLineMutedEventHint(start, end, total))
 	return rows
+}
+
+func (m Model) singleLineMutedEventHint(start, end, total int) string {
+	verbose := fmt.Sprintf("showing %d-%d of %d (events up/down/top/tail [N], Up/Down/PgUp/PgDn/Home/End)", start+1, end, total)
+	medium := fmt.Sprintf("showing %d-%d of %d (events up/down/top/tail)", start+1, end, total)
+	compact := fmt.Sprintf("%d-%d/%d", start+1, end, total)
+	maxWidth := panelInnerWidth(m.eventsPanelWidth())
+	if maxWidth <= 0 {
+		return mutedStyle.Render(compact)
+	}
+	text := verbose
+	if runewidth.StringWidth(text) > maxWidth {
+		text = medium
+	}
+	if runewidth.StringWidth(text) > maxWidth {
+		text = compact
+	}
+	if runewidth.StringWidth(text) > maxWidth {
+		text = runewidth.Truncate(text, maxWidth, "…")
+	}
+	return mutedStyle.Render(text)
+}
+
+func colorizeSystemValueCell(cell string) string {
+	return replaceNonSpaceTokens(cell, func(tok string) string {
+		if strings.Contains(tok, "=") {
+			return styleDetailToken(tok)
+		}
+		return styleDetailValue("", tok)
+	})
+}
+
+func replaceNonSpaceTokens(s string, f func(string) string) string {
+	if s == "" {
+		return s
+	}
+	var out strings.Builder
+	out.Grow(len(s) + 16)
+	i := 0
+	for i < len(s) {
+		if s[i] == ' ' || s[i] == '\t' {
+			out.WriteByte(s[i])
+			i++
+			continue
+		}
+		j := i
+		for j < len(s) && s[j] != ' ' && s[j] != '\t' {
+			j++
+		}
+		out.WriteString(f(s[i:j]))
+		i = j
+	}
+	return out.String()
 }
 
 func (m Model) buildFooter() string {

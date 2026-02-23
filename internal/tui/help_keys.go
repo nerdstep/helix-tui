@@ -59,7 +59,7 @@ func newDashboardKeyMap() dashboardKeyMap {
 			key.WithHelp("events ...", "scroll events"),
 		),
 		TabCmd: key.NewBinding(
-			key.WithKeys("tab overview|logs|strategy|system"),
+			key.WithKeys("tab overview|strategy|system|logs"),
 			key.WithHelp("tab <name>", "switch tab"),
 		),
 		TabKey: key.NewBinding(

@@ -22,20 +22,39 @@ func (m Model) logsReservedHeight() int {
 	if tabHeight < 1 {
 		tabHeight = 1
 	}
-	statusInputHeight := 2
+	statusInputHeight := m.statusInputHeight()
 	footerHeight := maxInt(1, m.footerHeight())
 	// panel title + viewport hint plus panel borders.
 	panelOverhead := panelStyle.GetVerticalFrameSize() + 2
-	return headerHeight + tabHeight + statusInputHeight + footerHeight + panelOverhead
+	// Keep one extra row to absorb terminal wrapping edge-cases.
+	safetyPadding := 1
+	return headerHeight + tabHeight + statusInputHeight + footerHeight + panelOverhead + safetyPadding
 }
 
 func (m Model) maxEventScroll() int {
-	total := len(m.snapshot.Events)
+	total := m.eventLineCount()
 	visible := m.eventPageSize()
 	if total <= visible {
 		return 0
 	}
 	return total - visible
+}
+
+func (m Model) statusInputHeight() int {
+	statusRenderer := okStyle
+	if m.statusError {
+		statusRenderer = errStyle
+	} else if m.isLoading() {
+		statusRenderer = warnStyle
+	}
+	statusText := m.status
+	if m.isLoading() {
+		statusText = m.spinner.View() + " " + m.status
+	}
+	statusLine := statusRenderer.Render(statusText)
+	inputLine := inputStyle.Render("> " + m.input)
+	h := lipgloss.Height(statusLine) + lipgloss.Height(inputLine)
+	return maxInt(2, h)
 }
 
 func (m *Model) clampEventScroll() {
@@ -62,7 +81,7 @@ func (m *Model) scrollEvents(delta int) {
 }
 
 func (m Model) eventWindow() (start, end, total int) {
-	total = len(m.snapshot.Events)
+	total = m.eventLineCount()
 	if total == 0 {
 		return 0, 0, 0
 	}
@@ -79,6 +98,13 @@ func (m Model) eventWindow() (start, end, total int) {
 		end = start
 	}
 	return start, end, total
+}
+
+func (m Model) eventLineCount() int {
+	if m.eventLinesReady && m.eventLinesEvents == len(m.snapshot.Events) {
+		return len(m.eventLines)
+	}
+	return len(m.snapshot.Events)
 }
 
 func (m *Model) applyEventScrollToViewport() {

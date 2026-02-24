@@ -190,6 +190,7 @@ func TestParseStrategyCommand(t *testing.T) {
 		wantSeen  bool
 		wantType  strategyCommandType
 		wantID    uint
+		wantText  string
 		wantErr   bool
 		wantErrIn string
 	}{
@@ -200,8 +201,14 @@ func TestParseStrategyCommand(t *testing.T) {
 		{name: "approve", raw: "strategy approve 12", wantSeen: true, wantType: strategyCommandApprove, wantID: 12},
 		{name: "reject", raw: "strategy reject 9", wantSeen: true, wantType: strategyCommandReject, wantID: 9},
 		{name: "archive", raw: "strategy archive 3", wantSeen: true, wantType: strategyCommandArchive, wantID: 3},
+		{name: "chat status default", raw: "strategy chat", wantSeen: true, wantType: strategyCommandChatStatus},
+		{name: "chat list", raw: "strategy chat list", wantSeen: true, wantType: strategyCommandChatList},
+		{name: "chat new", raw: "strategy chat new Swing Ideas", wantSeen: true, wantType: strategyCommandChatNew, wantText: "Swing Ideas"},
+		{name: "chat use", raw: "strategy chat use 5", wantSeen: true, wantType: strategyCommandChatUse, wantID: 5},
+		{name: "chat say", raw: "strategy chat say rotate into semis", wantSeen: true, wantType: strategyCommandChatSay, wantText: "rotate into semis"},
 		{name: "invalid id", raw: "strategy approve nope", wantSeen: true, wantErr: true, wantErrIn: "strategy plan id must"},
 		{name: "usage", raw: "strategy nope", wantSeen: true, wantErr: true, wantErrIn: "usage: strategy"},
+		{name: "chat usage", raw: "strategy chat say", wantSeen: true, wantErr: true, wantErrIn: "strategy chat message"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -233,8 +240,23 @@ func TestParseStrategyCommand(t *testing.T) {
 			if cmd.Type != tt.wantType {
 				t.Fatalf("unexpected type: got %v want %v", cmd.Type, tt.wantType)
 			}
-			if tt.wantID > 0 && cmd.PlanID != tt.wantID {
-				t.Fatalf("unexpected plan id: got %d want %d", cmd.PlanID, tt.wantID)
+			if tt.wantID > 0 {
+				switch cmd.Type {
+				case strategyCommandApprove, strategyCommandReject, strategyCommandArchive:
+					if cmd.PlanID != tt.wantID {
+						t.Fatalf("unexpected plan id: got %d want %d", cmd.PlanID, tt.wantID)
+					}
+				}
+			}
+			switch cmd.Type {
+			case strategyCommandChatUse:
+				if tt.wantID > 0 && cmd.ThreadID != tt.wantID {
+					t.Fatalf("unexpected thread id: got %d want %d", cmd.ThreadID, tt.wantID)
+				}
+			case strategyCommandChatNew, strategyCommandChatSay:
+				if cmd.Text != tt.wantText {
+					t.Fatalf("unexpected text: got %q want %q", cmd.Text, tt.wantText)
+				}
 			}
 		})
 	}

@@ -126,6 +126,7 @@ Safe progression:
 - `watch list|add <SYM>|remove <SYM>|sync`
 - `events up|down|top|tail [N]`
 - `strategy run|status|approve <ID>|reject <ID>|archive <ID>`
+- `strategy chat status|list|new <TITLE>|use <ID>|say <MESSAGE>`
 - `tab overview|strategy|system|logs`
 - `q`
 - `?` toggle help
@@ -136,6 +137,7 @@ Safe progression:
 - LLM output only proposes intents; engine risk/compliance gates still decide execution.
 - Compliance gate can reject orders (e.g., PDT/GFV protections) with explicit rejection reasons.
 - Strategy mode can constrain autonomous execution to active plan recommendations.
+- Strategy chat is advisory-only and does not place orders directly.
 - Low-power mode reduces autonomous activity outside market hours.
 
 ## Development

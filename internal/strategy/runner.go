@@ -24,6 +24,10 @@ type eventHistoryStore interface {
 	ListRecent(limit int) ([]domain.Event, error)
 }
 
+type steeringStateStore interface {
+	GetSteeringState() (*storage.StrategySteeringState, error)
+}
+
 const defaultPromptVersion = "strategy-v1"
 
 type Runner struct {
@@ -199,10 +203,15 @@ func (r *Runner) runCycle(ctx context.Context, force bool, reason string) error 
 	}
 
 	snapshot := r.engine.Snapshot()
+	steering, err := r.loadSteeringState(store)
+	if err != nil {
+		return fmt.Errorf("load steering state: %w", err)
+	}
 	input := Input{
 		GeneratedAt:        time.Now().UTC(),
 		MaxRecommendations: r.maxRecommendations,
 		Watchlist:          watchlist,
+		Steering:           toSteeringContextInput(steering),
 		CurrentPlan:        toCurrentPlanInput(currentPlan),
 		Snapshot:           snapshot,
 		Quotes:             r.collectQuotes(syncCtx, watchlist),
@@ -275,7 +284,16 @@ func (r *Runner) runCycle(ctx context.Context, force bool, reason string) error 
 	}
 	r.engine.AddEvent(
 		"strategy_plan_created",
-		fmt.Sprintf("id=%d status=%s recs=%d conf=%.2f model=%s", bundle.Plan.ID, status, len(bundle.Recommendations), bundle.Plan.Confidence, bundle.Plan.AnalystModel),
+		fmt.Sprintf(
+			"id=%d status=%s recs=%d conf=%.2f model=%s steering_version=%d steering_hash=%s",
+			bundle.Plan.ID,
+			status,
+			len(bundle.Recommendations),
+			bundle.Plan.Confidence,
+			bundle.Plan.AnalystModel,
+			steeringVersion(steering),
+			steeringHash(steering),
+		),
 	)
 	return nil
 }
@@ -360,4 +378,49 @@ func (r *Runner) getStore() planStore {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.store
+}
+
+func (r *Runner) loadSteeringState(store planStore) (*storage.StrategySteeringState, error) {
+	reader, ok := store.(steeringStateStore)
+	if !ok || reader == nil {
+		return nil, nil
+	}
+	return reader.GetSteeringState()
+}
+
+func toSteeringContextInput(state *storage.StrategySteeringState) *SteeringContext {
+	if state == nil {
+		return nil
+	}
+	return &SteeringContext{
+		Version:             state.Version,
+		Source:              strings.TrimSpace(state.Source),
+		RiskProfile:         strings.TrimSpace(state.RiskProfile),
+		MinConfidence:       state.MinConfidence,
+		MaxPositionNotional: state.MaxPositionNotional,
+		Horizon:             strings.TrimSpace(state.Horizon),
+		Objective:           strings.TrimSpace(state.Objective),
+		PreferredSymbols:    append([]string{}, state.PreferredSymbols...),
+		ExcludedSymbols:     append([]string{}, state.ExcludedSymbols...),
+		Hash:                strings.TrimSpace(state.Hash),
+		UpdatedAt:           state.UpdatedAt.UTC(),
+	}
+}
+
+func steeringVersion(state *storage.StrategySteeringState) uint64 {
+	if state == nil {
+		return 0
+	}
+	return state.Version
+}
+
+func steeringHash(state *storage.StrategySteeringState) string {
+	if state == nil {
+		return "none"
+	}
+	hash := strings.TrimSpace(state.Hash)
+	if hash == "" {
+		return "none"
+	}
+	return hash
 }

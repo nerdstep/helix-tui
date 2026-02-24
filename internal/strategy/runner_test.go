@@ -179,14 +179,74 @@ func TestRunnerNoChangePlanDoesNotPersistNewPlan(t *testing.T) {
 	}
 }
 
-type fakeAnalyst struct {
-	plan  Plan
-	err   error
-	calls int
+func TestRunnerIncludesSteeringStateInAnalystInput(t *testing.T) {
+	risk := engine.NewRiskGate(engine.Policy{
+		AllowMarketOrders: true,
+		AllowSymbols: map[string]struct{}{
+			"AAPL": {},
+		},
+	})
+	e := engine.New(paper.New(100000), risk)
+	if err := e.Sync(context.Background()); err != nil {
+		t.Fatalf("sync engine: %v", err)
+	}
+
+	store := &fakePlanStore{
+		steering: &storage.StrategySteeringState{
+			Version:             3,
+			Source:              "operator",
+			RiskProfile:         "balanced",
+			MinConfidence:       0.65,
+			MaxPositionNotional: 2500,
+			Horizon:             "swing",
+			Objective:           "Rotate into higher quality momentum names.",
+			PreferredSymbols:    []string{"AAPL", "MSFT"},
+			ExcludedSymbols:     []string{"AMC"},
+			Hash:                "abc123",
+			UpdatedAt:           time.Now().UTC(),
+		},
+	}
+	analyst := &fakeAnalyst{
+		plan: Plan{
+			Summary: "test",
+		},
+	}
+	runner := NewRunner(
+		e,
+		analyst,
+		[]string{"AAPL"},
+		time.Hour,
+		2*time.Second,
+		"test-model",
+		4,
+		false,
+	)
+	runner.SetStore(store)
+
+	if err := runner.runCycle(context.Background(), true, "manual"); err != nil {
+		t.Fatalf("runCycle failed: %v", err)
+	}
+	if analyst.lastInput.Steering == nil {
+		t.Fatalf("expected steering context to be included in analyst input")
+	}
+	if analyst.lastInput.Steering.Version != 3 {
+		t.Fatalf("expected steering version 3, got %d", analyst.lastInput.Steering.Version)
+	}
+	if analyst.lastInput.Steering.Hash != "abc123" {
+		t.Fatalf("expected steering hash abc123, got %q", analyst.lastInput.Steering.Hash)
+	}
 }
 
-func (f *fakeAnalyst) BuildPlan(context.Context, Input) (Plan, error) {
+type fakeAnalyst struct {
+	plan      Plan
+	err       error
+	calls     int
+	lastInput Input
+}
+
+func (f *fakeAnalyst) BuildPlan(_ context.Context, input Input) (Plan, error) {
 	f.calls++
+	f.lastInput = input
 	return f.plan, f.err
 }
 
@@ -195,6 +255,7 @@ type fakePlanStore struct {
 	lastStatus storage.StrategyPlanStatus
 	active     *storage.StrategyPlanWithRecommendations
 	latest     *storage.StrategyPlanWithRecommendations
+	steering   *storage.StrategySteeringState
 }
 
 func (s *fakePlanStore) CreatePlan(plan storage.StrategyPlan, recommendations []storage.StrategyRecommendation) (storage.StrategyPlanWithRecommendations, error) {
@@ -222,6 +283,10 @@ func (s *fakePlanStore) GetActivePlan() (*storage.StrategyPlanWithRecommendation
 
 func (s *fakePlanStore) GetLatestPlan() (*storage.StrategyPlanWithRecommendations, error) {
 	return s.latest, nil
+}
+
+func (s *fakePlanStore) GetSteeringState() (*storage.StrategySteeringState, error) {
+	return s.steering, nil
 }
 
 func hasEventType(events []domain.Event, eventType string) bool {

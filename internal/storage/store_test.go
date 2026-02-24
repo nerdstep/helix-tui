@@ -35,6 +35,13 @@ func TestStoreOpenMigrateAppendListAndReopen(t *testing.T) {
 	if strategyRepo == nil {
 		t.Fatalf("expected strategy repository")
 	}
+	chatThread, err := strategyRepo.CreateChatThread("Main")
+	if err != nil {
+		t.Fatalf("create chat thread failed: %v", err)
+	}
+	if _, err := strategyRepo.AppendChatMessage(chatThread.ID, "user", "status check", ""); err != nil {
+		t.Fatalf("append chat message failed: %v", err)
+	}
 
 	p1 := EquityPoint{Time: time.Now().UTC(), Equity: 100000}
 	p2 := EquityPoint{Time: time.Now().UTC().Add(time.Second), Equity: 100120.5}
@@ -142,6 +149,20 @@ func TestStoreOpenMigrateAppendListAndReopen(t *testing.T) {
 	}
 	if activePlan == nil || activePlan.Plan.Status != StrategyPlanStatusActive {
 		t.Fatalf("expected persisted active strategy plan after reopen, got %#v", activePlan)
+	}
+	chatThreads, err := reopened.Strategy().ListChatThreads(10)
+	if err != nil {
+		t.Fatalf("list chat threads after reopen failed: %v", err)
+	}
+	if len(chatThreads) != 1 {
+		t.Fatalf("expected 1 chat thread after reopen, got %d", len(chatThreads))
+	}
+	chatMessages, err := reopened.Strategy().ListChatMessages(chatThreads[0].ID, 10)
+	if err != nil {
+		t.Fatalf("list chat messages after reopen failed: %v", err)
+	}
+	if len(chatMessages) != 1 || chatMessages[0].Role != "user" {
+		t.Fatalf("unexpected chat messages after reopen: %#v", chatMessages)
 	}
 }
 

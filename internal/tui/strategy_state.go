@@ -29,7 +29,46 @@ type StrategyPlanView struct {
 	Recommendations []StrategyRecommendationView
 }
 
+type StrategyChatThreadView struct {
+	ID            uint
+	Title         string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	LastMessageAt time.Time
+}
+
+type StrategyChatMessageView struct {
+	ID        uint
+	ThreadID  uint
+	Role      string
+	Content   string
+	Model     string
+	CreatedAt time.Time
+}
+
+type StrategyChatView struct {
+	ActiveThreadID uint
+	Threads        []StrategyChatThreadView
+	Messages       []StrategyChatMessageView
+}
+
+type StrategySteeringView struct {
+	Version             uint64
+	Source              string
+	RiskProfile         string
+	MinConfidence       float64
+	MaxPositionNotional float64
+	Horizon             string
+	Objective           string
+	PreferredSymbols    []string
+	ExcludedSymbols     []string
+	Hash                string
+	UpdatedAt           time.Time
+}
+
 type StrategySnapshot struct {
-	Active *StrategyPlanView
-	Recent []StrategyPlanView
+	Active   *StrategyPlanView
+	Recent   []StrategyPlanView
+	Steering *StrategySteeringView
+	Chat     StrategyChatView
 }

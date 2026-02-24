@@ -327,3 +327,29 @@ func buildStrategyRunner(cfg Config, e *engine.Engine, watchlist []string) (*str
 		cfg.StrategyAutoActivate,
 	), nil
 }
+
+func buildStrategyCopilot(cfg Config) (strategy.Copilot, error) {
+	if !cfg.StrategyEnabled {
+		return nil, nil
+	}
+	keyringCfg := credentials.KeyringConfig{
+		Enabled: cfg.UseKeyring,
+		Save:    cfg.SaveToKeyring,
+		Service: cfg.KeyringService,
+		User:    cfg.KeyringUser,
+	}
+	llmKey, _, err := credentials.ResolveOpenAICredentials(cfg.LLMAPIKey, keyringCfg)
+	if err != nil {
+		return nil, err
+	}
+	return strategy.NewLLMCopilot(strategy.LLMCopilotConfig{
+		APIKey:       llmKey,
+		BaseURL:      cfg.LLMBaseURL,
+		Model:        cfg.StrategyModel,
+		Timeout:      cfg.StrategyTimeout,
+		SystemPrompt: cfg.StrategySystemPrompt,
+		HumanName:    cfg.HumanName,
+		HumanAlias:   cfg.HumanAlias,
+		AgentName:    cfg.AgentName,
+	})
+}

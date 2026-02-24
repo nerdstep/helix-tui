@@ -3,11 +3,22 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-const strategyCommandUsage = "usage: strategy <run|status|approve <id>|reject <id>|archive <id>>"
+const (
+	strategyCommandUsage     = "usage: strategy <run|status|approve <id>|reject <id>|archive <id>|chat ...>"
+	strategyChatCommandUsage = "usage: strategy chat <status|list|new <title>|use <id>|say <message>>"
+)
+
+type strategyChatResultMsg struct {
+	threadID uint
+	status   string
+	isErr    bool
+	refresh  bool
+}
 
 func (m *Model) handleStrategyCommand(raw string) (bool, tea.Cmd) {
 	cmd, handled, parseErr := parseStrategyCommand(raw)
@@ -38,6 +49,16 @@ func (m *Model) handleStrategyCommand(raw string) (bool, tea.Cmd) {
 		return true, m.handleStrategyPlanStatus(cmd.PlanID, "reject", m.onStrategyReject)
 	case strategyCommandArchive:
 		return true, m.handleStrategyPlanStatus(cmd.PlanID, "archive", m.onStrategyArchive)
+	case strategyCommandChatStatus:
+		return true, m.handleStrategyChatStatus()
+	case strategyCommandChatList:
+		return true, m.handleStrategyChatList()
+	case strategyCommandChatNew:
+		return true, m.handleStrategyChatNew(cmd.Text)
+	case strategyCommandChatUse:
+		return true, m.handleStrategyChatUse(cmd.ThreadID)
+	case strategyCommandChatSay:
+		return true, m.handleStrategyChatSay(cmd.Text)
 	default:
 		m.setStatus(strategyCommandUsage, true)
 		return true, nil
@@ -70,4 +91,151 @@ func (m *Model) handleStrategyPlanStatus(planID uint, verb string, fn func(uint)
 	}
 	m.setStatus(fmt.Sprintf("strategy %s #%d", verb, planID), false)
 	return m.refreshCmd()
+}
+
+func (m *Model) handleStrategyChatStatus() tea.Cmd {
+	thread := m.currentStrategyChatThread()
+	if thread == nil {
+		m.setStatus("strategy chat: no thread available", true)
+		return nil
+	}
+	msgCount := 0
+	for _, msg := range m.strategy.Chat.Messages {
+		if msg.ThreadID == thread.ID {
+			msgCount++
+		}
+	}
+	last := "n/a"
+	if !thread.LastMessageAt.IsZero() {
+		last = thread.LastMessageAt.Local().Format("2006-01-02 15:04:05")
+	}
+	m.setStatus(
+		fmt.Sprintf("strategy chat: thread #%d \"%s\" messages=%d last=%s", thread.ID, thread.Title, msgCount, last),
+		false,
+	)
+	return nil
+}
+
+func (m *Model) handleStrategyChatList() tea.Cmd {
+	threads := m.strategy.Chat.Threads
+	if len(threads) == 0 {
+		m.setStatus("strategy chat threads: (none)", false)
+		return nil
+	}
+	active := m.activeStrategyThreadID()
+	parts := make([]string, 0, len(threads))
+	for _, thread := range threads {
+		prefix := " "
+		if thread.ID == active {
+			prefix = "*"
+		}
+		parts = append(parts, fmt.Sprintf("%s#%d %s", prefix, thread.ID, thread.Title))
+	}
+	m.setStatus("strategy chat threads: "+strings.Join(parts, " | "), false)
+	return nil
+}
+
+func (m *Model) handleStrategyChatUse(threadID uint) tea.Cmd {
+	if threadID == 0 {
+		m.setStatus("strategy chat thread id must be a positive integer", true)
+		return nil
+	}
+	m.strategyThreadID = threadID
+	m.setStatus(fmt.Sprintf("strategy chat thread selected: #%d", threadID), false)
+	return m.refreshCmd()
+}
+
+func (m *Model) handleStrategyChatNew(title string) tea.Cmd {
+	if m.onStrategyChatCreate == nil {
+		m.setStatus("strategy chat create is not configured", true)
+		return nil
+	}
+	createFn := m.onStrategyChatCreate
+	title = strings.TrimSpace(title)
+	return m.startStrategyChatAsync("creating strategy chat thread", func() strategyChatResultMsg {
+		threadID, err := createFn(title)
+		if err != nil {
+			return strategyChatResultMsg{
+				status: fmt.Sprintf("strategy chat create failed: %v", err),
+				isErr:  true,
+			}
+		}
+		return strategyChatResultMsg{
+			threadID: threadID,
+			status:   fmt.Sprintf("strategy chat thread created: #%d", threadID),
+			refresh:  true,
+		}
+	})
+}
+
+func (m *Model) handleStrategyChatSay(text string) tea.Cmd {
+	if m.onStrategyChatSend == nil {
+		m.setStatus("strategy chat send is not configured", true)
+		return nil
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		m.setStatus("strategy chat message is required", true)
+		return nil
+	}
+	threadID := m.activeStrategyThreadID()
+	if threadID == 0 {
+		m.setStatus("strategy chat: no thread selected", true)
+		return nil
+	}
+	sendFn := m.onStrategyChatSend
+	label := "sending strategy chat message"
+	return m.startStrategyChatAsync(label, func() strategyChatResultMsg {
+		start := time.Now().UTC()
+		if err := sendFn(threadID, text); err != nil {
+			return strategyChatResultMsg{
+				threadID: threadID,
+				status:   fmt.Sprintf("strategy chat send failed: %v", err),
+				isErr:    true,
+			}
+		}
+		elapsed := time.Since(start).Round(time.Millisecond)
+		return strategyChatResultMsg{
+			threadID: threadID,
+			status:   fmt.Sprintf("strategy chat sent (thread #%d, %s)", threadID, elapsed),
+			refresh:  true,
+		}
+	})
+}
+
+func (m *Model) startStrategyChatAsync(label string, fn func() strategyChatResultMsg) tea.Cmd {
+	m.startCommandLoading(label)
+	return func() tea.Msg {
+		return fn()
+	}
+}
+
+func (m *Model) activeStrategyThreadID() uint {
+	if m.strategyThreadID != 0 {
+		return m.strategyThreadID
+	}
+	if m.strategy.Chat.ActiveThreadID != 0 {
+		return m.strategy.Chat.ActiveThreadID
+	}
+	if len(m.strategy.Chat.Threads) > 0 {
+		return m.strategy.Chat.Threads[0].ID
+	}
+	return 0
+}
+
+func (m *Model) currentStrategyChatThread() *StrategyChatThreadView {
+	threadID := m.activeStrategyThreadID()
+	if threadID == 0 {
+		return nil
+	}
+	return m.findStrategyThread(threadID)
+}
+
+func (m *Model) findStrategyThread(threadID uint) *StrategyChatThreadView {
+	for i := range m.strategy.Chat.Threads {
+		if m.strategy.Chat.Threads[i].ID == threadID {
+			return &m.strategy.Chat.Threads[i]
+		}
+	}
+	return nil
 }

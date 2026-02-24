@@ -62,11 +62,18 @@ const (
 	strategyCommandApprove
 	strategyCommandReject
 	strategyCommandArchive
+	strategyCommandChatStatus
+	strategyCommandChatList
+	strategyCommandChatNew
+	strategyCommandChatUse
+	strategyCommandChatSay
 )
 
 type strategyCommand struct {
-	Type   strategyCommandType
-	PlanID uint
+	Type     strategyCommandType
+	PlanID   uint
+	ThreadID uint
+	Text     string
 }
 
 func parseCoreCommand(raw string) (*coreCommand, *statusOnlyMsg) {
@@ -168,15 +175,23 @@ func parseEventsCommand(raw string, defaultStep int) (*eventsCommand, bool, *sta
 }
 
 func parseStrategyCommand(raw string) (*strategyCommand, bool, *statusOnlyMsg) {
-	args := lowerCommandArgs(raw)
-	if len(args) == 0 || args[0] != "strategy" {
+	raw = strings.TrimSpace(raw)
+	args := strings.Fields(raw)
+	if len(args) == 0 || !strings.EqualFold(args[0], "strategy") {
 		return nil, false, nil
 	}
-	if len(args) == 1 {
+	lower := make([]string, 0, len(args))
+	for _, arg := range args {
+		lower = append(lower, strings.ToLower(strings.TrimSpace(arg)))
+	}
+	if len(lower) == 1 {
 		return &strategyCommand{Type: strategyCommandStatus}, true, nil
 	}
-	if len(args) == 2 {
-		switch args[1] {
+	if lower[1] == "chat" {
+		return parseStrategyChatCommand(raw, lower)
+	}
+	if len(lower) == 2 {
+		switch lower[1] {
 		case "run":
 			return &strategyCommand{Type: strategyCommandRun}, true, nil
 		case "status":
@@ -185,15 +200,15 @@ func parseStrategyCommand(raw string) (*strategyCommand, bool, *statusOnlyMsg) {
 			return nil, true, statusError(strategyCommandUsage)
 		}
 	}
-	if len(args) != 3 {
+	if len(lower) != 3 {
 		return nil, true, statusError(strategyCommandUsage)
 	}
-	planID64, err := strconv.ParseUint(strings.TrimSpace(args[2]), 10, 64)
+	planID64, err := strconv.ParseUint(strings.TrimSpace(lower[2]), 10, 64)
 	if err != nil || planID64 == 0 {
 		return nil, true, statusError("strategy plan id must be a positive integer")
 	}
 	planID := uint(planID64)
-	switch args[1] {
+	switch lower[1] {
 	case "approve", "activate":
 		return &strategyCommand{Type: strategyCommandApprove, PlanID: planID}, true, nil
 	case "reject", "supersede":
@@ -203,4 +218,80 @@ func parseStrategyCommand(raw string) (*strategyCommand, bool, *statusOnlyMsg) {
 	default:
 		return nil, true, statusError(strategyCommandUsage)
 	}
+}
+
+func parseStrategyChatCommand(raw string, lower []string) (*strategyCommand, bool, *statusOnlyMsg) {
+	if len(lower) == 2 {
+		return &strategyCommand{Type: strategyCommandChatStatus}, true, nil
+	}
+	if len(lower) == 3 {
+		switch lower[2] {
+		case "status":
+			return &strategyCommand{Type: strategyCommandChatStatus}, true, nil
+		case "list":
+			return &strategyCommand{Type: strategyCommandChatList}, true, nil
+		case "new":
+			return nil, true, statusError("strategy chat title is required")
+		case "say", "ask":
+			return nil, true, statusError("strategy chat message is required")
+		default:
+			return nil, true, statusError(strategyChatCommandUsage)
+		}
+	}
+	switch lower[2] {
+	case "new":
+		title := commandTailAfterNFields(raw, 3)
+		if title == "" {
+			return nil, true, statusError("strategy chat title is required")
+		}
+		return &strategyCommand{Type: strategyCommandChatNew, Text: title}, true, nil
+	case "use", "select":
+		if len(lower) != 4 {
+			return nil, true, statusError(strategyChatCommandUsage)
+		}
+		threadID64, err := strconv.ParseUint(strings.TrimSpace(lower[3]), 10, 64)
+		if err != nil || threadID64 == 0 {
+			return nil, true, statusError("strategy chat thread id must be a positive integer")
+		}
+		return &strategyCommand{Type: strategyCommandChatUse, ThreadID: uint(threadID64)}, true, nil
+	case "say", "ask":
+		text := commandTailAfterNFields(raw, 3)
+		if text == "" {
+			return nil, true, statusError("strategy chat message is required")
+		}
+		return &strategyCommand{Type: strategyCommandChatSay, Text: text}, true, nil
+	default:
+		return nil, true, statusError(strategyChatCommandUsage)
+	}
+}
+
+func commandTailAfterNFields(raw string, fields int) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || fields <= 0 {
+		return ""
+	}
+	start := 0
+	inToken := false
+	consumed := 0
+	for i, r := range raw {
+		isSpace := r == ' ' || r == '\t' || r == '\n' || r == '\r'
+		if !inToken {
+			if isSpace {
+				continue
+			}
+			inToken = true
+			consumed++
+			if consumed == fields+1 {
+				start = i
+			}
+			continue
+		}
+		if isSpace {
+			inToken = false
+		}
+	}
+	if consumed <= fields || start >= len(raw) {
+		return ""
+	}
+	return strings.TrimSpace(raw[start:])
 }

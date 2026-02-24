@@ -122,6 +122,10 @@ func (m Model) strategyRecommendationsPanelWidth() int {
 	return m.computeLayoutSpec().usableWidth
 }
 
+func (m Model) strategyChatPanelWidth() int {
+	return m.computeLayoutSpec().usableWidth
+}
+
 func (m *Model) syncWidgets() {
 	m.syncPositionsTable()
 	m.syncOrdersTable()
@@ -129,6 +133,7 @@ func (m *Model) syncWidgets() {
 	m.syncSystemTables()
 	m.syncEventsViewport()
 	m.syncStrategyViewport()
+	m.syncStrategyChatViewport()
 	m.syncHelpModel()
 }
 
@@ -484,6 +489,21 @@ func (m *Model) syncStrategyViewport() {
 		lines = []string{mutedStyle.Render("(none)")}
 	}
 	m.strategyViewport.SetContent(strings.Join(lines, "\n"))
+}
+
+func (m *Model) syncStrategyChatViewport() {
+	width := panelInnerWidth(m.strategyChatPanelWidth())
+	height := m.strategyChatPageSize()
+	if height < 1 {
+		height = 1
+	}
+	m.strategyChatViewport.Width = width
+	m.strategyChatViewport.Height = height
+	lines := m.buildStrategyChatBodyRows()
+	if len(lines) == 0 {
+		lines = []string{mutedStyle.Render("(none)")}
+	}
+	m.strategyChatViewport.SetContent(strings.Join(lines, "\n"))
 }
 
 func (m *Model) syncHelpModel() {

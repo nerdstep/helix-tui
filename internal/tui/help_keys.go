@@ -10,6 +10,7 @@ type dashboardKeyMap struct {
 	Sync         key.Binding
 	Watch        key.Binding
 	Strategy     key.Binding
+	Chat         key.Binding
 	Events       key.Binding
 	TabCmd       key.Binding
 	TabKey       key.Binding
@@ -54,12 +55,16 @@ func newDashboardKeyMap() dashboardKeyMap {
 			key.WithKeys("strategy run|status|approve|reject|archive"),
 			key.WithHelp("strategy ...", "strategy plans"),
 		),
+		Chat: key.NewBinding(
+			key.WithKeys("strategy chat ..."),
+			key.WithHelp("strategy chat ...", "chat thread"),
+		),
 		Events: key.NewBinding(
 			key.WithKeys("events up|down|top|tail [n]"),
 			key.WithHelp("events ...", "scroll events"),
 		),
 		TabCmd: key.NewBinding(
-			key.WithKeys("tab overview|strategy|system|logs"),
+			key.WithKeys("tab overview|strategy|chat|system|logs"),
 			key.WithHelp("tab <name>", "switch tab"),
 		),
 		TabKey: key.NewBinding(
@@ -116,7 +121,7 @@ func (k dashboardKeyMap) ShortHelp() []key.Binding {
 func (k dashboardKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Buy, k.Sell, k.Cancel, k.Flatten, k.Sync},
-		{k.Watch, k.Strategy, k.Events, k.TabCmd, k.QuitCmd},
+		{k.Watch, k.Strategy, k.Chat, k.Events, k.TabCmd},
 		{k.TabKey, k.ScrollUp, k.ScrollDn, k.PageUp, k.PageDn, k.Home, k.End, k.ToggleHelp, k.QuitKeyboard},
 	}
 }

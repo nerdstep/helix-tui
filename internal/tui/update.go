@@ -22,6 +22,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateStatus(msg)
 	case watchCommandResultMsg:
 		return m.updateWatchCommandResult(msg)
+	case strategyChatResultMsg:
+		return m.updateStrategyChatResult(msg)
 	case spinner.TickMsg:
 		return m.updateSpinner(msg)
 	case quitMsg:
@@ -74,6 +76,9 @@ func (m Model) updateRefresh(msg refreshMsg) (tea.Model, tea.Cmd) {
 		m.quoteErr[symbol] = errMsg
 	}
 	m.strategy = msg.strategy
+	if msg.strategy.Chat.ActiveThreadID != 0 {
+		m.strategyThreadID = msg.strategy.Chat.ActiveThreadID
+	}
 	if msg.strategyErr != nil {
 		m.strategyLoadError = msg.strategyErr.Error()
 	} else {
@@ -120,6 +125,26 @@ func (m Model) updateWatchCommandResult(msg watchCommandResultMsg) (tea.Model, t
 			m.engine.AllowSymbol(symbol)
 		}
 		m.syncWidgets()
+	}
+	m.status = msg.status
+	m.statusError = msg.isErr
+	cmds := []tea.Cmd{}
+	if msg.refresh {
+		cmds = append(cmds, m.refreshCmd())
+	}
+	if m.isLoading() {
+		cmds = append(cmds, m.spinner.Tick)
+	}
+	if len(cmds) == 0 {
+		return m, nil
+	}
+	return m, tea.Batch(cmds...)
+}
+
+func (m Model) updateStrategyChatResult(msg strategyChatResultMsg) (tea.Model, tea.Cmd) {
+	m.clearCommandLoading()
+	if msg.threadID != 0 {
+		m.strategyThreadID = msg.threadID
 	}
 	m.status = msg.status
 	m.statusError = msg.isErr
@@ -195,12 +220,20 @@ func (m *Model) scrollPageActiveTab(direction int) {
 		m.scrollStrategyPage(direction)
 		return
 	}
+	if m.activeTab == tabChat {
+		m.scrollStrategyChatPage(direction)
+		return
+	}
 	m.scrollEvents(direction * m.eventPageSize())
 }
 
 func (m *Model) scrollLineActiveTab(direction int) {
 	if m.activeTab == tabStrategy {
 		m.scrollStrategyLine(direction)
+		return
+	}
+	if m.activeTab == tabChat {
+		m.scrollStrategyChatLine(direction)
 		return
 	}
 	m.scrollEvents(direction)
@@ -211,6 +244,10 @@ func (m *Model) scrollTopActiveTab() {
 		m.setStrategyScrollTop()
 		return
 	}
+	if m.activeTab == tabChat {
+		m.setStrategyChatScrollTop()
+		return
+	}
 	m.setEventScroll(m.maxEventScroll())
 	m.status = m.eventScrollStatus()
 	m.statusError = false
@@ -219,6 +256,10 @@ func (m *Model) scrollTopActiveTab() {
 func (m *Model) scrollBottomActiveTab() {
 	if m.activeTab == tabStrategy {
 		m.setStrategyScrollBottom()
+		return
+	}
+	if m.activeTab == tabChat {
+		m.setStrategyChatScrollBottom()
 		return
 	}
 	m.setEventScroll(0)

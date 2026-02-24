@@ -11,6 +11,8 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/responses"
+	"github.com/openai/openai-go/shared"
 
 	"helix-tui/internal/domain"
 	"helix-tui/internal/symbols"
@@ -688,24 +690,34 @@ func newOpenAIChatClient(apiKey, baseURL string) *openAIChatClient {
 }
 
 func (c *openAIChatClient) Complete(ctx context.Context, model, systemPrompt, userPrompt string) (string, error) {
-	completion, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-		Model: openai.ChatModel(model),
-		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
-			OfJSONObject: &openai.ResponseFormatJSONObjectParam{},
+	instructions := strings.TrimSpace(systemPrompt)
+	if instructions != "" {
+		instructions += "\n"
+	}
+	instructions += forcedJSONInstruction
+
+	response, err := c.client.Responses.New(ctx, responses.ResponseNewParams{
+		Model:        shared.ResponsesModel(model),
+		Instructions: openai.String(instructions),
+		Input: responses.ResponseNewParamsInputUnion{
+			OfString: openai.String("JSON input:\n" + userPrompt),
 		},
-		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage(systemPrompt),
-			openai.SystemMessage(forcedJSONInstruction),
-			openai.UserMessage("JSON input:\n" + userPrompt),
+		Text: responses.ResponseTextConfigParam{
+			Format: responses.ResponseFormatTextConfigUnionParam{
+				OfJSONObject: &shared.ResponseFormatJSONObjectParam{},
+			},
 		},
 	})
 	if err != nil {
 		return "", fmt.Errorf("openai request failed: %w", err)
 	}
-	if len(completion.Choices) == 0 {
-		return "", fmt.Errorf("openai response has no choices")
+	if response == nil {
+		return "", fmt.Errorf("openai response is nil")
 	}
-	content := strings.TrimSpace(completion.Choices[0].Message.Content)
+	if msg := strings.TrimSpace(response.Error.Message); msg != "" {
+		return "", fmt.Errorf("openai response failed: %s", msg)
+	}
+	content := strings.TrimSpace(response.OutputText())
 	if content == "" {
 		return "", fmt.Errorf("openai response is empty")
 	}

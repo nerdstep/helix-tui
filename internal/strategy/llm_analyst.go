@@ -82,6 +82,7 @@ type llmStrategyInput struct {
 	GeneratedAt        string                `json:"generated_at"`
 	MaxRecommendations int                   `json:"max_recommendations"`
 	Watchlist          []string              `json:"watchlist"`
+	Steering           *llmSteeringContext   `json:"steering,omitempty"`
 	CurrentPlan        *llmCurrentPlan       `json:"current_plan,omitempty"`
 	Account            domain.Account        `json:"account"`
 	Positions          []domain.Position     `json:"positions"`
@@ -127,6 +128,20 @@ type llmCurrentPlan struct {
 	Recommendations []llmStrategyRecommendation `json:"recommendations"`
 }
 
+type llmSteeringContext struct {
+	Version             uint64   `json:"version"`
+	Source              string   `json:"source"`
+	RiskProfile         string   `json:"risk_profile"`
+	MinConfidence       float64  `json:"min_confidence"`
+	MaxPositionNotional float64  `json:"max_position_notional"`
+	Horizon             string   `json:"horizon"`
+	Objective           string   `json:"objective"`
+	PreferredSymbols    []string `json:"preferred_symbols"`
+	ExcludedSymbols     []string `json:"excluded_symbols"`
+	Hash                string   `json:"hash"`
+	UpdatedAt           string   `json:"updated_at,omitempty"`
+}
+
 func (a *LLMAnalyst) BuildPlan(ctx context.Context, input Input) (Plan, error) {
 	if a == nil {
 		return Plan{}, fmt.Errorf("strategy analyst is not initialized")
@@ -135,6 +150,7 @@ func (a *LLMAnalyst) BuildPlan(ctx context.Context, input Input) (Plan, error) {
 		GeneratedAt:        input.GeneratedAt.UTC().Format(time.RFC3339),
 		MaxRecommendations: minInt(a.maxRecommendations, maxInt(1, input.MaxRecommendations)),
 		Watchlist:          symbols.Normalize(input.Watchlist),
+		Steering:           toLLMSteeringContext(input.Steering),
 		CurrentPlan:        toLLMCurrentPlan(input.CurrentPlan),
 		Account:            input.Snapshot.Account,
 		Positions:          input.Snapshot.Positions,
@@ -231,6 +247,28 @@ func (a *LLMAnalyst) BuildPlan(ctx context.Context, input Input) (Plan, error) {
 	return out, nil
 }
 
+func toLLMSteeringContext(steering *SteeringContext) *llmSteeringContext {
+	if steering == nil {
+		return nil
+	}
+	out := &llmSteeringContext{
+		Version:             steering.Version,
+		Source:              strings.TrimSpace(steering.Source),
+		RiskProfile:         strings.TrimSpace(steering.RiskProfile),
+		MinConfidence:       clamp01(steering.MinConfidence),
+		MaxPositionNotional: maxFloat(steering.MaxPositionNotional, 0),
+		Horizon:             strings.TrimSpace(steering.Horizon),
+		Objective:           strings.TrimSpace(steering.Objective),
+		PreferredSymbols:    symbols.Normalize(steering.PreferredSymbols),
+		ExcludedSymbols:     symbols.Normalize(steering.ExcludedSymbols),
+		Hash:                strings.TrimSpace(steering.Hash),
+	}
+	if !steering.UpdatedAt.IsZero() {
+		out.UpdatedAt = steering.UpdatedAt.UTC().Format(time.RFC3339)
+	}
+	return out
+}
+
 func toLLMCurrentPlan(current *CurrentPlan) *llmCurrentPlan {
 	if current == nil {
 		return nil
@@ -286,6 +324,13 @@ func minInt(a, b int) int {
 }
 
 func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func maxFloat(a, b float64) float64 {
 	if a > b {
 		return a
 	}

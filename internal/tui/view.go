@@ -62,6 +62,9 @@ func (m Model) renderTabContent(vm viewModel, spec layoutSpec, gap int) string {
 			renderPanel(vm.strategyPicks, spec.usableWidth),
 		)
 	}
+	if m.activeTab == tabChat {
+		return renderPanel(vm.strategyChat, spec.usableWidth)
+	}
 	if m.activeTab == tabSystem {
 		if spec.twoColumn {
 			row1 := renderTwoColumnPanels(vm.systemRuntime, vm.systemAgent, spec.leftWidth, spec.rightWidth, spec.usableWidth, gap)

@@ -58,6 +58,7 @@ type uiTab string
 const (
 	tabOverview uiTab = "overview"
 	tabLogs     uiTab = "logs"
+	tabChat     uiTab = "chat"
 	tabSystem   uiTab = "system"
 	tabStrategy uiTab = "strategy"
 	minUIWidth        = 60
@@ -78,51 +79,55 @@ type refreshMsg struct {
 type quitMsg struct{}
 
 type Model struct {
-	engine             *engine.Engine
-	snapshot           domain.Snapshot
-	watchlist          []string
-	onWatchlistChanged func([]string) error
-	onWatchlistSync    func([]string) ([]string, error)
-	onStrategyRun      func() error
-	onStrategyApprove  func(uint) error
-	onStrategyReject   func(uint) error
-	onStrategyArchive  func(uint) error
-	onEquityPoint      func(EquityPoint) error
-	onStrategyLoad     func() (StrategySnapshot, error)
-	eventScroll        int
-	eventLines         []string
-	eventLinesReady    bool
-	eventLinesEvents   int
-	eventsViewport     viewport.Model
-	strategyViewport   viewport.Model
-	positionsTable     table.Model
-	ordersTable        table.Model
-	watchlistTable     table.Model
-	systemRuntimeTable table.Model
-	systemAgentTable   table.Model
-	systemPersistTable table.Model
-	helpModel          help.Model
-	helpKeys           dashboardKeyMap
-	showFullHelp       bool
-	quotes             map[string]domain.Quote
-	quoteSeenAt        map[string]time.Time
-	prevLast           map[string]float64
-	quoteErr           map[string]string
-	equityHistory      []EquityPoint
-	equityMaxPoints    int
-	strategy           StrategySnapshot
-	strategyLoadError  string
-	commandBusy        bool
-	commandBusyLabel   string
-	strategyBusy       bool
-	strategyBusySince  time.Time
-	spinner            spinner.Model
-	input              string
-	status             string
-	statusError        bool
-	activeTab          uiTab
-	width              int
-	height             int
+	engine               *engine.Engine
+	snapshot             domain.Snapshot
+	watchlist            []string
+	onWatchlistChanged   func([]string) error
+	onWatchlistSync      func([]string) ([]string, error)
+	onStrategyRun        func() error
+	onStrategyApprove    func(uint) error
+	onStrategyReject     func(uint) error
+	onStrategyArchive    func(uint) error
+	onStrategyChatCreate func(string) (uint, error)
+	onStrategyChatSend   func(uint, string) error
+	onEquityPoint        func(EquityPoint) error
+	onStrategyLoad       func(uint) (StrategySnapshot, error)
+	eventScroll          int
+	eventLines           []string
+	eventLinesReady      bool
+	eventLinesEvents     int
+	eventsViewport       viewport.Model
+	strategyViewport     viewport.Model
+	strategyChatViewport viewport.Model
+	positionsTable       table.Model
+	ordersTable          table.Model
+	watchlistTable       table.Model
+	systemRuntimeTable   table.Model
+	systemAgentTable     table.Model
+	systemPersistTable   table.Model
+	helpModel            help.Model
+	helpKeys             dashboardKeyMap
+	showFullHelp         bool
+	quotes               map[string]domain.Quote
+	quoteSeenAt          map[string]time.Time
+	prevLast             map[string]float64
+	quoteErr             map[string]string
+	equityHistory        []EquityPoint
+	equityMaxPoints      int
+	strategy             StrategySnapshot
+	strategyThreadID     uint
+	strategyLoadError    string
+	commandBusy          bool
+	commandBusyLabel     string
+	strategyBusy         bool
+	strategyBusySince    time.Time
+	spinner              spinner.Model
+	input                string
+	status               string
+	statusError          bool
+	activeTab            uiTab
+	width                int
+	height               int
 }
 
 func New(engine *engine.Engine, watchlist ...string) Model {
@@ -144,6 +149,7 @@ func New(engine *engine.Engine, watchlist ...string) Model {
 	}
 	m.eventsViewport = viewport.New(1, m.eventPageSize())
 	m.strategyViewport = viewport.New(1, m.strategyPageSize())
+	m.strategyChatViewport = viewport.New(1, m.strategyChatPageSize())
 	m.positionsTable = newPositionsTable()
 	m.ordersTable = newOrdersTable()
 	m.watchlistTable = newWatchlistTable()
@@ -186,6 +192,16 @@ func (m Model) WithStrategyArchiveHandler(fn func(uint) error) Model {
 	return m
 }
 
+func (m Model) WithStrategyChatCreateHandler(fn func(string) (uint, error)) Model {
+	m.onStrategyChatCreate = fn
+	return m
+}
+
+func (m Model) WithStrategyChatSendHandler(fn func(uint, string) error) Model {
+	m.onStrategyChatSend = fn
+	return m
+}
+
 func (m Model) WithEquityHistory(points []EquityPoint, appendFn func(EquityPoint) error) Model {
 	if points != nil {
 		m.equityHistory = append([]EquityPoint{}, points...)
@@ -197,7 +213,7 @@ func (m Model) WithEquityHistory(points []EquityPoint, appendFn func(EquityPoint
 	return m
 }
 
-func (m Model) WithStrategyLoader(fn func() (StrategySnapshot, error)) Model {
+func (m Model) WithStrategyLoader(fn func(uint) (StrategySnapshot, error)) Model {
 	m.onStrategyLoad = fn
 	return m
 }
@@ -233,7 +249,7 @@ func (m Model) refreshCmd() tea.Cmd {
 		var strategySnapshot StrategySnapshot
 		var strategyErr error
 		if m.onStrategyLoad != nil {
-			strategySnapshot, strategyErr = m.onStrategyLoad()
+			strategySnapshot, strategyErr = m.onStrategyLoad(m.strategyThreadID)
 		}
 		return refreshMsg{
 			snapshot:    m.engine.Snapshot(),

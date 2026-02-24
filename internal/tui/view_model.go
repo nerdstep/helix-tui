@@ -26,6 +26,7 @@ type viewModel struct {
 	strategyHealth    []string
 	strategyPicks     []string
 	strategyRecent    []string
+	strategyChat      []string
 	events            []string
 	status            string
 	statusError       bool
@@ -49,6 +50,7 @@ func (m Model) buildViewModel() viewModel {
 		strategyHealth:    m.buildStrategyHealthRows(),
 		strategyPicks:     m.buildStrategyRecommendationsRows(),
 		strategyRecent:    m.buildStrategyRecentRows(),
+		strategyChat:      m.buildStrategyChatRows(),
 		events:            m.buildEventRows(),
 		status:            m.status,
 		statusError:       m.statusError,
@@ -75,6 +77,29 @@ func (m Model) buildStrategyOverviewRows() []string {
 	if strings.TrimSpace(active.Summary) != "" {
 		rows = append(rows, "summary: "+active.Summary)
 	}
+	rows = append(rows, "")
+	rows = append(rows, headerLabelStyle.Render("Steering Context"))
+	steering := m.strategy.Steering
+	if steering == nil {
+		rows = append(rows, mutedStyle.Render("(none)"))
+		return rows
+	}
+	rows = append(rows, fmt.Sprintf("version=%d source=%s profile=%s", steering.Version, nonEmpty(steering.Source, "n/a"), nonEmpty(steering.RiskProfile, "n/a")))
+	rows = append(rows, fmt.Sprintf("min_conf=%.2f max_pos_notional=%.2f horizon=%s", steering.MinConfidence, steering.MaxPositionNotional, nonEmpty(steering.Horizon, "n/a")))
+	if len(steering.PreferredSymbols) > 0 {
+		rows = append(rows, "preferred: "+strings.Join(steering.PreferredSymbols, ","))
+	}
+	if len(steering.ExcludedSymbols) > 0 {
+		rows = append(rows, "excluded: "+strings.Join(steering.ExcludedSymbols, ","))
+	}
+	if strings.TrimSpace(steering.Objective) != "" {
+		rows = append(rows, "objective: "+strings.TrimSpace(steering.Objective))
+	}
+	hash := strings.TrimSpace(steering.Hash)
+	if hash == "" {
+		hash = "n/a"
+	}
+	rows = append(rows, fmt.Sprintf("hash=%s updated=%s", hash, formatLocalClock(steering.UpdatedAt)))
 	return rows
 }
 
@@ -97,24 +122,89 @@ func (m Model) buildStrategyRecommendationsRows() []string {
 }
 
 func (m Model) buildStrategyRecommendationBodyRows() []string {
+	rows := make([]string, 0)
 	active := m.strategy.Active
 	if active == nil || len(active.Recommendations) == 0 {
-		return []string{mutedStyle.Render("(none)")}
+		rows = append(rows, mutedStyle.Render("Recommendations: (none)"))
+	} else {
+		rows = append(rows, headerLabelStyle.Render("Recommendations"))
+		for _, rec := range active.Recommendations {
+			head := fmt.Sprintf("%d) %s %-4s conf=%.2f max_notional=%.2f", rec.Priority, rec.Symbol, strings.ToUpper(rec.Bias), rec.Confidence, rec.MaxNotional)
+			rows = append(rows, head)
+			if rec.EntryMin > 0 || rec.EntryMax > 0 {
+				rows = append(rows, fmt.Sprintf("entry=%.2f-%.2f target=%.2f stop=%.2f", rec.EntryMin, rec.EntryMax, rec.TargetPrice, rec.StopPrice))
+			}
+			if strings.TrimSpace(rec.Thesis) != "" {
+				rows = append(rows, "thesis: "+rec.Thesis)
+			}
+			if strings.TrimSpace(rec.Invalidation) != "" {
+				rows = append(rows, "invalid: "+rec.Invalidation)
+			}
+		}
+	}
+	return rows
+}
+
+func (m Model) buildStrategyChatRows() []string {
+	rows := []string{panelTitleStyle.Render("Copilot Chat")}
+	view := strings.TrimRight(m.strategyChatViewport.View(), "\n")
+	if view == "" {
+		view = strings.Join(m.buildStrategyChatBodyRows(), "\n")
+	}
+	if strings.TrimSpace(view) == "" {
+		rows = append(rows, mutedStyle.Render("(none)"))
+		return rows
+	}
+	rows = append(rows, strings.Split(view, "\n")...)
+	start, end, total := m.strategyChatWindow()
+	if total > maxInt(1, m.strategyChatViewport.VisibleLineCount()) {
+		rows = append(rows, mutedStyle.Render(fmt.Sprintf("showing %d-%d of %d (Up/Down/PgUp/PgDn/Home/End)", start+1, end, total)))
+	}
+	return rows
+}
+
+func (m Model) buildStrategyChatBodyRows() []string {
+	rows := make([]string, 0)
+	thread := m.currentStrategyChatThread()
+	if thread == nil {
+		rows = append(rows, mutedStyle.Render("(no thread selected)"))
+		rows = append(rows, mutedStyle.Render("Use: strategy chat new <title>"))
+		return rows
+	}
+	rows = append(rows, fmt.Sprintf("thread #%d: %s", thread.ID, thread.Title))
+	rows = append(rows, mutedStyle.Render("cmd: strategy chat say <message>"))
+	rows = append(rows, "")
+
+	if len(m.strategy.Chat.Messages) == 0 {
+		rows = append(rows, mutedStyle.Render("(no messages)"))
+		return rows
 	}
 
-	rows := make([]string, 0, len(active.Recommendations)*4)
-	for _, rec := range active.Recommendations {
-		head := fmt.Sprintf("%d) %s %-4s conf=%.2f max_notional=%.2f", rec.Priority, rec.Symbol, strings.ToUpper(rec.Bias), rec.Confidence, rec.MaxNotional)
-		rows = append(rows, head)
-		if rec.EntryMin > 0 || rec.EntryMax > 0 {
-			rows = append(rows, fmt.Sprintf("entry=%.2f-%.2f target=%.2f stop=%.2f", rec.EntryMin, rec.EntryMax, rec.TargetPrice, rec.StopPrice))
+	messageCount := 0
+	for _, msg := range m.strategy.Chat.Messages {
+		if msg.ThreadID != thread.ID {
+			continue
 		}
-		if strings.TrimSpace(rec.Thesis) != "" {
-			rows = append(rows, "thesis: "+rec.Thesis)
+		messageCount++
+		role := strings.ToLower(strings.TrimSpace(msg.Role))
+		roleLabel := strings.ToUpper(role)
+		roleStyle := mutedStyle
+		switch role {
+		case "user":
+			roleStyle = headerValueStyle
+		case "assistant":
+			roleStyle = positiveStyle
+		case "system":
+			roleStyle = warnStyle
 		}
-		if strings.TrimSpace(rec.Invalidation) != "" {
-			rows = append(rows, "invalid: "+rec.Invalidation)
+		timeLabel := msg.CreatedAt.Local().Format("01-02 15:04")
+		rows = append(rows, fmt.Sprintf("%s %s", mutedStyle.Render(timeLabel), roleStyle.Render(roleLabel)))
+		for _, wrapped := range wrapPlainTextRows(strings.TrimSpace(msg.Content), maxInt(24, panelInnerWidth(m.strategyChatPanelWidth())-2)) {
+			rows = append(rows, "  "+wrapped)
 		}
+	}
+	if messageCount == 0 {
+		rows = append(rows, mutedStyle.Render("(no messages in selected thread)"))
 	}
 	return rows
 }
@@ -699,6 +789,67 @@ func replaceNonSpaceTokens(s string, f func(string) string) string {
 		i = j
 	}
 	return out.String()
+}
+
+func wrapPlainTextRows(text string, width int) []string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return []string{""}
+	}
+	if width <= 8 {
+		return []string{text}
+	}
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return []string{""}
+	}
+	lines := make([]string, 0, 2)
+	current := make([]string, 0, len(words))
+	currentWidth := 0
+	flush := func() {
+		if len(current) == 0 {
+			return
+		}
+		lines = append(lines, strings.Join(current, " "))
+		current = current[:0]
+		currentWidth = 0
+	}
+	for _, word := range words {
+		wordWidth := runewidth.StringWidth(word)
+		if wordWidth <= 0 {
+			wordWidth = len(word)
+		}
+		sep := 0
+		if len(current) > 0 {
+			sep = 1
+		}
+		if len(current) > 0 && currentWidth+sep+wordWidth > width {
+			flush()
+		}
+		if len(current) == 0 && wordWidth > width {
+			remaining := word
+			for runewidth.StringWidth(remaining) > width {
+				part := runewidth.Truncate(remaining, width, "")
+				if strings.TrimSpace(part) == "" {
+					break
+				}
+				lines = append(lines, part)
+				remaining = strings.TrimPrefix(remaining, part)
+			}
+			if strings.TrimSpace(remaining) != "" {
+				current = append(current, remaining)
+				currentWidth = runewidth.StringWidth(remaining)
+			}
+			continue
+		}
+		current = append(current, word)
+		currentWidth += sep + wordWidth
+	}
+	flush()
+	if len(lines) == 0 {
+		return []string{text}
+	}
+	return lines
 }
 
 func (m Model) buildFooter() string {

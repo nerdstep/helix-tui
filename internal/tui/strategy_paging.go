@@ -28,6 +28,24 @@ func (m Model) strategyPageSize() int {
 	return maxInt(3, inner)
 }
 
+func (m Model) strategyChatPageSize() int {
+	if m.activeTab != tabChat || m.height <= 0 {
+		return 8
+	}
+	return maxInt(3, m.height-m.strategyChatReservedHeight())
+}
+
+func (m Model) strategyChatReservedHeight() int {
+	headerHeight := maxInt(1, lipgloss.Height(m.buildHeader()))
+	tabHeight := maxInt(1, lipgloss.Height(m.renderTabBar(m.computeLayoutSpec().usableWidth)))
+	statusInputHeight := 2
+	footerHeight := maxInt(1, m.footerHeight())
+	// Panel title + viewport hint + panel borders.
+	panelOverhead := panelStyle.GetVerticalFrameSize() + 2
+	safetyPadding := 1
+	return headerHeight + tabHeight + statusInputHeight + footerHeight + panelOverhead + safetyPadding
+}
+
 func (m Model) strategyTwoColumnOtherPanelsHeight(spec layoutSpec) int {
 	overview := lipglossHeightForPanel(m.buildStrategyOverviewRows(), spec.usableWidth)
 	health := lipglossHeightForPanel(m.buildStrategyHealthRows(), spec.rightWidth)
@@ -88,6 +106,44 @@ func (m *Model) setStrategyScrollBottom() {
 	m.statusError = false
 }
 
+func (m *Model) scrollStrategyChatLine(delta int) {
+	if delta == 0 {
+		return
+	}
+	if delta > 0 {
+		m.strategyChatViewport.LineUp(delta)
+	} else {
+		m.strategyChatViewport.LineDown(-delta)
+	}
+	m.status = m.strategyChatScrollStatus()
+	m.statusError = false
+}
+
+func (m *Model) scrollStrategyChatPage(delta int) {
+	if delta == 0 {
+		return
+	}
+	if delta > 0 {
+		m.strategyChatViewport.ViewUp()
+	} else {
+		m.strategyChatViewport.ViewDown()
+	}
+	m.status = m.strategyChatScrollStatus()
+	m.statusError = false
+}
+
+func (m *Model) setStrategyChatScrollTop() {
+	m.strategyChatViewport.GotoTop()
+	m.status = m.strategyChatScrollStatus()
+	m.statusError = false
+}
+
+func (m *Model) setStrategyChatScrollBottom() {
+	m.strategyChatViewport.GotoBottom()
+	m.status = m.strategyChatScrollStatus()
+	m.statusError = false
+}
+
 func (m Model) strategyWindow() (start, end, total int) {
 	total = m.strategyViewport.TotalLineCount()
 	if total == 0 {
@@ -111,6 +167,31 @@ func (m Model) strategyScrollStatus() string {
 		return "strategy: no recommendations"
 	}
 	return fmt.Sprintf("strategy: showing %d-%d of %d", start+1, end, total)
+}
+
+func (m Model) strategyChatWindow() (start, end, total int) {
+	total = m.strategyChatViewport.TotalLineCount()
+	if total == 0 {
+		return 0, 0, 0
+	}
+	start = m.strategyChatViewport.YOffset
+	if start < 0 {
+		start = 0
+	}
+	visible := maxInt(1, m.strategyChatViewport.VisibleLineCount())
+	end = start + visible
+	if end > total {
+		end = total
+	}
+	return start, end, total
+}
+
+func (m Model) strategyChatScrollStatus() string {
+	start, end, total := m.strategyChatWindow()
+	if total == 0 {
+		return "chat: no messages"
+	}
+	return fmt.Sprintf("chat: showing %d-%d of %d", start+1, end, total)
 }
 
 func lipglossHeightForPanel(lines []string, width int) int {

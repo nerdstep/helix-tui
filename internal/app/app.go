@@ -76,6 +76,7 @@ type System struct {
 	Engine             *engine.Engine
 	Runner             *autonomy.Runner
 	StrategyRunner     *strategy.Runner
+	StrategyCopilot    strategy.Copilot
 	Watchlist          []string
 	PullWatchlist      func() ([]string, error)
 	SyncWatchlist      func([]string) error
@@ -182,6 +183,11 @@ func NewSystem(cfg Config) (*System, error) {
 		system.StrategyRunner = strategyRunner
 		e.AddEvent("strategy_mode", fmt.Sprintf("enabled=true interval=%s model=%s", cfg.StrategyInterval, strings.TrimSpace(cfg.StrategyModel)))
 	}
+	strategyCopilot, err := buildStrategyCopilot(cfg)
+	if err != nil {
+		return nil, err
+	}
+	system.StrategyCopilot = strategyCopilot
 	return system, nil
 }
 

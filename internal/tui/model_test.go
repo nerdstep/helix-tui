@@ -181,7 +181,7 @@ func TestRefreshCmdAndView(t *testing.T) {
 	if !strings.Contains(view, "Cash:") || !strings.Contains(view, "? toggle help") {
 		t.Fatalf("unexpected view output: %q", view)
 	}
-	if !strings.Contains(view, "Overview") || !strings.Contains(view, "Logs") || !strings.Contains(view, "Strategy") || !strings.Contains(view, "System") {
+	if !strings.Contains(view, "Overview") || !strings.Contains(view, "Logs") || !strings.Contains(view, "Strategy") || !strings.Contains(view, "Chat") || !strings.Contains(view, "System") {
 		t.Fatalf("expected tabs in view output: %q", view)
 	}
 	if !strings.Contains(view, "Watchlist") || !strings.Contains(view, "AAPL") {
@@ -446,6 +446,58 @@ func TestStrategyKeyScroll(t *testing.T) {
 	}
 }
 
+func TestStrategyChatKeyScroll(t *testing.T) {
+	m := New(newTestEngine())
+	m.width = 120
+	m.height = 22
+	m.activeTab = tabChat
+	msgs := make([]StrategyChatMessageView, 0, 24)
+	for i := 0; i < 24; i++ {
+		msgs = append(msgs, StrategyChatMessageView{
+			ThreadID:  1,
+			Role:      "assistant",
+			Content:   "message line " + strconv.Itoa(i) + " with extra content to wrap",
+			CreatedAt: time.Now().UTC().Add(time.Duration(i) * time.Minute),
+		})
+	}
+	m.strategy = StrategySnapshot{
+		Chat: StrategyChatView{
+			ActiveThreadID: 1,
+			Threads: []StrategyChatThreadView{
+				{ID: 1, Title: "Main"},
+			},
+			Messages: msgs,
+		},
+	}
+	m.strategyThreadID = 1
+	m.syncWidgets()
+	if m.strategyChatViewport.TotalLineCount() <= m.strategyChatViewport.VisibleLineCount() {
+		t.Fatalf("expected overflow for strategy chat viewport")
+	}
+
+	before := m.strategyChatViewport.YOffset
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m1 := model.(Model)
+	if m1.strategyChatViewport.YOffset <= before {
+		t.Fatalf("expected chat down key to scroll viewport")
+	}
+	if !strings.Contains(m1.status, "chat: showing") {
+		t.Fatalf("expected chat status update, got %q", m1.status)
+	}
+
+	model, _ = m1.Update(tea.KeyMsg{Type: tea.KeyHome})
+	m2 := model.(Model)
+	if m2.strategyChatViewport.YOffset != 0 {
+		t.Fatalf("expected chat home key to jump to top")
+	}
+
+	model, _ = m2.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	m3 := model.(Model)
+	if m3.strategyChatViewport.YOffset <= 0 {
+		t.Fatalf("expected chat end key to jump to bottom")
+	}
+}
+
 func TestHelpToggleKey(t *testing.T) {
 	m := New(newTestEngine())
 	m.width = 140
@@ -494,38 +546,55 @@ func TestTabSwitching(t *testing.T) {
 
 	model, _ = m1.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m2 := model.(Model)
-	if m2.activeTab != tabSystem {
-		t.Fatalf("expected active tab system, got %s", m2.activeTab)
+	if m2.activeTab != tabChat {
+		t.Fatalf("expected active tab chat, got %s", m2.activeTab)
 	}
 
 	model, _ = m2.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m3 := model.(Model)
-	if m3.activeTab != tabLogs {
-		t.Fatalf("expected active tab logs, got %s", m3.activeTab)
-	}
-	logsView := m3.View()
-	if !strings.Contains(logsView, "Recent Events") {
-		t.Fatalf("expected events on logs tab: %q", logsView)
+	if m3.activeTab != tabSystem {
+		t.Fatalf("expected active tab system, got %s", m3.activeTab)
 	}
 
 	model, _ = m3.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m4 := model.(Model)
-	if m4.activeTab != tabOverview {
-		t.Fatalf("expected active tab overview, got %s", m4.activeTab)
+	if m4.activeTab != tabLogs {
+		t.Fatalf("expected active tab logs, got %s", m4.activeTab)
+	}
+	logsView := m4.View()
+	if !strings.Contains(logsView, "Recent Events") {
+		t.Fatalf("expected events on logs tab: %q", logsView)
 	}
 
-	m4.input = "tab strategy"
-	model, _ = m4.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model, _ = m4.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m5 := model.(Model)
-	strategyView := m5.View()
+	if m5.activeTab != tabOverview {
+		t.Fatalf("expected active tab overview, got %s", m5.activeTab)
+	}
+
+	m5.input = "tab strategy"
+	model, _ = m5.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m6 := model.(Model)
+	strategyView := m6.View()
 	if !strings.Contains(strategyView, "Strategy Plan") || !strings.Contains(strategyView, "Recent Plans") || !strings.Contains(strategyView, "Health") {
 		t.Fatalf("expected strategy panel on strategy tab: %q", strategyView)
 	}
+	if strings.Contains(strategyView, "Copilot Chat") {
+		t.Fatalf("strategy tab should not render chat panel: %q", strategyView)
+	}
 
-	m5.input = "tab system"
-	model, _ = m5.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m6 := model.(Model)
-	systemView := m6.View()
+	m6.input = "tab chat"
+	model, _ = m6.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m7 := model.(Model)
+	chatView := m7.View()
+	if !strings.Contains(chatView, "Copilot Chat") {
+		t.Fatalf("expected chat panel on chat tab: %q", chatView)
+	}
+
+	m7.input = "tab system"
+	model, _ = m7.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m8 := model.(Model)
+	systemView := m8.View()
 	if !strings.Contains(systemView, "Runtime") || !strings.Contains(systemView, "watchlist") {
 		t.Fatalf("expected system panel on system tab: %q", systemView)
 	}
@@ -548,6 +617,23 @@ func TestTabCommandTargetsStrategy(t *testing.T) {
 	view := m1.View()
 	if !strings.Contains(view, "Strategy Plan") {
 		t.Fatalf("expected strategy tab content, got %q", view)
+	}
+	if strings.Contains(view, "Copilot Chat") {
+		t.Fatalf("strategy tab should not include chat panel, got %q", view)
+	}
+}
+
+func TestTabCommandTargetsChat(t *testing.T) {
+	m := New(newTestEngine())
+	m.input = "tab chat"
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m1 := model.(Model)
+	if m1.activeTab != tabChat {
+		t.Fatalf("expected active tab chat, got %s", m1.activeTab)
+	}
+	view := m1.View()
+	if !strings.Contains(view, "Copilot Chat") {
+		t.Fatalf("expected chat tab content, got %q", view)
 	}
 }
 
@@ -670,6 +756,90 @@ func TestStrategyStatusControlsInvokeHandlers(t *testing.T) {
 	}
 	if m3.statusError || !strings.Contains(m3.status, "strategy archive #13") {
 		t.Fatalf("unexpected archive status: %q", m3.status)
+	}
+}
+
+func TestStrategyChatCommands(t *testing.T) {
+	var createdTitle string
+	var sentThreadID uint
+	var sentMessage string
+
+	m := New(newTestEngine()).
+		WithStrategyChatCreateHandler(func(title string) (uint, error) {
+			createdTitle = title
+			return 9, nil
+		}).
+		WithStrategyChatSendHandler(func(threadID uint, message string) error {
+			sentThreadID = threadID
+			sentMessage = message
+			return nil
+		})
+	m.strategy = StrategySnapshot{
+		Chat: StrategyChatView{
+			ActiveThreadID: 2,
+			Threads: []StrategyChatThreadView{
+				{ID: 2, Title: "Main"},
+				{ID: 3, Title: "Swing"},
+			},
+			Messages: []StrategyChatMessageView{
+				{ID: 1, ThreadID: 2, Role: "user", Content: "hello"},
+			},
+		},
+	}
+	m.strategyThreadID = 2
+
+	m.input = "strategy chat status"
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m1 := model.(Model)
+	if m1.statusError || !strings.Contains(m1.status, "thread #2") {
+		t.Fatalf("unexpected strategy chat status output: %q", m1.status)
+	}
+
+	m1.input = "strategy chat list"
+	model, _ = m1.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2 := model.(Model)
+	if m2.statusError || !strings.Contains(m2.status, "#2 Main") {
+		t.Fatalf("unexpected strategy chat list output: %q", m2.status)
+	}
+
+	m2.input = "strategy chat use 3"
+	model, cmd := m2.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m3 := model.(Model)
+	if cmd == nil {
+		t.Fatalf("expected refresh command when selecting strategy chat thread")
+	}
+	if m3.strategyThreadID != 3 {
+		t.Fatalf("expected selected thread id 3, got %d", m3.strategyThreadID)
+	}
+
+	m3.input = "strategy chat say rotate into energy"
+	model, cmd = m3.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m4 := model.(Model)
+	if cmd == nil {
+		t.Fatalf("expected async command for strategy chat say")
+	}
+	model, _ = m4.Update(cmd())
+	m5 := model.(Model)
+	if m5.statusError {
+		t.Fatalf("unexpected strategy chat say error: %q", m5.status)
+	}
+	if sentThreadID != 3 || sentMessage != "rotate into energy" {
+		t.Fatalf("unexpected strategy chat send inputs: thread=%d message=%q", sentThreadID, sentMessage)
+	}
+
+	m5.input = "strategy chat new Swing Plan"
+	model, cmd = m5.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m6 := model.(Model)
+	if cmd == nil {
+		t.Fatalf("expected async command for strategy chat new")
+	}
+	model, _ = m6.Update(cmd())
+	m7 := model.(Model)
+	if createdTitle != "Swing Plan" {
+		t.Fatalf("unexpected created title: %q", createdTitle)
+	}
+	if m7.strategyThreadID != 9 {
+		t.Fatalf("expected selected thread id 9 after create, got %d", m7.strategyThreadID)
 	}
 }
 

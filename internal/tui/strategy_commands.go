@@ -6,11 +6,14 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"helix-tui/internal/util"
 )
 
 const (
-	strategyCommandUsage     = "usage: strategy <run|status|approve <id>|reject <id>|archive <id>|chat ...>"
-	strategyChatCommandUsage = "usage: strategy chat <status|list|new <title>|use <id>|say <message>>"
+	strategyCommandUsage         = "usage: strategy <run|status|approve <id>|reject <id>|archive <id>|proposal ...|chat ...>"
+	strategyProposalCommandUsage = "usage: strategy proposal <status|list|apply <id>|reject <id>>"
+	strategyChatCommandUsage     = "usage: strategy chat <status|list|new <title>|use <id>|say <message>>"
 )
 
 type strategyChatResultMsg struct {
@@ -49,6 +52,14 @@ func (m *Model) handleStrategyCommand(raw string) (bool, tea.Cmd) {
 		return true, m.handleStrategyPlanStatus(cmd.PlanID, "reject", m.onStrategyReject)
 	case strategyCommandArchive:
 		return true, m.handleStrategyPlanStatus(cmd.PlanID, "archive", m.onStrategyArchive)
+	case strategyCommandProposalStatus:
+		return true, m.handleStrategyProposalStatus()
+	case strategyCommandProposalList:
+		return true, m.handleStrategyProposalList()
+	case strategyCommandProposalApply:
+		return true, m.handleStrategyProposalAction(cmd.PlanID, "apply", m.onStrategyProposalApply)
+	case strategyCommandProposalReject:
+		return true, m.handleStrategyProposalAction(cmd.PlanID, "reject", m.onStrategyProposalReject)
 	case strategyCommandChatStatus:
 		return true, m.handleStrategyChatStatus()
 	case strategyCommandChatList:
@@ -91,6 +102,92 @@ func (m *Model) handleStrategyPlanStatus(planID uint, verb string, fn func(uint)
 	}
 	m.setStatus(fmt.Sprintf("strategy %s #%d", verb, planID), false)
 	return m.refreshCmd()
+}
+
+func (m *Model) handleStrategyProposalStatus() tea.Cmd {
+	pending := m.pendingStrategyProposals()
+	if len(pending) == 0 {
+		m.setStatus("strategy proposals: no pending proposals", false)
+		return nil
+	}
+	proposal := pending[0]
+	m.setStatus(
+		fmt.Sprintf(
+			"strategy proposal: #%d kind=%s status=%s %s",
+			proposal.ID,
+			proposal.Kind,
+			proposal.Status,
+			summarizeStrategyProposal(proposal),
+		),
+		false,
+	)
+	return nil
+}
+
+func (m *Model) handleStrategyProposalList() tea.Cmd {
+	if len(m.strategy.Proposals) == 0 {
+		m.setStatus("strategy proposals: (none)", false)
+		return nil
+	}
+	parts := make([]string, 0, util.MinInt(8, len(m.strategy.Proposals)))
+	for _, proposal := range m.strategy.Proposals {
+		parts = append(parts, fmt.Sprintf("#%d %s %s", proposal.ID, proposal.Kind, proposal.Status))
+		if len(parts) >= 8 {
+			break
+		}
+	}
+	m.setStatus("strategy proposals: "+strings.Join(parts, " | "), false)
+	return nil
+}
+
+func (m *Model) handleStrategyProposalAction(proposalID uint, verb string, fn func(uint) error) tea.Cmd {
+	if fn == nil {
+		m.setStatus("strategy proposal controls are not configured", true)
+		return nil
+	}
+	if err := fn(proposalID); err != nil {
+		m.setStatus(fmt.Sprintf("strategy proposal %s failed for #%d: %v", verb, proposalID, err), true)
+		return nil
+	}
+	m.setStatus(fmt.Sprintf("strategy proposal %s #%d", verb, proposalID), false)
+	return m.refreshCmd()
+}
+
+func (m *Model) pendingStrategyProposals() []StrategyProposalView {
+	if len(m.strategy.Proposals) == 0 {
+		return nil
+	}
+	out := make([]StrategyProposalView, 0, len(m.strategy.Proposals))
+	for _, proposal := range m.strategy.Proposals {
+		if strings.EqualFold(strings.TrimSpace(proposal.Status), "pending") {
+			out = append(out, proposal)
+		}
+	}
+	return out
+}
+
+func summarizeStrategyProposal(proposal StrategyProposalView) string {
+	switch strings.ToLower(strings.TrimSpace(proposal.Kind)) {
+	case "watchlist":
+		add := "none"
+		remove := "none"
+		if len(proposal.AddSymbols) > 0 {
+			add = strings.Join(proposal.AddSymbols, ",")
+		}
+		if len(proposal.RemoveSymbols) > 0 {
+			remove = strings.Join(proposal.RemoveSymbols, ",")
+		}
+		return fmt.Sprintf("add=%s remove=%s", add, remove)
+	case "steering":
+		return fmt.Sprintf(
+			"profile=%s min_conf=%.2f max_notional=%.2f",
+			nonEmpty(proposal.RiskProfile, "n/a"),
+			proposal.MinConfidence,
+			proposal.MaxPositionNotional,
+		)
+	default:
+		return "details=n/a"
+	}
 }
 
 func (m *Model) handleStrategyChatStatus() tea.Cmd {

@@ -17,6 +17,7 @@ func runMigrations(db *gorm.DB) error {
 		&strategyChatMessageRecord{},
 		&strategySteeringStateRecord{},
 		&strategySteeringSymbolRecord{},
+		&strategyProposalRecord{},
 	); err != nil {
 		return fmt.Errorf("auto-migrate database schema: %w", err)
 	}

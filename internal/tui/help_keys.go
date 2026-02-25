@@ -52,7 +52,7 @@ func newDashboardKeyMap() dashboardKeyMap {
 			key.WithHelp("watch list|add|remove|sync", "watchlist"),
 		),
 		Strategy: key.NewBinding(
-			key.WithKeys("strategy run|status|approve|reject|archive"),
+			key.WithKeys("strategy run|status|approve|reject|archive|proposal"),
 			key.WithHelp("strategy ...", "strategy plans"),
 		),
 		Chat: key.NewBinding(

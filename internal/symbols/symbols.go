@@ -1,6 +1,9 @@
 package symbols
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 func Normalize(raw []string) []string {
 	if len(raw) == 0 {
@@ -42,5 +45,11 @@ func Merge(lists ...[]string) []string {
 			out = append(out, symbol)
 		}
 	}
+	return out
+}
+
+func NormalizeSorted(raw []string) []string {
+	out := Normalize(raw)
+	sort.Strings(out)
 	return out
 }

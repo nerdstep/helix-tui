@@ -10,6 +10,7 @@ import (
 
 	"helix-tui/internal/domain"
 	"helix-tui/internal/eventmeta"
+	"helix-tui/internal/util"
 )
 
 type viewModel struct {
@@ -83,24 +84,64 @@ func (m Model) buildStrategyOverviewRows() []string {
 	steering := m.strategy.Steering
 	if steering == nil {
 		rows = append(rows, mutedStyle.Render("(none)"))
-		return rows
+	} else {
+		rows = append(rows, fmt.Sprintf("version=%d source=%s profile=%s", steering.Version, nonEmpty(steering.Source, "n/a"), nonEmpty(steering.RiskProfile, "n/a")))
+		rows = append(rows, fmt.Sprintf("min_conf=%.2f max_pos_notional=%.2f horizon=%s", steering.MinConfidence, steering.MaxPositionNotional, nonEmpty(steering.Horizon, "n/a")))
+		if len(steering.PreferredSymbols) > 0 {
+			rows = append(rows, "preferred: "+strings.Join(steering.PreferredSymbols, ","))
+		}
+		if len(steering.ExcludedSymbols) > 0 {
+			rows = append(rows, "excluded: "+strings.Join(steering.ExcludedSymbols, ","))
+		}
+		if strings.TrimSpace(steering.Objective) != "" {
+			rows = append(rows, "objective: "+strings.TrimSpace(steering.Objective))
+		}
+		hash := strings.TrimSpace(steering.Hash)
+		if hash == "" {
+			hash = "n/a"
+		}
+		rows = append(rows, fmt.Sprintf("hash=%s updated=%s", hash, formatLocalClock(steering.UpdatedAt)))
 	}
-	rows = append(rows, fmt.Sprintf("version=%d source=%s profile=%s", steering.Version, nonEmpty(steering.Source, "n/a"), nonEmpty(steering.RiskProfile, "n/a")))
-	rows = append(rows, fmt.Sprintf("min_conf=%.2f max_pos_notional=%.2f horizon=%s", steering.MinConfidence, steering.MaxPositionNotional, nonEmpty(steering.Horizon, "n/a")))
-	if len(steering.PreferredSymbols) > 0 {
-		rows = append(rows, "preferred: "+strings.Join(steering.PreferredSymbols, ","))
+	rows = append(rows, "")
+	rows = append(rows, headerLabelStyle.Render("Pending Proposals"))
+	pending := make([]StrategyProposalView, 0, len(m.strategy.Proposals))
+	for _, proposal := range m.strategy.Proposals {
+		if strings.EqualFold(strings.TrimSpace(proposal.Status), "pending") {
+			pending = append(pending, proposal)
+		}
 	}
-	if len(steering.ExcludedSymbols) > 0 {
-		rows = append(rows, "excluded: "+strings.Join(steering.ExcludedSymbols, ","))
+	if len(pending) == 0 {
+		rows = append(rows, mutedStyle.Render("(none)"))
+	} else {
+		for _, proposal := range pending {
+			switch strings.ToLower(strings.TrimSpace(proposal.Kind)) {
+			case "watchlist":
+				rows = append(
+					rows,
+					fmt.Sprintf(
+						"#%d watchlist add=%s remove=%s",
+						proposal.ID,
+						joinOrNA(proposal.AddSymbols),
+						joinOrNA(proposal.RemoveSymbols),
+					),
+				)
+			case "steering":
+				rows = append(
+					rows,
+					fmt.Sprintf(
+						"#%d steering profile=%s min_conf=%.2f max_notional=%.2f",
+						proposal.ID,
+						nonEmpty(proposal.RiskProfile, "n/a"),
+						proposal.MinConfidence,
+						proposal.MaxPositionNotional,
+					),
+				)
+			default:
+				rows = append(rows, fmt.Sprintf("#%d kind=%s", proposal.ID, proposal.Kind))
+			}
+		}
 	}
-	if strings.TrimSpace(steering.Objective) != "" {
-		rows = append(rows, "objective: "+strings.TrimSpace(steering.Objective))
-	}
-	hash := strings.TrimSpace(steering.Hash)
-	if hash == "" {
-		hash = "n/a"
-	}
-	rows = append(rows, fmt.Sprintf("hash=%s updated=%s", hash, formatLocalClock(steering.UpdatedAt)))
+	rows = append(rows, mutedStyle.Render("cmd: strategy proposal list|apply <id>|reject <id>"))
 	return rows
 }
 
@@ -116,7 +157,7 @@ func (m Model) buildStrategyRecommendationsRows() []string {
 	}
 	rows = append(rows, strings.Split(view, "\n")...)
 	start, end, total := m.strategyWindow()
-	if total > maxInt(1, m.strategyViewport.VisibleLineCount()) {
+	if total > util.MaxInt(1, m.strategyViewport.VisibleLineCount()) {
 		rows = append(rows, mutedStyle.Render(fmt.Sprintf("showing %d-%d of %d (Up/Down/PgUp/PgDn/Home/End)", start+1, end, total)))
 	}
 	return rows
@@ -158,7 +199,7 @@ func (m Model) buildStrategyChatRows() []string {
 	}
 	rows = append(rows, strings.Split(view, "\n")...)
 	start, end, total := m.strategyChatWindow()
-	if total > maxInt(1, m.strategyChatViewport.VisibleLineCount()) {
+	if total > util.MaxInt(1, m.strategyChatViewport.VisibleLineCount()) {
 		rows = append(rows, mutedStyle.Render(fmt.Sprintf("showing %d-%d of %d (Up/Down/PgUp/PgDn/Home/End)", start+1, end, total)))
 	}
 	return rows
@@ -200,7 +241,7 @@ func (m Model) buildStrategyChatBodyRows() []string {
 		}
 		timeLabel := msg.CreatedAt.Local().Format("01-02 15:04")
 		rows = append(rows, fmt.Sprintf("%s %s", mutedStyle.Render(timeLabel), roleStyle.Render(roleLabel)))
-		for _, wrapped := range wrapPlainTextRows(strings.TrimSpace(msg.Content), maxInt(24, panelInnerWidth(m.strategyChatPanelWidth())-2)) {
+		for _, wrapped := range wrapPlainTextRows(strings.TrimSpace(msg.Content), util.MaxInt(24, panelInnerWidth(m.strategyChatPanelWidth())-2)) {
 			rows = append(rows, "  "+wrapped)
 		}
 	}
@@ -445,7 +486,7 @@ func (m Model) buildMomentumRows() []string {
 
 	chartWidth := 56
 	if m.width > 0 {
-		chartWidth = minInt(maxInt(28, m.width/2-12), 96)
+		chartWidth = util.MinInt(util.MaxInt(28, m.width/2-12), 96)
 	}
 	chartHeight := 6
 
@@ -479,7 +520,7 @@ func (m Model) buildEquityChartRows() []string {
 
 	chartWidth := 56
 	if m.width > 0 {
-		chartWidth = minInt(maxInt(28, m.width/2-12), 96)
+		chartWidth = util.MinInt(util.MaxInt(28, m.width/2-12), 96)
 	}
 	chartHeight := 6
 	first := m.equityHistory[0]
@@ -712,6 +753,13 @@ func nonEmpty(value string, fallback string) string {
 	return value
 }
 
+func joinOrNA(values []string) string {
+	if len(values) == 0 {
+		return "n/a"
+	}
+	return strings.Join(values, ",")
+}
+
 func (m Model) systemPersistenceData() []systemKV {
 	persistStats := "n/a"
 	if e := latestEventByType(m.snapshot.Events, "event_persist_stats"); e != nil && strings.TrimSpace(e.Details) != "" {
@@ -871,7 +919,7 @@ func wrapPlainTextRows(text string, width int) []string {
 func (m Model) buildFooter() string {
 	helper := m.helpModel
 	helper.ShowAll = m.showFullHelp
-	helper.Width = maxInt(1, m.computeLayoutSpec().usableWidth)
+	helper.Width = util.MaxInt(1, m.computeLayoutSpec().usableWidth)
 	helpText := strings.TrimSpace(helper.View(m.helpKeys))
 	if helpText == "" {
 		helpText = "? toggle help"
@@ -904,20 +952,6 @@ func formatLocalClock(t time.Time) string {
 		return "00:00:00"
 	}
 	return t.Local().Format("15:04:05")
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func styleForSigned(v float64) lipgloss.Style {

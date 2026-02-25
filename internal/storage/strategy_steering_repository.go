@@ -1,15 +1,12 @@
 package storage
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
 	"helix-tui/internal/symbols"
+	"helix-tui/internal/util"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -231,27 +228,14 @@ func normalizeSteeringInput(input StrategySteeringStateInput) (StrategySteeringS
 	normalized := StrategySteeringStateInput{
 		Source:              normalizeSteeringSource(input.Source),
 		RiskProfile:         strings.ToLower(strings.TrimSpace(input.RiskProfile)),
-		MinConfidence:       clamp01(input.MinConfidence),
-		MaxPositionNotional: maxFloat(input.MaxPositionNotional, 0),
+		MinConfidence:       util.Clamp01(input.MinConfidence),
+		MaxPositionNotional: util.MaxFloat(input.MaxPositionNotional, 0),
 		Horizon:             strings.ToLower(strings.TrimSpace(input.Horizon)),
 		Objective:           strings.TrimSpace(input.Objective),
-		PreferredSymbols:    normalizeSymbolsForSteering(input.PreferredSymbols),
-		ExcludedSymbols:     normalizeSymbolsForSteering(input.ExcludedSymbols),
+		PreferredSymbols:    symbols.NormalizeSorted(input.PreferredSymbols),
+		ExcludedSymbols:     symbols.NormalizeSorted(input.ExcludedSymbols),
 	}
-	if len(normalized.PreferredSymbols) > 0 && len(normalized.ExcludedSymbols) > 0 {
-		preferredSet := make(map[string]struct{}, len(normalized.PreferredSymbols))
-		for _, symbol := range normalized.PreferredSymbols {
-			preferredSet[symbol] = struct{}{}
-		}
-		filtered := make([]string, 0, len(normalized.ExcludedSymbols))
-		for _, symbol := range normalized.ExcludedSymbols {
-			if _, exists := preferredSet[symbol]; exists {
-				continue
-			}
-			filtered = append(filtered, symbol)
-		}
-		normalized.ExcludedSymbols = filtered
-	}
+	normalized.ExcludedSymbols = util.RemoveOverlappingStrings(normalized.PreferredSymbols, normalized.ExcludedSymbols)
 	return normalized, hashSteeringInput(normalized)
 }
 
@@ -263,34 +247,6 @@ func normalizeSteeringSource(value string) string {
 	return value
 }
 
-func normalizeSymbolsForSteering(values []string) []string {
-	normalized := symbols.Normalize(values)
-	sort.Strings(normalized)
-	return normalized
-}
-
 func hashSteeringInput(input StrategySteeringStateInput) string {
-	body, err := json.Marshal(input)
-	if err != nil {
-		return ""
-	}
-	sum := sha256.Sum256(body)
-	return hex.EncodeToString(sum[:])
-}
-
-func maxFloat(a, b float64) float64 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func clamp01(v float64) float64 {
-	if v < 0 {
-		return 0
-	}
-	if v > 1 {
-		return 1
-	}
-	return v
+	return util.HashJSONSHA256HexOrEmpty(input)
 }

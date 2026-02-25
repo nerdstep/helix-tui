@@ -42,8 +42,13 @@ func loadStrategySnapshotForThread(repo *storage.StrategyRepository, threadID ui
 	if err != nil {
 		return tui.StrategySnapshot{}, err
 	}
+	proposals, err := repo.ListProposals(20)
+	if err != nil {
+		return tui.StrategySnapshot{}, err
+	}
 	out.Chat = chat
 	out.Steering = toStrategySteeringView(steering)
+	out.Proposals = toStrategyProposalViews(proposals)
 	return out, nil
 }
 
@@ -170,4 +175,31 @@ func toStrategySteeringView(state *storage.StrategySteeringState) *tui.StrategyS
 		Hash:                state.Hash,
 		UpdatedAt:           state.UpdatedAt,
 	}
+}
+
+func toStrategyProposalViews(in []storage.StrategyProposal) []tui.StrategyProposalView {
+	out := make([]tui.StrategyProposalView, 0, len(in))
+	for _, proposal := range in {
+		out = append(out, tui.StrategyProposalView{
+			ID:                  proposal.ID,
+			ThreadID:            proposal.ThreadID,
+			Source:              proposal.Source,
+			Kind:                string(proposal.Kind),
+			Status:              string(proposal.Status),
+			Rationale:           proposal.Rationale,
+			AddSymbols:          append([]string{}, proposal.AddSymbols...),
+			RemoveSymbols:       append([]string{}, proposal.RemoveSymbols...),
+			RiskProfile:         proposal.RiskProfile,
+			MinConfidence:       proposal.MinConfidence,
+			MaxPositionNotional: proposal.MaxPositionNotional,
+			Horizon:             proposal.Horizon,
+			Objective:           proposal.Objective,
+			PreferredSymbols:    append([]string{}, proposal.PreferredSymbols...),
+			ExcludedSymbols:     append([]string{}, proposal.ExcludedSymbols...),
+			Hash:                proposal.Hash,
+			CreatedAt:           proposal.CreatedAt,
+			UpdatedAt:           proposal.UpdatedAt,
+		})
+	}
+	return out
 }

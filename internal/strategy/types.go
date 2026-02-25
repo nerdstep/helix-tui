@@ -83,10 +83,32 @@ type ChatInput struct {
 }
 
 type ChatReply struct {
-	Content string
-	Model   string
+	Content   string
+	Model     string
+	Proposals []CopilotProposal
 }
 
 type Copilot interface {
 	Reply(ctx context.Context, input ChatInput) (ChatReply, error)
+}
+
+type CopilotProposalKind string
+
+const (
+	CopilotProposalKindWatchlist CopilotProposalKind = "watchlist"
+	CopilotProposalKindSteering  CopilotProposalKind = "steering"
+)
+
+type CopilotProposal struct {
+	Kind                CopilotProposalKind
+	Rationale           string
+	AddSymbols          []string
+	RemoveSymbols       []string
+	RiskProfile         string
+	MinConfidence       float64
+	MaxPositionNotional float64
+	Horizon             string
+	Objective           string
+	PreferredSymbols    []string
+	ExcludedSymbols     []string
 }

@@ -1,5 +1,7 @@
 # helix-tui
 
+> Helix is an AI-driven decision engine that autonomously executes systematic trading strategies to compound capital.
+
 `helix-tui` is a Go CLI + TUI trading cockpit for Alpaca with:
 
 - risk-gated order execution
@@ -126,6 +128,7 @@ Safe progression:
 - `watch list|add <SYM>|remove <SYM>|sync`
 - `events up|down|top|tail [N]`
 - `strategy run|status|approve <ID>|reject <ID>|archive <ID>`
+- `strategy proposal status|list|apply <ID>|reject <ID>`
 - `strategy chat status|list|new <TITLE>|use <ID>|say <MESSAGE>`
 - `tab overview|strategy|system|logs`
 - `q`
@@ -138,6 +141,7 @@ Safe progression:
 - Compliance gate can reject orders (e.g., PDT/GFV protections) with explicit rejection reasons.
 - Strategy mode can constrain autonomous execution to active plan recommendations.
 - Strategy chat is advisory-only and does not place orders directly.
+- Copilot proposals are staged and require explicit `strategy proposal apply` before taking effect.
 - Low-power mode reduces autonomous activity outside market hours.
 
 ## Development

@@ -1,6 +1,6 @@
 # helix-tui Implementation Plan
 
-Last updated: 2026-02-24
+Last updated: 2026-02-25
 
 This is the running backlog for product/architecture ideas that are approved, in progress, or parked for later.
 
@@ -20,27 +20,96 @@ Status values:
 - `done`
 - `parked`
 
+## Loop-Closure Objective (Primary)
+
+Target state for "closing the loop":
+
+- strategy outputs become enforceable execution constraints (not advisory-only metadata)
+- autonomous intents are either executed or explicitly rejected with machine-readable reasons
+- every cycle is attributable end-to-end: plan -> intent -> order -> fill -> realized/unrealized outcome
+- outcome metrics feed back into future strategy generation and operator steering decisions
+
+Definition of done for loop closure:
+
+- no known critical execution blockers in paper auto runs (timeouts/tick-size rejects)
+- policy enforcement covers more than symbol/bias/max-notional
+- persistent run ledger + outcome attribution is queryable in UI and DB
+- analyst/copilot prompts include recent measured outcomes, not only snapshots/events
+
 ## Next Up
 
 | ID | Item | Priority | Status | Why | Exit Criteria |
 |---|---|---|---|---|---|
-| ALPACA-001 | Investigate error: {"level":"warn","component":"eventlog","event_type":"agent_intent_rejected","event_time":"2026-02-19T20:29:57-08:00","time":"2026-02-19T20:29:58-08:00","message":"buy RIVN qty=100.00 type=limit conf=0.00 gain=6.00% rationale=No existing position or open orders; last=15.415 — place a small limit buy (100 sh = ~$1.54k, ~1.5% cash) to establish exposure; targeting modest 6% gain.: invalid limit_price 15.415. sub-penny increment does not fulfill minimum pricing criteria (HTTP 422, Code 42210000)"} | high | next |
+| ALPACA-001 | Execution reliability hardening (timeouts + invalid limit increments) | high | next | Autonomous loop cannot close reliably when sync/order edge cases break cycles | Resolve `get open orders: context deadline exceeded`; enforce/round valid tick increments pre-submit; add tests + explicit events for normalization |
 | AGENT-006 | Assist-mode approval workflow for agent intents in TUI | high | next | Turn `assist` mode into actionable human approval loop | TUI shows pending intents and supports approve/reject commands; events logged for every decision |
-| STRAT-008 | Strategy Copilot chat (advisory) | high | in_progress | Enable operator-agent discussion for plan pivots, new symbols, and due diligence workflows | Operator can chat in dedicated Chat tab, see persisted thread history, and apply explicit watchlist/plan proposals |
-| STRAT-009 | Copilot-to-Analyst steering contract | high | in_progress | Ensure chat outcomes become explicit strategy steering inputs for the analyst loop | Structured steering state is persisted, visible, and consumed by analyst plan generation each cycle |
+| POLICY-001 | Expand strategy policy enforcement depth | high | next | Current execution policy bridge is shallow; plans are not fully actionable constraints | Enforce entry bands, stale-plan gating, and recommendation-level execution constraints in autonomy path |
+| OPS-003 | Persistent run ledger (cycles/intents/orders/fills/rejections/outcomes) | high | next | Loop closure needs traceable attribution, not just sparse events | DB-backed ledger links cycle->intent->order->trade outcome with query APIs and TUI summaries |
 
 ## Backlog
 
 | ID | Item | Priority | Status | Why | Exit Criteria |
 |---|---|---|---|---|---|
-| OPS-003 | Persistent run ledger (cycles/intents/orders/rejections) | medium | proposed | Auditable autonomous behavior across sessions | db-backed ledger; includes cycle summary + intent decisions + execution outcomes |
+| METRICS-001 | Portfolio/trade outcome metrics surface | high | proposed | Compounding requires measurable performance and risk, not just execution events | Persist + display rolling return, drawdown, hit-rate, avg win/loss, exposure, and turnover |
+| FEEDBACK-001 | Outcome-aware analyst context injection | high | proposed | Strategy quality should improve from realized outcomes | Strategy input includes trailing outcome block (per-symbol and portfolio); plan events include metric window used |
+| RISK-004 | Portfolio-level risk circuit breakers | high | proposed | Per-trade limits alone are insufficient for autonomous compounding safety | Configurable daily loss, drawdown, and exposure breakers that halt auto execution with explicit events |
 | SAFETY-003 | Live-trading enablement guardrail | high | proposed | Prevent accidental live deployment | Explicit `live_enable=true` gate + startup confirmation event when `alpaca.env=live` |
+| EVAL-001 | Paper replay/backtest harness for strategy variants | medium | proposed | Need objective comparison before promoting strategy changes | Deterministic replay mode computes strategy KPIs and compares against baseline configurations |
 
 ## In Progress
 
 | ID | Item | Priority | Status | Notes |
 |---|---|---|---|---|
-| COMPLIANCE-001 | Live-trading compliance guardrails (PDT/GFV) | high | in_progress | Phase 1 + Phase 2 implemented; Alpaca calendar now used as settlement source in broker=alpaca mode |
+| COMPLIANCE-001 | Live-trading compliance guardrails (PDT/GFV) | high | in_progress | Phase 1-3 implemented; remaining work focuses on event noise tuning and live cutover integration |
+
+## Closing The Loop Rollout Plan (Phased)
+
+### Phase 1: Reliable autonomous actuation (target now)
+
+- Status: `next`
+- Scope:
+  - remove known autonomous blockers in paper mode (sync/open order timeout and invalid limit increments)
+  - complete assist-mode approval workflow so intents can be actioned safely by operator
+  - finish steering apply/reject lifecycle to convert chat outcomes into approved strategy input
+- Completion criteria:
+  - [ ] `ALPACA-001` completed with regression coverage
+  - [ ] `AGENT-006` completed with auditable approval/rejection events
+  - [x] `STRAT-009` completion criteria fully met
+
+### Phase 2: Enforceable strategy execution policy
+
+- Status: `proposed`
+- Scope:
+  - expand runtime enforcement from symbol/bias/max-notional to recommendation semantics
+  - add stale-plan and plan-health gating for auto mode
+  - ensure rejected intents return explicit policy reason codes for attribution
+- Completion criteria:
+  - [ ] `POLICY-001` completed
+  - [ ] policy rejection reasons are structured and persisted for analysis
+  - [ ] strategy policy behavior is covered by autonomy/adapter tests
+
+### Phase 3: Attribution and performance measurement
+
+- Status: `proposed`
+- Scope:
+  - implement persistent run ledger and outcome attribution joins
+  - surface actionable KPIs in System/Strategy views
+  - add exports for offline analysis and incident review
+- Completion criteria:
+  - [ ] `OPS-003` completed
+  - [ ] `METRICS-001` completed
+  - [ ] operators can trace plan->intent->order->outcome for any recent execution
+
+### Phase 4: Adaptive feedback and continuous improvement
+
+- Status: `proposed`
+- Scope:
+  - inject measured outcomes into analyst cycle input
+  - support periodic strategy retrospectives based on hard metrics
+  - add evaluation harness for variant testing before strategy/prompt changes are promoted
+- Completion criteria:
+  - [ ] `FEEDBACK-001` completed
+  - [ ] `EVAL-001` completed
+  - [ ] plan-generation events record outcome window + metric snapshot used
 
 ## Strategy Analyst Rollout Plan (Phased)
 
@@ -154,7 +223,7 @@ Status values:
 
 ### Phase 2: Copilot outcomes -> Analyst steering contract
 
-- Status: `next`
+- Status: `done`
 - Scope:
   - Persist structured steering state derived from chat decisions:
     - preferred symbols/themes
@@ -168,20 +237,20 @@ Status values:
   - [x] Steering state is stored in typed DB tables (not free-form blobs).
   - [x] Analyst prompt payload includes steering state deterministically.
   - [x] Plan generation events record steering version/hash used.
-  - [ ] Operator can inspect/approve/reject steering updates with audit events.
+  - [x] Operator can inspect/approve/reject steering updates with audit events.
 
 ### Phase 3: Structured proposals + approval workflow
 
-- Status: `proposed`
+- Status: `done`
 - Scope:
   - Chat agent returns structured proposal blocks:
     - `watchlist_proposal` (add/remove symbols)
-    - `plan_update_proposal` (constraints/objective updates)
+    - `steering_proposal` (constraints/objective updates)
   - Add explicit apply commands with audit trail.
 - Completion criteria:
-  - [ ] Operator can apply/reject proposals explicitly.
-  - [ ] Applied watchlist changes sync with Alpaca and local execution scope.
-  - [ ] Proposal decisions are persisted and visible in Strategy tab history.
+  - [x] Operator can apply/reject proposals explicitly.
+  - [x] Applied watchlist changes sync with Alpaca and local execution scope.
+  - [x] Proposal decisions are persisted and visible in Strategy tab history.
 
 ### Phase 4: Research tooling + richer context
 
@@ -204,6 +273,8 @@ Status values:
 | AGENT-003 | Official OpenAI Go SDK integration (`openai-go`) | 2026-02-19 | Replaced raw HTTP client in LLM adapter |
 | AGENT-004 | Migrate LLM agent from Chat Completions to Responses API | 2026-02-23 | `internal/agent/llm` now uses `client.Responses.New` with JSON object output format; retry/parsing behavior preserved |
 | AGENT-005 | Strategy Analyst overseer (deep research + plan memory) | 2026-02-21 | Phase 1-3 completed: DB memory, analyst runner + Strategy tab, active-plan execution constraints, and TUI strategy plan controls |
+| STRAT-008 | Strategy Copilot chat (advisory + proposals) | 2026-02-25 | Copilot now emits structured proposals; operator can inspect/apply/reject in TUI with audit events |
+| STRAT-009 | Copilot-to-Analyst steering contract | 2026-02-25 | Steering apply/reject workflow completed; approved steering is persisted, visible, and consumed by analyst loop |
 
 ## Item Template
 

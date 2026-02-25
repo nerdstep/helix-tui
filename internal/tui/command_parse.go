@@ -62,6 +62,10 @@ const (
 	strategyCommandApprove
 	strategyCommandReject
 	strategyCommandArchive
+	strategyCommandProposalStatus
+	strategyCommandProposalList
+	strategyCommandProposalApply
+	strategyCommandProposalReject
 	strategyCommandChatStatus
 	strategyCommandChatList
 	strategyCommandChatNew
@@ -187,6 +191,9 @@ func parseStrategyCommand(raw string) (*strategyCommand, bool, *statusOnlyMsg) {
 	if len(lower) == 1 {
 		return &strategyCommand{Type: strategyCommandStatus}, true, nil
 	}
+	if lower[1] == "proposal" || lower[1] == "proposals" {
+		return parseStrategyProposalCommand(lower)
+	}
 	if lower[1] == "chat" {
 		return parseStrategyChatCommand(raw, lower)
 	}
@@ -217,6 +224,38 @@ func parseStrategyCommand(raw string) (*strategyCommand, bool, *statusOnlyMsg) {
 		return &strategyCommand{Type: strategyCommandArchive, PlanID: planID}, true, nil
 	default:
 		return nil, true, statusError(strategyCommandUsage)
+	}
+}
+
+func parseStrategyProposalCommand(lower []string) (*strategyCommand, bool, *statusOnlyMsg) {
+	if len(lower) == 2 {
+		return &strategyCommand{Type: strategyCommandProposalStatus}, true, nil
+	}
+	if len(lower) == 3 {
+		switch lower[2] {
+		case "status":
+			return &strategyCommand{Type: strategyCommandProposalStatus}, true, nil
+		case "list":
+			return &strategyCommand{Type: strategyCommandProposalList}, true, nil
+		default:
+			return nil, true, statusError(strategyProposalCommandUsage)
+		}
+	}
+	if len(lower) != 4 {
+		return nil, true, statusError(strategyProposalCommandUsage)
+	}
+	proposalID64, err := strconv.ParseUint(strings.TrimSpace(lower[3]), 10, 64)
+	if err != nil || proposalID64 == 0 {
+		return nil, true, statusError("strategy proposal id must be a positive integer")
+	}
+	proposalID := uint(proposalID64)
+	switch lower[2] {
+	case "apply":
+		return &strategyCommand{Type: strategyCommandProposalApply, PlanID: proposalID}, true, nil
+	case "reject":
+		return &strategyCommand{Type: strategyCommandProposalReject, PlanID: proposalID}, true, nil
+	default:
+		return nil, true, statusError(strategyProposalCommandUsage)
 	}
 }
 

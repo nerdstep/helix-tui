@@ -80,56 +80,58 @@ type refreshMsg struct {
 type quitMsg struct{}
 
 type Model struct {
-	engine               *engine.Engine
-	tradingDayChecker    markethours.TradingDayChecker
-	snapshot             domain.Snapshot
-	watchlist            []string
-	onWatchlistChanged   func([]string) error
-	onWatchlistSync      func([]string) ([]string, error)
-	onStrategyRun        func() error
-	onStrategyApprove    func(uint) error
-	onStrategyReject     func(uint) error
-	onStrategyArchive    func(uint) error
-	onStrategyChatCreate func(string) (uint, error)
-	onStrategyChatSend   func(uint, string) error
-	onEquityPoint        func(EquityPoint) error
-	onStrategyLoad       func(uint) (StrategySnapshot, error)
-	eventScroll          int
-	eventLines           []string
-	eventLinesReady      bool
-	eventLinesEvents     int
-	eventsViewport       viewport.Model
-	strategyViewport     viewport.Model
-	strategyChatViewport viewport.Model
-	positionsTable       table.Model
-	ordersTable          table.Model
-	watchlistTable       table.Model
-	systemRuntimeTable   table.Model
-	systemAgentTable     table.Model
-	systemPersistTable   table.Model
-	helpModel            help.Model
-	helpKeys             dashboardKeyMap
-	showFullHelp         bool
-	quotes               map[string]domain.Quote
-	quoteSeenAt          map[string]time.Time
-	prevLast             map[string]float64
-	quoteErr             map[string]string
-	equityHistory        []EquityPoint
-	equityMaxPoints      int
-	strategy             StrategySnapshot
-	strategyThreadID     uint
-	strategyLoadError    string
-	commandBusy          bool
-	commandBusyLabel     string
-	strategyBusy         bool
-	strategyBusySince    time.Time
-	spinner              spinner.Model
-	input                string
-	status               string
-	statusError          bool
-	activeTab            uiTab
-	width                int
-	height               int
+	engine                   *engine.Engine
+	tradingDayChecker        markethours.TradingDayChecker
+	snapshot                 domain.Snapshot
+	watchlist                []string
+	onWatchlistChanged       func([]string) error
+	onWatchlistSync          func([]string) ([]string, error)
+	onStrategyRun            func() error
+	onStrategyApprove        func(uint) error
+	onStrategyReject         func(uint) error
+	onStrategyArchive        func(uint) error
+	onStrategyProposalApply  func(uint) error
+	onStrategyProposalReject func(uint) error
+	onStrategyChatCreate     func(string) (uint, error)
+	onStrategyChatSend       func(uint, string) error
+	onEquityPoint            func(EquityPoint) error
+	onStrategyLoad           func(uint) (StrategySnapshot, error)
+	eventScroll              int
+	eventLines               []string
+	eventLinesReady          bool
+	eventLinesEvents         int
+	eventsViewport           viewport.Model
+	strategyViewport         viewport.Model
+	strategyChatViewport     viewport.Model
+	positionsTable           table.Model
+	ordersTable              table.Model
+	watchlistTable           table.Model
+	systemRuntimeTable       table.Model
+	systemAgentTable         table.Model
+	systemPersistTable       table.Model
+	helpModel                help.Model
+	helpKeys                 dashboardKeyMap
+	showFullHelp             bool
+	quotes                   map[string]domain.Quote
+	quoteSeenAt              map[string]time.Time
+	prevLast                 map[string]float64
+	quoteErr                 map[string]string
+	equityHistory            []EquityPoint
+	equityMaxPoints          int
+	strategy                 StrategySnapshot
+	strategyThreadID         uint
+	strategyLoadError        string
+	commandBusy              bool
+	commandBusyLabel         string
+	strategyBusy             bool
+	strategyBusySince        time.Time
+	spinner                  spinner.Model
+	input                    string
+	status                   string
+	statusError              bool
+	activeTab                uiTab
+	width                    int
+	height                   int
 }
 
 func New(engine *engine.Engine, watchlist ...string) Model {
@@ -196,6 +198,16 @@ func (m Model) WithStrategyRejectHandler(fn func(uint) error) Model {
 
 func (m Model) WithStrategyArchiveHandler(fn func(uint) error) Model {
 	m.onStrategyArchive = fn
+	return m
+}
+
+func (m Model) WithStrategyProposalApplyHandler(fn func(uint) error) Model {
+	m.onStrategyProposalApply = fn
+	return m
+}
+
+func (m Model) WithStrategyProposalRejectHandler(fn func(uint) error) Model {
+	m.onStrategyProposalReject = fn
 	return m
 }
 

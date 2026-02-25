@@ -201,12 +201,18 @@ func TestParseStrategyCommand(t *testing.T) {
 		{name: "approve", raw: "strategy approve 12", wantSeen: true, wantType: strategyCommandApprove, wantID: 12},
 		{name: "reject", raw: "strategy reject 9", wantSeen: true, wantType: strategyCommandReject, wantID: 9},
 		{name: "archive", raw: "strategy archive 3", wantSeen: true, wantType: strategyCommandArchive, wantID: 3},
+		{name: "proposal status default", raw: "strategy proposal", wantSeen: true, wantType: strategyCommandProposalStatus},
+		{name: "proposal list", raw: "strategy proposal list", wantSeen: true, wantType: strategyCommandProposalList},
+		{name: "proposal apply", raw: "strategy proposal apply 4", wantSeen: true, wantType: strategyCommandProposalApply, wantID: 4},
+		{name: "proposal reject", raw: "strategy proposal reject 8", wantSeen: true, wantType: strategyCommandProposalReject, wantID: 8},
 		{name: "chat status default", raw: "strategy chat", wantSeen: true, wantType: strategyCommandChatStatus},
 		{name: "chat list", raw: "strategy chat list", wantSeen: true, wantType: strategyCommandChatList},
 		{name: "chat new", raw: "strategy chat new Swing Ideas", wantSeen: true, wantType: strategyCommandChatNew, wantText: "Swing Ideas"},
 		{name: "chat use", raw: "strategy chat use 5", wantSeen: true, wantType: strategyCommandChatUse, wantID: 5},
 		{name: "chat say", raw: "strategy chat say rotate into semis", wantSeen: true, wantType: strategyCommandChatSay, wantText: "rotate into semis"},
 		{name: "invalid id", raw: "strategy approve nope", wantSeen: true, wantErr: true, wantErrIn: "strategy plan id must"},
+		{name: "proposal invalid id", raw: "strategy proposal apply nope", wantSeen: true, wantErr: true, wantErrIn: "strategy proposal id must"},
+		{name: "proposal usage", raw: "strategy proposal what", wantSeen: true, wantErr: true, wantErrIn: "usage: strategy proposal"},
 		{name: "usage", raw: "strategy nope", wantSeen: true, wantErr: true, wantErrIn: "usage: strategy"},
 		{name: "chat usage", raw: "strategy chat say", wantSeen: true, wantErr: true, wantErrIn: "strategy chat message"},
 	}
@@ -242,7 +248,7 @@ func TestParseStrategyCommand(t *testing.T) {
 			}
 			if tt.wantID > 0 {
 				switch cmd.Type {
-				case strategyCommandApprove, strategyCommandReject, strategyCommandArchive:
+				case strategyCommandApprove, strategyCommandReject, strategyCommandArchive, strategyCommandProposalApply, strategyCommandProposalReject:
 					if cmd.PlanID != tt.wantID {
 						t.Fatalf("unexpected plan id: got %d want %d", cmd.PlanID, tt.wantID)
 					}

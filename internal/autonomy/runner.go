@@ -2,8 +2,6 @@ package autonomy
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +16,7 @@ import (
 	"helix-tui/internal/eventmeta"
 	"helix-tui/internal/markethours"
 	"helix-tui/internal/symbols"
+	"helix-tui/internal/util"
 )
 
 type Runner struct {
@@ -724,12 +723,11 @@ func hashDecisionContext(input domain.AgentInput) (string, int, error) {
 	})
 	sort.Strings(digest.QuoteErrors)
 
-	payload, err := json.Marshal(digest)
+	hash, payload, err := util.MarshalJSONAndHashSHA256Hex(digest)
 	if err != nil {
 		return "", 0, err
 	}
-	sum := sha256.Sum256(payload)
-	return hex.EncodeToString(sum[:]), len(payload), nil
+	return hash, len(payload), nil
 }
 
 func (r *Runner) complianceStatusSnapshot() *domain.ComplianceStatus {

@@ -12,6 +12,7 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"helix-tui/internal/domain"
+	"helix-tui/internal/util"
 )
 
 const (
@@ -35,7 +36,7 @@ func (m Model) computeLayoutSpec() layoutSpec {
 	if contentWidth <= 0 {
 		contentWidth = defaultWidth
 	}
-	usableWidth := maxInt(24, contentWidth-1)
+	usableWidth := util.MaxInt(24, contentWidth-1)
 	spec := layoutSpec{usableWidth: usableWidth}
 	if usableWidth >= minPanelWidth*2+gap {
 		spec.twoColumn = true
@@ -51,7 +52,7 @@ func (m Model) computeLayoutSpec() layoutSpec {
 }
 
 func panelInnerWidth(panelWidth int) int {
-	return maxInt(1, panelWidth-panelStyle.GetHorizontalFrameSize())
+	return util.MaxInt(1, panelWidth-panelStyle.GetHorizontalFrameSize())
 }
 
 func adjustPanelWidthsToTotal(widths []int, gap int, total int) []int {
@@ -71,7 +72,7 @@ func adjustPanelWidthsToTotal(widths []int, gap int, total int) []int {
 		return out
 	}
 	last := len(out) - 1
-	out[last] = maxInt(1, out[last]+delta)
+	out[last] = util.MaxInt(1, out[last]+delta)
 	return out
 }
 
@@ -165,7 +166,7 @@ func (m Model) buildEventViewportLines() []string {
 		}
 	}
 	rows := make([]string, 0, len(events))
-	maxWidth := maxInt(1, m.eventsViewport.Width)
+	maxWidth := util.MaxInt(1, m.eventsViewport.Width)
 	typeWidth := eventTypeColumnWidth(events, maxWidth)
 	for _, e := range events {
 		rows = append(rows, renderEventRows(e, typeWidth, maxWidth)...)
@@ -192,10 +193,10 @@ func eventTypeColumnWidth(events []domain.Event, panelWidth int) int {
 			best = w
 		}
 	}
-	best = minInt(best, maxWidth)
+	best = util.MinInt(best, maxWidth)
 	// Keep enough room for details.
-	maxByPanel := maxInt(minWidth, panelWidth-(8+1+minWidth+1+20))
-	return minInt(best, maxByPanel)
+	maxByPanel := util.MaxInt(minWidth, panelWidth-(8+1+minWidth+1+20))
+	return util.MinInt(best, maxByPanel)
 }
 
 func renderEventRows(event domain.Event, typeWidth int, panelWidth int) []string {
@@ -206,7 +207,7 @@ func renderEventRows(event domain.Event, typeWidth int, panelWidth int) []string
 	}
 	typeText = runewidth.Truncate(typeText, typeWidth, "…")
 	prefixPlain := fmt.Sprintf("%-8s %-*s ", timeText, typeWidth, typeText)
-	detailWidth := maxInt(12, panelWidth-runewidth.StringWidth(prefixPlain))
+	detailWidth := util.MaxInt(12, panelWidth-runewidth.StringWidth(prefixPlain))
 	detailLines := renderDetailWrappedLines(event.Details, detailWidth)
 	if len(detailLines) == 0 {
 		detailLines = []renderedDetailLine{{plain: "-", styled: mutedStyle.Render("-")}}
@@ -248,7 +249,7 @@ type detailToken struct {
 }
 
 func renderDetailWrappedLines(details string, width int) []renderedDetailLine {
-	width = maxInt(1, width)
+	width = util.MaxInt(1, width)
 	details = strings.ReplaceAll(details, "\r\n", "\n")
 	if strings.TrimSpace(details) == "" {
 		return []renderedDetailLine{{plain: "-", styled: mutedStyle.Render("-")}}
@@ -287,7 +288,7 @@ func tokenizeDetailLine(line string) []detailToken {
 }
 
 func wrapDetailTokens(tokens []detailToken, width int) []renderedDetailLine {
-	width = maxInt(1, width)
+	width = util.MaxInt(1, width)
 	if len(tokens) == 0 {
 		return []renderedDetailLine{{plain: "", styled: ""}}
 	}
@@ -309,7 +310,7 @@ func wrapDetailTokens(tokens []detailToken, width int) []renderedDetailLine {
 	}
 
 	for _, tok := range tokens {
-		tokWidth := maxInt(1, tok.width)
+		tokWidth := util.MaxInt(1, tok.width)
 		sep := 0
 		if len(currentPlain) > 0 {
 			sep = 1
@@ -352,7 +353,7 @@ func wrapDetailTokens(tokens []detailToken, width int) []renderedDetailLine {
 }
 
 func splitTokenByDisplayWidth(token string, width int) []string {
-	width = maxInt(1, width)
+	width = util.MaxInt(1, width)
 	remaining := token
 	out := make([]string, 0, 2)
 	for runewidth.StringWidth(remaining) > width {
@@ -373,7 +374,7 @@ func splitTokenByDisplayWidth(token string, width int) []string {
 }
 
 func firstDisplayWidthSegment(s string, maxWidth int) string {
-	maxWidth = maxInt(1, maxWidth)
+	maxWidth = util.MaxInt(1, maxWidth)
 	width := 0
 	cut := 0
 	for i, r := range s {
@@ -507,7 +508,7 @@ func (m *Model) syncStrategyChatViewport() {
 }
 
 func (m *Model) syncHelpModel() {
-	m.helpModel.Width = maxInt(1, m.computeLayoutSpec().usableWidth)
+	m.helpModel.Width = util.MaxInt(1, m.computeLayoutSpec().usableWidth)
 }
 
 func newPositionsTable() table.Model {
@@ -574,7 +575,7 @@ func (m *Model) syncPositionsTable() {
 	m.positionsTable.SetWidth(innerWidth)
 	m.positionsTable.SetColumns(positionTableColumns(innerWidth))
 	m.positionsTable.SetRows(positionTableRows(m.snapshot.Positions, m.quotes))
-	height := maxInt(2, len(m.snapshot.Positions)+1)
+	height := util.MaxInt(2, len(m.snapshot.Positions)+1)
 	m.positionsTable.SetHeight(height)
 }
 
@@ -586,7 +587,7 @@ func (m *Model) syncOrdersTable() {
 	m.ordersTable.SetWidth(innerWidth)
 	m.ordersTable.SetColumns(orderTableColumns(innerWidth))
 	m.ordersTable.SetRows(orderTableRows(m.snapshot.Orders))
-	height := maxInt(2, len(m.snapshot.Orders)+1)
+	height := util.MaxInt(2, len(m.snapshot.Orders)+1)
 	m.ordersTable.SetHeight(height)
 }
 
@@ -598,7 +599,7 @@ func (m *Model) syncWatchlistTable() {
 	m.watchlistTable.SetWidth(innerWidth)
 	m.watchlistTable.SetColumns(watchlistTableColumns(innerWidth))
 	m.watchlistTable.SetRows(m.watchlistTableRows())
-	height := maxInt(2, len(m.watchlist)+1)
+	height := util.MaxInt(2, len(m.watchlist)+1)
 	m.watchlistTable.SetHeight(height)
 }
 
@@ -616,7 +617,7 @@ func (m *Model) syncSystemTable(tbl *table.Model, panelWidth int, rows []table.R
 	tbl.SetWidth(innerWidth)
 	tbl.SetColumns(systemTableColumns(innerWidth))
 	tbl.SetRows(rows)
-	height := maxInt(2, len(rows)+1)
+	height := util.MaxInt(2, len(rows)+1)
 	tbl.SetHeight(height)
 }
 
@@ -685,7 +686,7 @@ func fitColumnWidths(total int, minimum []int, target []int) []int {
 	if total < sum {
 		scale := float64(total) / float64(sum)
 		for i := range out {
-			out[i] = maxInt(1, int(float64(out[i])*scale))
+			out[i] = util.MaxInt(1, int(float64(out[i])*scale))
 		}
 		for columnWidthSum(out) > total {
 			for i := len(out) - 1; i >= 0 && columnWidthSum(out) > total; i-- {
@@ -702,7 +703,7 @@ func fitColumnWidths(total int, minimum []int, target []int) []int {
 		if grow <= 0 || remaining == 0 {
 			continue
 		}
-		add := minInt(grow, remaining)
+		add := util.MinInt(grow, remaining)
 		out[i] += add
 		remaining -= add
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -14,15 +15,20 @@ import (
 
 	"helix-tui/internal/domain"
 	"helix-tui/internal/symbols"
+	"helix-tui/internal/util"
 )
 
 const (
 	defaultStrategyCopilotSystemPrompt = "You are the strategy copilot for helix-tui. Help the operator refine trading plans, watchlist ideas, and risk-aware tactics."
-	forcedStrategyCopilotInstruction   = "Respond in plain text. Be concise, concrete, and advisory-only. Do not claim orders were placed. If proposing changes, use explicit bullets for watchlist or plan adjustments."
-	defaultCopilotMaxMessages          = 40
-	defaultCopilotMaxEvents            = 20
-	defaultCopilotMaxContentChars      = 600
+	forcedStrategyCopilotInstruction   = "Respond in plain text. Be concise, concrete, and advisory-only. Do not claim orders were placed. " +
+		"If proposing actionable updates, append a <helix_proposal>...</helix_proposal> JSON block. " +
+		"Supported JSON shape: {\"watchlist_proposal\":{\"add\":[\"AAPL\"],\"remove\":[\"TSLA\"],\"rationale\":\"...\"},\"steering_proposal\":{\"risk_profile\":\"balanced\",\"min_confidence\":0.6,\"max_position_notional\":3000,\"horizon\":\"swing\",\"objective\":\"...\",\"preferred_symbols\":[\"AAPL\"],\"excluded_symbols\":[\"AMC\"],\"rationale\":\"...\"}}."
+	defaultCopilotMaxMessages     = 40
+	defaultCopilotMaxEvents       = 20
+	defaultCopilotMaxContentChars = 600
 )
+
+var helixProposalBlockPattern = regexp.MustCompile(`(?is)<helix_proposal>\s*(\{.*?\})\s*</helix_proposal>`)
 
 type LLMCopilotConfig struct {
 	APIKey       string
@@ -114,6 +120,30 @@ type strategyCopilotPayload struct {
 	RecentEvents []strategyCopilotEventInput   `json:"recent_events"`
 }
 
+type copilotProposalEnvelope struct {
+	WatchlistProposal *copilotWatchlistProposal `json:"watchlist_proposal,omitempty"`
+	Watchlist         *copilotWatchlistProposal `json:"watchlist,omitempty"`
+	SteeringProposal  *copilotSteeringProposal  `json:"steering_proposal,omitempty"`
+	Steering          *copilotSteeringProposal  `json:"steering,omitempty"`
+}
+
+type copilotWatchlistProposal struct {
+	Add       []string `json:"add"`
+	Remove    []string `json:"remove"`
+	Rationale string   `json:"rationale"`
+}
+
+type copilotSteeringProposal struct {
+	RiskProfile         string   `json:"risk_profile"`
+	MinConfidence       float64  `json:"min_confidence"`
+	MaxPositionNotional float64  `json:"max_position_notional"`
+	Horizon             string   `json:"horizon"`
+	Objective           string   `json:"objective"`
+	PreferredSymbols    []string `json:"preferred_symbols"`
+	ExcludedSymbols     []string `json:"excluded_symbols"`
+	Rationale           string   `json:"rationale"`
+}
+
 type strategyCopilotMessageInput struct {
 	Role      string `json:"role"`
 	Content   string `json:"content"`
@@ -162,9 +192,17 @@ func (c *LLMCopilot) Reply(ctx context.Context, input ChatInput) (ChatReply, err
 	if content == "" {
 		return ChatReply{}, fmt.Errorf("strategy copilot response is empty")
 	}
+	cleaned, proposals := extractCopilotProposals(content)
+	if cleaned == "" && len(proposals) > 0 {
+		cleaned = "Proposal captured."
+	}
+	if cleaned == "" {
+		cleaned = content
+	}
 	return ChatReply{
-		Content: content,
-		Model:   c.model,
+		Content:   cleaned,
+		Model:     c.model,
+		Proposals: proposals,
 	}, nil
 }
 
@@ -231,6 +269,117 @@ func truncateStrategyCopilotText(value string, maxChars int) string {
 		return value
 	}
 	return string(runes[:maxChars]) + "..."
+}
+
+func extractCopilotProposals(content string) (string, []CopilotProposal) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return "", nil
+	}
+	matches := helixProposalBlockPattern.FindAllStringSubmatch(content, -1)
+	if len(matches) == 0 {
+		return content, nil
+	}
+	proposals := make([]CopilotProposal, 0, len(matches)*2)
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		proposals = append(proposals, parseCopilotProposalBlock(match[1])...)
+	}
+	cleaned := strings.TrimSpace(helixProposalBlockPattern.ReplaceAllString(content, ""))
+	return cleaned, proposals
+}
+
+func parseCopilotProposalBlock(raw string) []CopilotProposal {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var envelope copilotProposalEnvelope
+	if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
+		return nil
+	}
+
+	out := make([]CopilotProposal, 0, 2)
+	watchlist := envelope.WatchlistProposal
+	if watchlist == nil {
+		watchlist = envelope.Watchlist
+	}
+	if watchlist != nil {
+		addSymbols := symbols.Normalize(watchlist.Add)
+		removeSymbols := symbols.Normalize(watchlist.Remove)
+		if len(addSymbols) > 0 && len(removeSymbols) > 0 {
+			addSet := make(map[string]struct{}, len(addSymbols))
+			for _, symbol := range addSymbols {
+				addSet[symbol] = struct{}{}
+			}
+			filtered := make([]string, 0, len(removeSymbols))
+			for _, symbol := range removeSymbols {
+				if _, exists := addSet[symbol]; exists {
+					continue
+				}
+				filtered = append(filtered, symbol)
+			}
+			removeSymbols = filtered
+		}
+		if len(addSymbols) > 0 || len(removeSymbols) > 0 {
+			out = append(out, CopilotProposal{
+				Kind:          CopilotProposalKindWatchlist,
+				Rationale:     strings.TrimSpace(watchlist.Rationale),
+				AddSymbols:    addSymbols,
+				RemoveSymbols: removeSymbols,
+			})
+		}
+	}
+
+	steering := envelope.SteeringProposal
+	if steering == nil {
+		steering = envelope.Steering
+	}
+	if steering != nil {
+		preferredSymbols := symbols.Normalize(steering.PreferredSymbols)
+		excludedSymbols := symbols.Normalize(steering.ExcludedSymbols)
+		if len(preferredSymbols) > 0 && len(excludedSymbols) > 0 {
+			preferredSet := make(map[string]struct{}, len(preferredSymbols))
+			for _, symbol := range preferredSymbols {
+				preferredSet[symbol] = struct{}{}
+			}
+			filtered := make([]string, 0, len(excludedSymbols))
+			for _, symbol := range excludedSymbols {
+				if _, exists := preferredSet[symbol]; exists {
+					continue
+				}
+				filtered = append(filtered, symbol)
+			}
+			excludedSymbols = filtered
+		}
+		riskProfile := strings.ToLower(strings.TrimSpace(steering.RiskProfile))
+		minConfidence := util.Clamp01(steering.MinConfidence)
+		maxPositionNotional := util.MaxFloat(steering.MaxPositionNotional, 0)
+		horizon := strings.ToLower(strings.TrimSpace(steering.Horizon))
+		objective := strings.TrimSpace(steering.Objective)
+		if riskProfile != "" ||
+			minConfidence > 0 ||
+			maxPositionNotional > 0 ||
+			horizon != "" ||
+			objective != "" ||
+			len(preferredSymbols) > 0 ||
+			len(excludedSymbols) > 0 {
+			out = append(out, CopilotProposal{
+				Kind:                CopilotProposalKindSteering,
+				Rationale:           strings.TrimSpace(steering.Rationale),
+				RiskProfile:         riskProfile,
+				MinConfidence:       minConfidence,
+				MaxPositionNotional: maxPositionNotional,
+				Horizon:             horizon,
+				Objective:           objective,
+				PreferredSymbols:    preferredSymbols,
+				ExcludedSymbols:     excludedSymbols,
+			})
+		}
+	}
+	return out
 }
 
 func buildOpenAIOptions(apiKey string, baseURL string) []option.RequestOption {

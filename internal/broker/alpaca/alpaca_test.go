@@ -17,6 +17,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"helix-tui/internal/domain"
+	"helix-tui/internal/symbols"
 )
 
 func TestNormalizeFeed(t *testing.T) {
@@ -344,9 +345,9 @@ func TestWatchlistValidationAndNormalizers(t *testing.T) {
 		t.Fatalf("expected watchlist name validation, got %v", err)
 	}
 
-	got := normalizeSymbols([]string{"aapl", " AAPL ", "msft"})
+	got := symbols.Normalize([]string{"aapl", " AAPL ", "msft"})
 	if len(got) != 2 || got[0] != "AAPL" || got[1] != "MSFT" {
-		t.Fatalf("unexpected normalizeSymbols: %#v", got)
+		t.Fatalf("unexpected symbols.Normalize: %#v", got)
 	}
 
 	assets := []sdkalpaca.Asset{
@@ -354,9 +355,13 @@ func TestWatchlistValidationAndNormalizers(t *testing.T) {
 		{Symbol: " AAPL "},
 		{Symbol: "msft"},
 	}
-	gotAssets := normalizeSymbolsFromAssets(assets)
+	raw := make([]string, 0, len(assets))
+	for _, asset := range assets {
+		raw = append(raw, asset.Symbol)
+	}
+	gotAssets := symbols.Normalize(raw)
 	if len(gotAssets) != 2 || gotAssets[0] != "AAPL" || gotAssets[1] != "MSFT" {
-		t.Fatalf("unexpected normalizeSymbolsFromAssets: %#v", gotAssets)
+		t.Fatalf("unexpected symbols.Normalize(asset symbols): %#v", gotAssets)
 	}
 }
 

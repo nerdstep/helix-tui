@@ -4,11 +4,13 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"helix-tui/internal/util"
 )
 
 func (m Model) eventPageSize() int {
 	if m.activeTab == tabLogs && m.height > 0 {
-		return maxInt(1, m.height-m.logsReservedHeight())
+		return util.MaxInt(1, m.height-m.logsReservedHeight())
 	}
 	return 8
 }
@@ -23,7 +25,7 @@ func (m Model) logsReservedHeight() int {
 		tabHeight = 1
 	}
 	statusInputHeight := m.statusInputHeight()
-	footerHeight := maxInt(1, m.footerHeight())
+	footerHeight := util.MaxInt(1, m.footerHeight())
 	// panel title + viewport hint plus panel borders.
 	panelOverhead := panelStyle.GetVerticalFrameSize() + 2
 	// Keep one extra row to absorb terminal wrapping edge-cases.
@@ -54,7 +56,7 @@ func (m Model) statusInputHeight() int {
 	statusLine := statusRenderer.Render(statusText)
 	inputLine := inputStyle.Render("> " + m.input)
 	h := lipgloss.Height(statusLine) + lipgloss.Height(inputLine)
-	return maxInt(2, h)
+	return util.MaxInt(2, h)
 }
 
 func (m *Model) clampEventScroll() {

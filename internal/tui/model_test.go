@@ -771,6 +771,65 @@ func TestStrategyStatusControlsInvokeHandlers(t *testing.T) {
 	}
 }
 
+func TestStrategyProposalCommands(t *testing.T) {
+	var applied, rejected uint
+	m := New(newTestEngine()).
+		WithStrategyProposalApplyHandler(func(id uint) error {
+			applied = id
+			return nil
+		}).
+		WithStrategyProposalRejectHandler(func(id uint) error {
+			rejected = id
+			return nil
+		})
+	m.strategy = StrategySnapshot{
+		Proposals: []StrategyProposalView{
+			{ID: 21, Kind: "watchlist", Status: "pending", AddSymbols: []string{"AAPL"}},
+			{ID: 22, Kind: "steering", Status: "applied"},
+		},
+	}
+
+	m.input = "strategy proposal status"
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m1 := model.(Model)
+	if m1.statusError || !strings.Contains(m1.status, "#21") {
+		t.Fatalf("unexpected proposal status output: %q", m1.status)
+	}
+
+	m1.input = "strategy proposal list"
+	model, _ = m1.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2 := model.(Model)
+	if m2.statusError || !strings.Contains(m2.status, "#21 watchlist pending") {
+		t.Fatalf("unexpected proposal list output: %q", m2.status)
+	}
+
+	m2.input = "strategy proposal apply 21"
+	model, cmd := m2.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m3 := model.(Model)
+	if applied != 21 {
+		t.Fatalf("expected apply handler with id=21, got %d", applied)
+	}
+	if cmd == nil {
+		t.Fatalf("expected refresh command for proposal apply")
+	}
+	if m3.statusError || !strings.Contains(m3.status, "strategy proposal apply #21") {
+		t.Fatalf("unexpected proposal apply status: %q", m3.status)
+	}
+
+	m3.input = "strategy proposal reject 22"
+	model, cmd = m3.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m4 := model.(Model)
+	if rejected != 22 {
+		t.Fatalf("expected reject handler with id=22, got %d", rejected)
+	}
+	if cmd == nil {
+		t.Fatalf("expected refresh command for proposal reject")
+	}
+	if m4.statusError || !strings.Contains(m4.status, "strategy proposal reject #22") {
+		t.Fatalf("unexpected proposal reject status: %q", m4.status)
+	}
+}
+
 func TestStrategyChatCommands(t *testing.T) {
 	var createdTitle string
 	var sentThreadID uint

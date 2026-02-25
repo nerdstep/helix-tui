@@ -66,9 +66,31 @@ type StrategySteeringView struct {
 	UpdatedAt           time.Time
 }
 
+type StrategyProposalView struct {
+	ID                  uint
+	ThreadID            uint
+	Source              string
+	Kind                string
+	Status              string
+	Rationale           string
+	AddSymbols          []string
+	RemoveSymbols       []string
+	RiskProfile         string
+	MinConfidence       float64
+	MaxPositionNotional float64
+	Horizon             string
+	Objective           string
+	PreferredSymbols    []string
+	ExcludedSymbols     []string
+	Hash                string
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+}
+
 type StrategySnapshot struct {
 	Active   *StrategyPlanView
 	Recent   []StrategyPlanView
 	Steering *StrategySteeringView
 	Chat     StrategyChatView
+	Proposals []StrategyProposalView
 }

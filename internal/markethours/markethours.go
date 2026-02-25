@@ -4,6 +4,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"helix-tui/internal/util"
 )
 
 type Phase string
@@ -99,7 +101,7 @@ func isTradingDay(ny time.Time, checker TradingDayChecker) bool {
 	if checker == nil {
 		return true
 	}
-	day := time.Date(ny.Year(), ny.Month(), ny.Day(), 0, 0, 0, 0, time.UTC)
+	day := util.DateAtUTCMidnight(ny)
 	ok, err := checker.IsTradingDay(day)
 	if err != nil {
 		return true

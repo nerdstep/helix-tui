@@ -121,6 +121,87 @@ func runTUI(system *app.System, store *storage.Store, updateQuoteStream func([]s
 					system.Engine.AddEvent("strategy_plan_archived", fmt.Sprintf("id=%d status=archived source=tui", planID))
 					return nil
 				}).
+				WithStrategyProposalApplyHandler(func(proposalID uint) error {
+					proposal, err := strategyRepo.GetProposal(proposalID)
+					if err != nil {
+						return err
+					}
+					if proposal == nil {
+						return fmt.Errorf("strategy proposal %d not found", proposalID)
+					}
+					if proposal.Status != storage.StrategyProposalStatusPending {
+						return fmt.Errorf("strategy proposal %d is already %s", proposalID, proposal.Status)
+					}
+					switch proposal.Kind {
+					case storage.StrategyProposalKindWatchlist:
+						nextWatchlist := applyWatchlistProposal(system.Watchlist, proposal.AddSymbols, proposal.RemoveSymbols)
+						if len(nextWatchlist) == 0 {
+							return fmt.Errorf("strategy proposal %d would result in an empty watchlist", proposalID)
+						}
+						if err := onWatchlistChanged(nextWatchlist); err != nil {
+							return fmt.Errorf("apply watchlist proposal: %w", err)
+						}
+					case storage.StrategyProposalKindSteering:
+						state, err := strategyRepo.UpsertSteeringState(storage.StrategySteeringStateInput{
+							Source:              fmt.Sprintf("proposal:%d", proposal.ID),
+							RiskProfile:         proposal.RiskProfile,
+							MinConfidence:       proposal.MinConfidence,
+							MaxPositionNotional: proposal.MaxPositionNotional,
+							Horizon:             proposal.Horizon,
+							Objective:           proposal.Objective,
+							PreferredSymbols:    proposal.PreferredSymbols,
+							ExcludedSymbols:     proposal.ExcludedSymbols,
+						})
+						if err != nil {
+							return fmt.Errorf("apply steering proposal: %w", err)
+						}
+						system.Engine.AddEvent(
+							"strategy_steering_updated",
+							fmt.Sprintf(
+								"source=proposal id=%d version=%d hash=%s",
+								proposal.ID,
+								state.Version,
+								state.Hash,
+							),
+						)
+					default:
+						return fmt.Errorf("unsupported proposal kind %q", proposal.Kind)
+					}
+
+					if err := strategyRepo.SetProposalStatus(proposal.ID, storage.StrategyProposalStatusApplied); err != nil {
+						return err
+					}
+					system.Engine.AddEvent(
+						"strategy_proposal_applied",
+						fmt.Sprintf("id=%d kind=%s source=tui", proposal.ID, proposal.Kind),
+					)
+					if system.StrategyRunner != nil {
+						if queued := system.StrategyRunner.TriggerNow("strategy_proposal_apply"); queued {
+							system.Engine.AddEvent("strategy_cycle_requested", "reason=strategy_proposal_apply")
+						}
+					}
+					return nil
+				}).
+				WithStrategyProposalRejectHandler(func(proposalID uint) error {
+					proposal, err := strategyRepo.GetProposal(proposalID)
+					if err != nil {
+						return err
+					}
+					if proposal == nil {
+						return fmt.Errorf("strategy proposal %d not found", proposalID)
+					}
+					if proposal.Status != storage.StrategyProposalStatusPending {
+						return fmt.Errorf("strategy proposal %d is already %s", proposalID, proposal.Status)
+					}
+					if err := strategyRepo.SetProposalStatus(proposal.ID, storage.StrategyProposalStatusRejected); err != nil {
+						return err
+					}
+					system.Engine.AddEvent(
+						"strategy_proposal_rejected",
+						fmt.Sprintf("id=%d kind=%s source=tui", proposal.ID, proposal.Kind),
+					)
+					return nil
+				}).
 				WithStrategyChatCreateHandler(func(title string) (uint, error) {
 					thread, err := strategyRepo.CreateChatThread(title)
 					if err != nil {
@@ -179,14 +260,32 @@ func runTUI(system *app.System, store *storage.Store, updateQuoteStream func([]s
 					if _, err := strategyRepo.AppendChatMessage(threadID, "assistant", reply.Content, reply.Model); err != nil {
 						return err
 					}
+					createdProposals, err := persistStrategyCopilotProposals(strategyRepo, threadID, reply.Proposals)
+					if err != nil {
+						return err
+					}
+					for _, proposal := range createdProposals {
+						system.Engine.AddEvent(
+							"strategy_proposal_created",
+							fmt.Sprintf(
+								"id=%d kind=%s status=%s source=%s hash=%s",
+								proposal.ID,
+								proposal.Kind,
+								proposal.Status,
+								proposal.Source,
+								proposal.Hash,
+							),
+						)
+					}
 					system.Engine.AddEvent(
 						"strategy_chat_message",
 						fmt.Sprintf(
-							"thread_id=%d role=assistant chars=%d source=llm model=%s latency_ms=%d",
+							"thread_id=%d role=assistant chars=%d source=llm model=%s latency_ms=%d proposals=%d",
 							threadID,
 							len(reply.Content),
 							reply.Model,
 							time.Since(replyStart).Milliseconds(),
+							len(createdProposals),
 						),
 					)
 
@@ -316,4 +415,84 @@ func toStrategyChatMessages(in []storage.StrategyChatMessage) []strategy.ChatMes
 		})
 	}
 	return out
+}
+
+func persistStrategyCopilotProposals(repo *storage.StrategyRepository, threadID uint, proposals []strategy.CopilotProposal) ([]storage.StrategyProposal, error) {
+	if repo == nil || threadID == 0 || len(proposals) == 0 {
+		return nil, nil
+	}
+	out := make([]storage.StrategyProposal, 0, len(proposals))
+	for _, proposal := range proposals {
+		input, ok := toStrategyProposalInput(threadID, proposal)
+		if !ok {
+			continue
+		}
+		created, err := repo.CreateProposal(input)
+		if err != nil {
+			return nil, fmt.Errorf("create strategy proposal: %w", err)
+		}
+		out = append(out, created)
+	}
+	return out, nil
+}
+
+func toStrategyProposalInput(threadID uint, proposal strategy.CopilotProposal) (storage.StrategyProposalInput, bool) {
+	switch proposal.Kind {
+	case strategy.CopilotProposalKindWatchlist:
+		addSymbols := symbols.Normalize(proposal.AddSymbols)
+		removeSymbols := symbols.Normalize(proposal.RemoveSymbols)
+		if len(addSymbols) == 0 && len(removeSymbols) == 0 {
+			return storage.StrategyProposalInput{}, false
+		}
+		return storage.StrategyProposalInput{
+			ThreadID:      threadID,
+			Source:        "copilot",
+			Kind:          storage.StrategyProposalKindWatchlist,
+			Rationale:     proposal.Rationale,
+			AddSymbols:    addSymbols,
+			RemoveSymbols: removeSymbols,
+		}, true
+	case strategy.CopilotProposalKindSteering:
+		preferredSymbols := symbols.Normalize(proposal.PreferredSymbols)
+		excludedSymbols := symbols.Normalize(proposal.ExcludedSymbols)
+		return storage.StrategyProposalInput{
+			ThreadID:            threadID,
+			Source:              "copilot",
+			Kind:                storage.StrategyProposalKindSteering,
+			Rationale:           proposal.Rationale,
+			RiskProfile:         proposal.RiskProfile,
+			MinConfidence:       proposal.MinConfidence,
+			MaxPositionNotional: proposal.MaxPositionNotional,
+			Horizon:             proposal.Horizon,
+			Objective:           proposal.Objective,
+			PreferredSymbols:    preferredSymbols,
+			ExcludedSymbols:     excludedSymbols,
+		}, true
+	default:
+		return storage.StrategyProposalInput{}, false
+	}
+}
+
+func applyWatchlistProposal(current, addSymbols, removeSymbols []string) []string {
+	current = symbols.Normalize(current)
+	addSymbols = symbols.Normalize(addSymbols)
+	removeSymbols = symbols.Normalize(removeSymbols)
+	if len(removeSymbols) > 0 {
+		removeSet := make(map[string]struct{}, len(removeSymbols))
+		for _, symbol := range removeSymbols {
+			removeSet[symbol] = struct{}{}
+		}
+		filtered := make([]string, 0, len(current))
+		for _, symbol := range current {
+			if _, remove := removeSet[symbol]; remove {
+				continue
+			}
+			filtered = append(filtered, symbol)
+		}
+		current = filtered
+	}
+	if len(addSymbols) > 0 {
+		current = symbols.Merge(current, addSymbols)
+	}
+	return current
 }

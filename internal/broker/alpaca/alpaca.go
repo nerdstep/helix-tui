@@ -16,6 +16,7 @@ import (
 
 	"helix-tui/internal/domain"
 	"helix-tui/internal/symbols"
+	"helix-tui/internal/util"
 )
 
 const (
@@ -292,12 +293,12 @@ func (b *Broker) StreamTradeUpdates(ctx context.Context) (<-chan domain.TradeUpd
 	return out, nil
 }
 
-func (b *Broker) StreamQuotes(ctx context.Context, symbols []string) (<-chan domain.Quote, <-chan error, error) {
+func (b *Broker) StreamQuotes(ctx context.Context, syms []string) (<-chan domain.Quote, <-chan error, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
 
-	normalized := normalizeSymbols(symbols)
+	normalized := symbols.Normalize(syms)
 	quotes := make(chan domain.Quote, 1024)
 	errs := make(chan error, 16)
 	if len(normalized) == 0 {
@@ -362,17 +363,21 @@ func (b *Broker) GetWatchlistSymbols(name string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		return normalizeSymbolsFromAssets(full.Assets), nil
+		raw := make([]string, 0, len(full.Assets))
+		for _, asset := range full.Assets {
+			raw = append(raw, asset.Symbol)
+		}
+		return symbols.Normalize(raw), nil
 	}
 	return nil, nil
 }
 
-func (b *Broker) UpsertWatchlistSymbols(name string, symbols []string) error {
+func (b *Broker) UpsertWatchlistSymbols(name string, syms []string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return fmt.Errorf("watchlist name is required")
 	}
-	symbols = normalizeSymbols(symbols)
+	syms = symbols.Normalize(syms)
 	watchlists, err := b.tradeClient.GetWatchlists()
 	if err != nil {
 		return err
@@ -383,13 +388,13 @@ func (b *Broker) UpsertWatchlistSymbols(name string, symbols []string) error {
 		}
 		_, err := b.tradeClient.UpdateWatchlist(wl.ID, sdkalpaca.UpdateWatchlistRequest{
 			Name:    name,
-			Symbols: symbols,
+			Symbols: syms,
 		})
 		return err
 	}
 	_, err = b.tradeClient.CreateWatchlist(sdkalpaca.CreateWatchlistRequest{
 		Name:    name,
-		Symbols: symbols,
+		Symbols: syms,
 	})
 	return err
 }
@@ -401,9 +406,9 @@ func (b *Broker) SettlementDate(fillTime time.Time, settlementDays int) (time.Ti
 	if settlementDays <= 0 {
 		return fillTime.UTC(), nil
 	}
-	fillDay := dateAtUTCMidnight(fillTime)
+	fillDay := util.DateAtUTCMidnight(fillTime)
 	start := fillDay.AddDate(0, 0, 1)
-	end := fillDay.AddDate(0, 0, maxInt(30, settlementDays*10))
+	end := fillDay.AddDate(0, 0, util.MaxInt(30, settlementDays*10))
 	if err := b.ensureCalendarRange(start, end); err != nil {
 		return time.Time{}, err
 	}
@@ -432,7 +437,7 @@ func (b *Broker) IsTradingDay(day time.Time) (bool, error) {
 	if b == nil || b.tradeClient == nil {
 		return false, fmt.Errorf("alpaca broker is not initialized")
 	}
-	day = dateAtUTCMidnight(day)
+	day = util.DateAtUTCMidnight(day)
 	if err := b.ensureCalendarRange(day, day); err != nil {
 		return false, err
 	}
@@ -440,8 +445,8 @@ func (b *Broker) IsTradingDay(day time.Time) (bool, error) {
 }
 
 func (b *Broker) ensureCalendarRange(start, end time.Time) error {
-	start = dateAtUTCMidnight(start)
-	end = dateAtUTCMidnight(end)
+	start = util.DateAtUTCMidnight(start)
+	end = util.DateAtUTCMidnight(end)
 	b.calendarMu.RLock()
 	if !b.calendarRangeStart.IsZero() &&
 		!b.calendarRangeEnd.IsZero() &&
@@ -487,7 +492,7 @@ func (b *Broker) ensureCalendarRange(start, end time.Time) error {
 
 func (b *Broker) isTradingDay(day time.Time) bool {
 	b.calendarMu.RLock()
-	_, ok := b.calendarTradingDay[dateAtUTCMidnight(day).Format("2006-01-02")]
+	_, ok := b.calendarTradingDay[util.DateAtUTCMidnight(day).Format("2006-01-02")]
 	b.calendarMu.RUnlock()
 	return ok
 }
@@ -680,28 +685,4 @@ func stockStreamBaseURL(dataBaseURL string) string {
 		parsed.Scheme = "https"
 	}
 	return strings.TrimRight(parsed.String(), "/")
-}
-
-func normalizeSymbols(raw []string) []string {
-	return symbols.Normalize(raw)
-}
-
-func normalizeSymbolsFromAssets(assets []sdkalpaca.Asset) []string {
-	raw := make([]string, 0, len(assets))
-	for _, asset := range assets {
-		raw = append(raw, asset.Symbol)
-	}
-	return symbols.Normalize(raw)
-}
-
-func dateAtUTCMidnight(t time.Time) time.Time {
-	t = t.UTC()
-	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

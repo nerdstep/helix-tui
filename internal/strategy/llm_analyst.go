@@ -12,6 +12,7 @@ import (
 
 	"helix-tui/internal/domain"
 	"helix-tui/internal/symbols"
+	"helix-tui/internal/util"
 )
 
 const defaultStrategySystemPrompt = "You are a senior US equities strategy analyst for helix-tui. Build a concise, risk-aware strategy plan from the provided JSON context."
@@ -148,7 +149,7 @@ func (a *LLMAnalyst) BuildPlan(ctx context.Context, input Input) (Plan, error) {
 	}
 	payload := llmStrategyInput{
 		GeneratedAt:        input.GeneratedAt.UTC().Format(time.RFC3339),
-		MaxRecommendations: minInt(a.maxRecommendations, maxInt(1, input.MaxRecommendations)),
+		MaxRecommendations: util.MinInt(a.maxRecommendations, util.MaxInt(1, input.MaxRecommendations)),
 		Watchlist:          symbols.Normalize(input.Watchlist),
 		Steering:           toLLMSteeringContext(input.Steering),
 		CurrentPlan:        toLLMCurrentPlan(input.CurrentPlan),
@@ -196,7 +197,7 @@ func (a *LLMAnalyst) BuildPlan(ctx context.Context, input Input) (Plan, error) {
 	out := Plan{
 		NoChange:   parsed.NoChange,
 		Summary:    strings.TrimSpace(parsed.Summary),
-		Confidence: clamp01(parsed.Confidence),
+		Confidence: util.Clamp01(parsed.Confidence),
 	}
 	if out.NoChange {
 		out.Recommendations = nil
@@ -229,7 +230,7 @@ func (a *LLMAnalyst) BuildPlan(ctx context.Context, input Input) (Plan, error) {
 		recs = append(recs, Recommendation{
 			Symbol:       symbol,
 			Bias:         bias,
-			Confidence:   clamp01(rec.Confidence),
+			Confidence:   util.Clamp01(rec.Confidence),
 			EntryMin:     rec.EntryMin,
 			EntryMax:     rec.EntryMax,
 			TargetPrice:  rec.TargetPrice,
@@ -255,8 +256,8 @@ func toLLMSteeringContext(steering *SteeringContext) *llmSteeringContext {
 		Version:             steering.Version,
 		Source:              strings.TrimSpace(steering.Source),
 		RiskProfile:         strings.TrimSpace(steering.RiskProfile),
-		MinConfidence:       clamp01(steering.MinConfidence),
-		MaxPositionNotional: maxFloat(steering.MaxPositionNotional, 0),
+		MinConfidence:       util.Clamp01(steering.MinConfidence),
+		MaxPositionNotional: util.MaxFloat(steering.MaxPositionNotional, 0),
 		Horizon:             strings.TrimSpace(steering.Horizon),
 		Objective:           strings.TrimSpace(steering.Objective),
 		PreferredSymbols:    symbols.Normalize(steering.PreferredSymbols),
@@ -304,37 +305,6 @@ func trimRecentEvents(events []domain.Event, limit int) []domain.Event {
 		return events
 	}
 	return events[len(events)-limit:]
-}
-
-func clamp01(v float64) float64 {
-	if v < 0 {
-		return 0
-	}
-	if v > 1 {
-		return 1
-	}
-	return v
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func maxFloat(a, b float64) float64 {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func normalizedStrategyIdentity(humanName, humanAlias, agentName string) strategyIdentityInput {

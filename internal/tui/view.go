@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"helix-tui/internal/util"
 )
 
 func (m Model) View() string {
@@ -115,7 +117,7 @@ func renderTwoColumnPanels(leftLines []string, rightLines []string, leftWidth in
 	row := joinHorizontalWithGap([]string{left, right}, gap)
 	delta := total - lipgloss.Width(row)
 	if delta != 0 {
-		right = renderPanel(rightLines, maxInt(1, rightWidth+delta))
+		right = renderPanel(rightLines, util.MaxInt(1, rightWidth+delta))
 		row = joinHorizontalWithGap([]string{left, right}, gap)
 	}
 	return row
@@ -125,7 +127,7 @@ func renderPanel(lines []string, width int) string {
 	style := panelStyle
 	if width > 0 {
 		frame := style.GetHorizontalFrameSize()
-		inner := maxInt(1, width-frame)
+		inner := util.MaxInt(1, width-frame)
 		lineStyle := lipgloss.NewStyle().Width(inner).MaxWidth(inner)
 		clamped := make([]string, 0, len(lines))
 		for _, line := range lines {

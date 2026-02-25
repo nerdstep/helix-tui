@@ -63,6 +63,16 @@ func TestLoadStrategySnapshotForThread_IncludesSelectedChatThread(t *testing.T) 
 	}); err != nil {
 		t.Fatalf("upsert steering: %v", err)
 	}
+	if _, err := repo.CreateProposal(storage.StrategyProposalInput{
+		ThreadID:      thread2.ID,
+		Source:        "copilot",
+		Kind:          storage.StrategyProposalKindWatchlist,
+		Rationale:     "Rotate into semis.",
+		AddSymbols:    []string{"NVDA"},
+		RemoveSymbols: []string{"AAPL"},
+	}); err != nil {
+		t.Fatalf("create strategy proposal: %v", err)
+	}
 
 	snapshot, err := loadStrategySnapshotForThread(repo, thread2.ID)
 	if err != nil {
@@ -82,6 +92,12 @@ func TestLoadStrategySnapshotForThread_IncludesSelectedChatThread(t *testing.T) 
 	}
 	if snapshot.Steering.Version != 1 {
 		t.Fatalf("expected steering version 1, got %d", snapshot.Steering.Version)
+	}
+	if len(snapshot.Proposals) != 1 {
+		t.Fatalf("expected one proposal in snapshot, got %#v", snapshot.Proposals)
+	}
+	if snapshot.Proposals[0].Kind != "watchlist" || snapshot.Proposals[0].Status != "pending" {
+		t.Fatalf("unexpected proposal state in snapshot: %#v", snapshot.Proposals[0])
 	}
 }
 

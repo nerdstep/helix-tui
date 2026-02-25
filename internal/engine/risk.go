@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"helix-tui/internal/domain"
+	"helix-tui/internal/util"
 )
 
 type Policy struct {
@@ -144,8 +145,7 @@ func (g *RiskGate) currentDay() time.Time {
 	if nowFn == nil {
 		nowFn = func() time.Time { return time.Now().UTC() }
 	}
-	now := nowFn().UTC()
-	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	return util.DateAtUTCMidnight(nowFn())
 }
 
 func (g *RiskGate) rolloverDailyLocked(day time.Time) {

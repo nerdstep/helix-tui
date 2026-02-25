@@ -7,13 +7,14 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"helix-tui/internal/eventmeta"
+	"helix-tui/internal/markethours"
 )
 
 var (
 	logoOnce  sync.Once
 	logoLines []string
-	nyLocOnce sync.Once
-	nyLoc     *time.Location
 )
 
 const embeddedLogo = "" +
@@ -47,11 +48,11 @@ func (m Model) buildHeader() string {
 func (m Model) buildAccountSummary() string {
 	now := time.Now()
 	ny := now.In(newYorkLocation())
-	marketLabel, marketOpen := marketSession(now)
+	marketLabel, marketOpen := marketSessionWithChecker(now, m.tradingDayChecker)
 	marketValue := mutedStyle.Render(marketLabel)
 	if marketOpen {
 		marketValue = positiveStyle.Render(marketLabel)
-	} else if strings.Contains(marketLabel, "PRE") || strings.Contains(marketLabel, "AFTER") {
+	} else if markethours.IsAfterHoursLabel(marketLabel) {
 		marketValue = warnStyle.Render(marketLabel)
 	}
 
@@ -130,9 +131,12 @@ func (m Model) headerAgentStatus() string {
 	if event == nil {
 		return headerValueStyle.Render("manual")
 	}
-	fields := parseEventFields(event.Details)
-	mode := strings.TrimSpace(fields["mode"])
-	agentType := strings.TrimSpace(fields["agent"])
+	modeEvent, ok := eventmeta.DecodeAgentMode(event.Details)
+	if !ok {
+		return headerValueStyle.Render("manual")
+	}
+	mode := strings.TrimSpace(modeEvent.Mode)
+	agentType := strings.TrimSpace(modeEvent.AgentType)
 	switch {
 	case mode == "" && agentType == "":
 		return headerValueStyle.Render("manual")
@@ -162,8 +166,11 @@ func (m Model) headerAlpacaEnvStatus() string {
 	if event == nil {
 		return mutedStyle.Render("Unknown")
 	}
-	fields := parseEventFields(event.Details)
-	switch strings.ToLower(strings.TrimSpace(fields["env"])) {
+	cfg, ok := eventmeta.DecodeAlpacaConfig(event.Details)
+	if !ok {
+		return mutedStyle.Render("Unknown")
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Env)) {
 	case "live":
 		return warnStyle.Render("Live")
 	case "paper":
@@ -173,50 +180,16 @@ func (m Model) headerAlpacaEnvStatus() string {
 	}
 }
 
-func parseEventFields(details string) map[string]string {
-	fields := map[string]string{}
-	for _, part := range strings.Fields(details) {
-		if !strings.Contains(part, "=") {
-			continue
-		}
-		key, value, ok := strings.Cut(part, "=")
-		if !ok {
-			continue
-		}
-		fields[strings.TrimSpace(key)] = strings.TrimSpace(value)
-	}
-	return fields
+func marketSession(now time.Time) (label string, marketOpen bool) {
+	return marketSessionWithChecker(now, nil)
 }
 
-func marketSession(now time.Time) (label string, marketOpen bool) {
-	nyNow := now.In(newYorkLocation())
-	if nyNow.Weekday() == time.Saturday || nyNow.Weekday() == time.Sunday {
-		return "CLOSED (weekend)", false
-	}
-
-	minuteOfDay := nyNow.Hour()*60 + nyNow.Minute()
-	switch {
-	case minuteOfDay >= 9*60+30 && minuteOfDay < 16*60:
-		return "OPEN (regular)", true
-	case minuteOfDay >= 4*60 && minuteOfDay < 9*60+30:
-		return "PRE (04:00-09:30 ET)", false
-	case minuteOfDay >= 16*60 && minuteOfDay < 20*60:
-		return "AFTER (16:00-20:00 ET)", false
-	default:
-		return "CLOSED", false
-	}
+func marketSessionWithChecker(now time.Time, checker markethours.TradingDayChecker) (string, bool) {
+	return markethours.SessionLabel(now, checker)
 }
 
 func newYorkLocation() *time.Location {
-	nyLocOnce.Do(func() {
-		loc, err := time.LoadLocation("America/New_York")
-		if err != nil {
-			nyLoc = time.Local
-			return
-		}
-		nyLoc = loc
-	})
-	return nyLoc
+	return markethours.NewYorkLocation()
 }
 
 func loadLogoLines() []string {

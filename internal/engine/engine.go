@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"helix-tui/internal/domain"
+	"helix-tui/internal/eventmeta"
 )
 
 const maxSnapshotEvents = 500
@@ -133,6 +134,12 @@ func (e *Engine) PlaceOrder(ctx context.Context, req domain.OrderRequest) (domai
 	if err := e.gate.Evaluate(req, quote); err != nil {
 		return domain.Order{}, err
 	}
+	rollbackRisk := true
+	defer func() {
+		if rollbackRisk {
+			e.gate.Rollback(req, quote)
+		}
+	}()
 	if e.compliance != nil {
 		snapshot := e.Snapshot()
 		if account, accountErr := e.broker.GetAccount(ctx); accountErr == nil {
@@ -150,6 +157,7 @@ func (e *Engine) PlaceOrder(ctx context.Context, req domain.OrderRequest) (domai
 	if err != nil {
 		return domain.Order{}, err
 	}
+	rollbackRisk = false
 
 	recordFill := false
 	fillSide := order.Side
@@ -346,6 +354,10 @@ func (e *Engine) AllowSymbol(symbol string) {
 	e.gate.AllowSymbol(symbol)
 }
 
+func (e *Engine) SetAllowSymbols(symbols []string) {
+	e.gate.SetAllowSymbols(symbols)
+}
+
 func (e *Engine) SetComplianceGate(gate *ComplianceGate) {
 	e.mu.Lock()
 	e.compliance = gate
@@ -472,37 +484,11 @@ func quoteReferencePrice(side domain.Side, quote domain.Quote) float64 {
 }
 
 func formatCompliancePostureDetails(status domain.ComplianceStatus) string {
-	return fmt.Sprintf(
-		"enabled=%t account_type=%s avoid_pdt=%t avoid_gfv=%t pdt=%t day_trades=%d max_day_trades_5d=%d equity=%.2f min_equity_for_pdt=%.2f local_unsettled=%.2f broker_unsettled=%.2f drift_detected=%t",
-		status.Enabled,
-		status.AccountType,
-		status.AvoidPDT,
-		status.AvoidGoodFaith,
-		status.PatternDayTrader,
-		status.DayTradeCount,
-		status.MaxDayTrades5D,
-		status.Equity,
-		status.MinEquityForPDT,
-		status.LocalUnsettledProceeds,
-		status.BrokerUnsettledProceeds,
-		status.UnsettledDriftDetected,
-	)
+	return eventmeta.EncodeCompliancePosture(status)
 }
 
 func formatComplianceDriftDetails(status domain.ComplianceStatus) string {
-	state := "clear"
-	if status.UnsettledDriftDetected {
-		state = "detected"
-	}
-	return fmt.Sprintf(
-		"state=%s account_type=%s local_unsettled=%.2f broker_unsettled=%.2f drift=%.2f tolerance=%.2f",
-		state,
-		status.AccountType,
-		status.LocalUnsettledProceeds,
-		status.BrokerUnsettledProceeds,
-		status.UnsettledDrift,
-		status.UnsettledDriftTolerance,
-	)
+	return eventmeta.EncodeComplianceDrift(status)
 }
 
 func (e *Engine) addEventLocked(event domain.Event) domain.Event {

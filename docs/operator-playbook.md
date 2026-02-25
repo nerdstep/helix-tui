@@ -37,7 +37,11 @@ Operational guide for running `helix-tui` safely day-to-day.
 - `Strategy` tab:
   - active plan summary
   - recommendations
+  - active steering context (version/hash/objective/symbol sets)
   - stale/health indicators
+- `Chat` tab:
+  - copilot thread history
+  - operator/assistant strategy discussion context
 - `System` tab:
   - request success/failure counts
   - persistence health
@@ -50,7 +54,8 @@ Operational guide for running `helix-tui` safely day-to-day.
 - `cancel <ORDER_ID|ORDER_ID_PREFIX|#ROW>`
 - `flatten`
 - `strategy run|status|approve|reject|archive`
-- `tab overview|strategy|system|logs`
+- `strategy chat status|list|new|use|say`
+- `tab overview|strategy|chat|system|logs`
 
 ## Incident Response
 

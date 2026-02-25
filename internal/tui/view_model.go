@@ -9,6 +9,7 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"helix-tui/internal/domain"
+	"helix-tui/internal/eventmeta"
 )
 
 type viewModel struct {
@@ -228,9 +229,13 @@ func (m Model) buildStrategyHealthRows() []string {
 		rows = append(rows, mutedStyle.Render("status: strategy disabled"))
 		return rows
 	}
-	fields := parseEventFields(mode.Details)
+	modeDetails, ok := eventmeta.DecodeStrategyMode(mode.Details)
+	if !ok || !modeDetails.Enabled {
+		rows = append(rows, mutedStyle.Render("status: strategy disabled"))
+		return rows
+	}
 	interval := time.Duration(0)
-	if raw := strings.TrimSpace(fields["interval"]); raw != "" {
+	if raw := strings.TrimSpace(modeDetails.Interval); raw != "" {
 		if parsed, err := time.ParseDuration(raw); err == nil {
 			interval = parsed
 		}
@@ -539,7 +544,19 @@ func (m Model) buildSystemPersistenceRows() []string {
 func (m Model) systemRuntimeData() []systemKV {
 	mode := "unknown"
 	if e := latestEventByType(m.snapshot.Events, "agent_mode"); e != nil && strings.TrimSpace(e.Details) != "" {
-		mode = e.Details
+		mode = strings.TrimSpace(e.Details)
+		if decoded, ok := eventmeta.DecodeAgentMode(e.Details); ok {
+			switch {
+			case decoded.Mode == "" && decoded.AgentType == "":
+				mode = "unknown"
+			case decoded.AgentType == "":
+				mode = decoded.Mode
+			case decoded.Mode == "":
+				mode = decoded.AgentType
+			default:
+				mode = fmt.Sprintf("%s/%s", decoded.Mode, decoded.AgentType)
+			}
+		}
 	}
 	lastSync := "n/a"
 	if e := latestEventByType(m.snapshot.Events, "sync"); e != nil {
@@ -555,9 +572,12 @@ func (m Model) systemRuntimeData() []systemKV {
 	}
 	power := "active"
 	if e := latestEventByType(m.snapshot.Events, "agent_power_state"); e != nil {
-		fields := parseEventFields(e.Details)
-		state := strings.TrimSpace(fields["state"])
-		reason := strings.TrimSpace(fields["reason"])
+		state := ""
+		reason := ""
+		if decoded, ok := eventmeta.DecodeAgentPowerState(e.Details); ok {
+			state = strings.TrimSpace(decoded.State)
+			reason = strings.TrimSpace(decoded.Reason)
+		}
 		if state != "" {
 			power = state
 		}
@@ -579,10 +599,14 @@ func (m Model) systemRuntimeData() []systemKV {
 func (m Model) systemAgentData() []systemKV {
 	identity := "n/a"
 	if e := latestEventByType(m.snapshot.Events, "identity_config"); e != nil {
-		fields := parseEventFields(e.Details)
-		agent := restoreEventField(fields["agent"])
-		human := restoreEventField(fields["human"])
-		alias := restoreEventField(fields["alias"])
+		agent := ""
+		human := ""
+		alias := ""
+		if decoded, ok := eventmeta.DecodeIdentityConfig(e.Details); ok {
+			agent = decoded.Agent
+			human = decoded.Human
+			alias = decoded.Alias
+		}
 		if agent != "" || human != "" || alias != "" {
 			identity = fmt.Sprintf("agent=%s human=%s alias=%s", nonEmpty(identityValue(agent), "n/a"), nonEmpty(identityValue(human), "n/a"), nonEmpty(identityValue(alias), "n/a"))
 		}
@@ -636,18 +660,14 @@ func (m Model) compliancePostureSummary() string {
 			m.snapshot.Account.DayTradeCount,
 		)
 	}
-	fields := parseEventFields(e.Details)
-	accountType := strings.TrimSpace(fields["account_type"])
-	if accountType == "" {
-		accountType = "n/a"
-	}
-	pdt := strings.TrimSpace(fields["pdt"])
-	if pdt == "" {
-		pdt = "n/a"
-	}
-	dayTrades := strings.TrimSpace(fields["day_trades"])
-	if dayTrades == "" {
-		dayTrades = "n/a"
+	decoded, ok := eventmeta.DecodeCompliancePosture(e.Details)
+	accountType := "n/a"
+	pdt := "n/a"
+	dayTrades := "n/a"
+	if ok {
+		accountType = nonEmpty(strings.TrimSpace(decoded.AccountType), "n/a")
+		pdt = fmt.Sprintf("%t", decoded.PatternDayTrad)
+		dayTrades = fmt.Sprintf("%d", decoded.DayTrades)
 	}
 	return fmt.Sprintf("acct=%s pdt=%s day_trades=%s", accountType, pdt, dayTrades)
 }
@@ -666,18 +686,14 @@ func (m Model) complianceDriftSummary() string {
 	if active == nil {
 		return "clear"
 	}
-	fields := parseEventFields(active.Details)
-	local := strings.TrimSpace(fields["local_unsettled"])
-	broker := strings.TrimSpace(fields["broker_unsettled"])
-	drift := strings.TrimSpace(fields["drift"])
-	if local == "" && broker == "" && drift == "" {
+	decoded, ok := eventmeta.DecodeComplianceDrift(active.Details)
+	if !ok {
 		return state
 	}
+	local := fmt.Sprintf("%.2f", decoded.LocalUnsettled)
+	broker := fmt.Sprintf("%.2f", decoded.BrokerUnsettled)
+	drift := fmt.Sprintf("%.2f", decoded.Drift)
 	return fmt.Sprintf("%s local=%s broker=%s delta=%s", state, nonEmpty(local, "n/a"), nonEmpty(broker, "n/a"), nonEmpty(drift, "n/a"))
-}
-
-func restoreEventField(value string) string {
-	return strings.ReplaceAll(strings.TrimSpace(value), "_", " ")
 }
 
 func identityValue(value string) string {

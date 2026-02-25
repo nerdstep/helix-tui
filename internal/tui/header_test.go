@@ -8,6 +8,18 @@ import (
 	"helix-tui/internal/domain"
 )
 
+type stubHeaderTradingDayChecker struct {
+	result bool
+	err    error
+}
+
+func (s stubHeaderTradingDayChecker) IsTradingDay(time.Time) (bool, error) {
+	if s.err != nil {
+		return false, s.err
+	}
+	return s.result, nil
+}
+
 func TestMarketSession(t *testing.T) {
 	loc := newYorkLocation()
 	tests := []struct {
@@ -55,6 +67,17 @@ func TestMarketSession(t *testing.T) {
 				t.Fatalf("marketSession(%s) = (%q, %v), want (%q, %v)", tt.at, label, open, tt.wantLabel, tt.wantOpen)
 			}
 		})
+	}
+}
+
+func TestMarketSession_HolidayChecker(t *testing.T) {
+	loc := newYorkLocation()
+	label, open := marketSessionWithChecker(
+		time.Date(2026, time.February, 17, 10, 0, 0, 0, loc),
+		stubHeaderTradingDayChecker{result: false},
+	)
+	if label != "CLOSED (holiday)" || open {
+		t.Fatalf("expected holiday closure, got label=%q open=%v", label, open)
 	}
 }
 

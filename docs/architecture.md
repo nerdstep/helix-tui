@@ -2,6 +2,8 @@
 
 This document describes the current runtime architecture of `helix-tui`.
 
+Last updated: 2026-02-24
+
 ## Runtime Scope
 
 - Runtime broker path: Alpaca (`[alpaca].env = paper|live`)
@@ -22,6 +24,7 @@ flowchart LR
     TUI[TUI]
     RUN[autonomy.Runner]
     STRAT[strategy.Runner]
+    COPILOT["Strategy Copilot<br/>llm chat advisor"]
     AGENT["Execution Agent<br/>heuristic | llm"]
     ANALYST["Strategy Analyst<br/>llm"]
     ENG[engine.Engine]
@@ -30,6 +33,7 @@ flowchart LR
     BROKER[Alpaca Broker]
     ALP[(Alpaca APIs)]
     DB[(SQLite)]
+    STEER["strategy_steering_state<br/>strategy_steering_symbols"]
     EVT[runtime event persistor]
     QSC[runtime quote stream controller]
 
@@ -37,17 +41,21 @@ flowchart LR
     APP --> TUI
     APP --> RUN
     APP --> STRAT
+    APP --> COPILOT
     APP --> QSC
     APP --> EVT
     RUN --> AGENT --> ENG
     STRAT --> ANALYST
+    TUI --> COPILOT
     TUI --> ENG
     ENG --> RISK --> COMP --> BROKER --> ALP
     QSC --> BROKER
     QSC --> ENG
     ENG --> EVT --> DB
     STRAT --> DB
+    COPILOT --> DB
     RUN --> DB
+    DB --> STEER
 ```
 
 ## Startup/Data Initialization
@@ -128,6 +136,7 @@ flowchart TD
 sequenceDiagram
     participant S as strategy.Runner
     participant D as SQLite strategy tables
+    participant ST as SQLite steering tables
     participant L as LLM Analyst
     participant E as Engine
     participant A as autonomy.Runner
@@ -137,6 +146,7 @@ sequenceDiagram
       S-->>S: skip cycle
     else run cycle
       S->>E: Sync + snapshot + quotes + events
+      S->>ST: GetSteeringState()
       S->>L: BuildPlan(input)
       L-->>S: Plan (or no_change)
       alt no_change
@@ -146,12 +156,25 @@ sequenceDiagram
         alt auto_activate=true
           S->>D: Set active
         end
-        S-->>E: strategy_plan_created event
+        S-->>E: strategy_plan_created event (steering_version/hash)
       end
     end
     A->>D: Get active plan constraints
     A-->>A: enforce symbol/bias/max_notional
 ```
+
+## Copilot -> Analyst Steering Contract
+
+- Strategy chat is advisory and operator-driven in the dedicated `Chat` tab.
+- Steering is persisted as typed state in SQLite:
+  - `strategy_steering_state` (singleton current state)
+  - `strategy_steering_symbols` (preferred/excluded symbol sets)
+- On each strategy cycle, `strategy.Runner` loads steering and injects it into analyst input.
+- Analyst context now includes:
+  - risk profile/objective/horizon
+  - preferred and excluded symbols
+  - steering version/hash for deterministic traceability
+- `strategy_plan_created` events include steering version/hash to audit what guidance shaped each plan.
 
 ## Event Persistence + LLM Context
 
@@ -188,6 +211,7 @@ flowchart LR
 - Compliance checks run after risk checks before broker submission.
 - Autonomous execution can be globally dampened by low-power mode.
 - Strategy policy can further restrict autonomous execution decisions.
+- Copilot chat never places orders directly; execution still flows only through engine gates.
 
 ## Compliance Reconciliation
 

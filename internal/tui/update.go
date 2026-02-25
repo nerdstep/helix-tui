@@ -121,9 +121,7 @@ func (m Model) updateWatchCommandResult(msg watchCommandResultMsg) (tea.Model, t
 		next := symbols.Normalize(msg.watchlist)
 		m.watchlist = next
 		m.pruneWatchlistQuoteState()
-		for _, symbol := range next {
-			m.engine.AllowSymbol(symbol)
-		}
+		m.engine.SetAllowSymbols(next)
 		m.syncWidgets()
 	}
 	m.status = msg.status

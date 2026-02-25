@@ -1,6 +1,6 @@
 # helix-tui Implementation Plan
 
-Last updated: 2026-02-23
+Last updated: 2026-02-24
 
 This is the running backlog for product/architecture ideas that are approved, in progress, or parked for later.
 
@@ -26,16 +26,15 @@ Status values:
 |---|---|---|---|---|---|
 | ALPACA-001 | Investigate error: {"level":"warn","component":"eventlog","event_type":"agent_intent_rejected","event_time":"2026-02-19T20:29:57-08:00","time":"2026-02-19T20:29:58-08:00","message":"buy RIVN qty=100.00 type=limit conf=0.00 gain=6.00% rationale=No existing position or open orders; last=15.415 — place a small limit buy (100 sh = ~$1.54k, ~1.5% cash) to establish exposure; targeting modest 6% gain.: invalid limit_price 15.415. sub-penny increment does not fulfill minimum pricing criteria (HTTP 422, Code 42210000)"} | high | next |
 | AGENT-006 | Assist-mode approval workflow for agent intents in TUI | high | next | Turn `assist` mode into actionable human approval loop | TUI shows pending intents and supports approve/reject commands; events logged for every decision |
-| STRAT-008 | Strategy Copilot chat (advisory) | high | in_progress | Enable operator-agent discussion for plan pivots, new symbols, and due diligence workflows | Operator can chat in Strategy tab, see persisted thread history, and apply explicit watchlist/plan proposals |
+| STRAT-008 | Strategy Copilot chat (advisory) | high | in_progress | Enable operator-agent discussion for plan pivots, new symbols, and due diligence workflows | Operator can chat in dedicated Chat tab, see persisted thread history, and apply explicit watchlist/plan proposals |
+| STRAT-009 | Copilot-to-Analyst steering contract | high | in_progress | Ensure chat outcomes become explicit strategy steering inputs for the analyst loop | Structured steering state is persisted, visible, and consumed by analyst plan generation each cycle |
 
 ## Backlog
 
 | ID | Item | Priority | Status | Why | Exit Criteria |
 |---|---|---|---|---|---|
-| AGENT-007 | Prompt/version registry for agent prompts | medium | proposed | Controlled prompt evolution and rollback | Prompt ID/version in config; current prompt file- and version-addressable; events include prompt version |
-| OPS-003 | Persistent run ledger (cycles/intents/orders/rejections) | medium | proposed | Auditable autonomous behavior across sessions | File-backed ledger with rotation; includes cycle summary + intent decisions + execution outcomes |
+| OPS-003 | Persistent run ledger (cycles/intents/orders/rejections) | medium | proposed | Auditable autonomous behavior across sessions | db-backed ledger; includes cycle summary + intent decisions + execution outcomes |
 | SAFETY-003 | Live-trading enablement guardrail | high | proposed | Prevent accidental live deployment | Explicit `live_enable=true` gate + startup confirmation event when `alpaca.env=live` |
-| DX-002 | Backtest/replay harness for agent strategies | medium | proposed | Faster strategy iteration without live loops | Deterministic replay command over stored snapshots/quotes; performance and intent stats output |
 
 ## In Progress
 
@@ -146,14 +145,32 @@ Status values:
 - Status: `done`
 - Scope:
   - Add persistent strategy conversation threads/messages in SQLite.
-  - Add `strategy chat` command surface and Strategy tab chat viewport/input.
+  - Add `strategy chat` command surface and dedicated Chat tab viewport/input.
   - Keep chat advisory-only (no direct order execution side effects).
 - Completion criteria:
   - [x] Operator can create/select/list chat threads.
   - [x] Messages persist across app restarts and are queryable in UI.
   - [x] Chat actions emit auditable events.
 
-### Phase 2: Structured proposals + approval workflow
+### Phase 2: Copilot outcomes -> Analyst steering contract
+
+- Status: `next`
+- Scope:
+  - Persist structured steering state derived from chat decisions:
+    - preferred symbols/themes
+    - risk posture and sizing preferences
+    - constraints and exclusions
+    - planning horizon / objective emphasis
+  - Introduce explicit operator apply/reject commands for proposed steering updates.
+  - Inject active steering state into analyst input every strategy cycle.
+  - Surface active steering state and last update source in Strategy tab.
+- Completion criteria:
+  - [x] Steering state is stored in typed DB tables (not free-form blobs).
+  - [x] Analyst prompt payload includes steering state deterministically.
+  - [x] Plan generation events record steering version/hash used.
+  - [ ] Operator can inspect/approve/reject steering updates with audit events.
+
+### Phase 3: Structured proposals + approval workflow
 
 - Status: `proposed`
 - Scope:
@@ -166,7 +183,7 @@ Status values:
   - [ ] Applied watchlist changes sync with Alpaca and local execution scope.
   - [ ] Proposal decisions are persisted and visible in Strategy tab history.
 
-### Phase 3: Research tooling + richer context
+### Phase 4: Research tooling + richer context
 
 - Status: `proposed`
 - Scope:

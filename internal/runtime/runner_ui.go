@@ -84,7 +84,8 @@ func runTUI(system *app.System, store *storage.Store, updateQuoteStream func([]s
 	}
 
 	model := tui.New(system.Engine, system.Watchlist...).
-		WithWatchlistChangeHandler(onWatchlistChanged)
+		WithWatchlistChangeHandler(onWatchlistChanged).
+		WithTradingDayChecker(system.TradingDayChecker)
 
 	if system.StrategyRunner != nil {
 		model = model.WithStrategyRunHandler(func() error {

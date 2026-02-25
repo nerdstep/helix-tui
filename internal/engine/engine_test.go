@@ -371,6 +371,82 @@ func TestPlaceOrder_ComplianceGFVRejectsBuyUsingUnsettledProceeds(t *testing.T) 
 	}
 }
 
+func TestPlaceOrder_RiskReservationRolledBackOnBrokerError(t *testing.T) {
+	b := &engineStubBroker{
+		account:  domain.Account{Cash: 10000, BuyingPower: 10000, Equity: 10000, Multiplier: 1},
+		quotes:   map[string]domain.Quote{"AAPL": {Symbol: "AAPL", Last: 100}},
+		placeErr: errors.New("broker unavailable"),
+	}
+	e := New(b, NewRiskGate(Policy{
+		AllowMarketOrders:   true,
+		MaxNotionalPerTrade: 1000,
+		MaxNotionalPerDay:   100,
+	}))
+	if err := e.Sync(context.Background()); err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+
+	_, err := e.PlaceOrder(context.Background(), domain.OrderRequest{
+		Symbol: "AAPL", Side: domain.SideBuy, Qty: 1, Type: domain.OrderTypeMarket,
+	})
+	if err == nil || !strings.Contains(err.Error(), "broker unavailable") {
+		t.Fatalf("expected broker error, got %v", err)
+	}
+
+	b.placeErr = nil
+	if _, err := e.PlaceOrder(context.Background(), domain.OrderRequest{
+		Symbol: "AAPL", Side: domain.SideBuy, Qty: 1, Type: domain.OrderTypeMarket,
+	}); err != nil {
+		t.Fatalf("expected second order to pass after rollback, got %v", err)
+	}
+}
+
+func TestPlaceOrder_RiskReservationRolledBackOnComplianceRejection(t *testing.T) {
+	b := &engineStubBroker{
+		account: domain.Account{
+			Cash:          1000,
+			BuyingPower:   2000,
+			Equity:        1000,
+			Multiplier:    2,
+			DayTradeCount: 2,
+		},
+		quotes: map[string]domain.Quote{
+			"AAPL": {Symbol: "AAPL", Last: 100, Bid: 99.5, Ask: 100.5},
+		},
+	}
+
+	e := New(b, NewRiskGate(Policy{
+		AllowMarketOrders:   true,
+		MaxNotionalPerTrade: 1000,
+		MaxNotionalPerDay:   100,
+	}))
+	e.SetComplianceGate(NewComplianceGate(CompliancePolicy{
+		Enabled:         true,
+		AccountType:     "margin",
+		AvoidPDT:        true,
+		MaxDayTrades5D:  3,
+		MinEquityForPDT: 25000,
+	}))
+	if err := e.Sync(context.Background()); err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+
+	_, err := e.PlaceOrder(context.Background(), domain.OrderRequest{
+		Symbol: "AAPL", Side: domain.SideBuy, Qty: 1, Type: domain.OrderTypeMarket,
+	})
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "pdt guard") {
+		t.Fatalf("expected compliance rejection, got %v", err)
+	}
+
+	// Disable compliance and verify daily risk budget was restored.
+	e.SetComplianceGate(nil)
+	if _, err := e.PlaceOrder(context.Background(), domain.OrderRequest{
+		Symbol: "AAPL", Side: domain.SideBuy, Qty: 1, Type: domain.OrderTypeMarket,
+	}); err != nil {
+		t.Fatalf("expected second order to pass after compliance rollback, got %v", err)
+	}
+}
+
 func TestSetComplianceSettlementStore_WiresStore(t *testing.T) {
 	e := New(&engineStubBroker{}, NewRiskGate(Policy{AllowMarketOrders: true}))
 	e.SetComplianceGate(NewComplianceGate(CompliancePolicy{Enabled: true, AvoidGoodFaith: true}))

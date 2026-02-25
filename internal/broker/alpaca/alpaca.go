@@ -428,6 +428,17 @@ func (b *Broker) SettlementDate(fillTime time.Time, settlementDays int) (time.Ti
 	return time.Time{}, fmt.Errorf("unable to resolve settlement date for %s (settlement_days=%d)", fillDay.Format("2006-01-02"), settlementDays)
 }
 
+func (b *Broker) IsTradingDay(day time.Time) (bool, error) {
+	if b == nil || b.tradeClient == nil {
+		return false, fmt.Errorf("alpaca broker is not initialized")
+	}
+	day = dateAtUTCMidnight(day)
+	if err := b.ensureCalendarRange(day, day); err != nil {
+		return false, err
+	}
+	return b.isTradingDay(day), nil
+}
+
 func (b *Broker) ensureCalendarRange(start, end time.Time) error {
 	start = dateAtUTCMidnight(start)
 	end = dateAtUTCMidnight(end)

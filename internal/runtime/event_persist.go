@@ -24,11 +24,13 @@ type tradeEventAppender interface {
 type tradeEventPersistor struct {
 	appender tradeEventAppender
 	ch       chan domain.Event
+	stop     chan struct{}
 	done     chan struct{}
 	report   func(domain.Event)
 
-	mu    sync.Mutex
-	stats tradeEventPersistStats
+	mu        sync.Mutex
+	closeOnce sync.Once
+	stats     tradeEventPersistStats
 }
 
 type tradeEventPersistStats struct {
@@ -44,6 +46,7 @@ func newTradeEventPersistor(appender tradeEventAppender, report func(domain.Even
 	p := &tradeEventPersistor{
 		appender: appender,
 		ch:       make(chan domain.Event, tradeEventPersistQueueSize),
+		stop:     make(chan struct{}),
 		done:     make(chan struct{}),
 		report:   report,
 	}
@@ -54,6 +57,11 @@ func newTradeEventPersistor(appender tradeEventAppender, report func(domain.Even
 func (p *tradeEventPersistor) HandleEvent(event domain.Event) {
 	if p == nil || p.appender == nil || !isPersistedTradeEventType(event.Type) {
 		return
+	}
+	select {
+	case <-p.stop:
+		return
+	default:
 	}
 	select {
 	case p.ch <- event:
@@ -68,8 +76,10 @@ func (p *tradeEventPersistor) Close() {
 	if p == nil {
 		return
 	}
-	close(p.ch)
-	<-p.done
+	p.closeOnce.Do(func() {
+		close(p.stop)
+		<-p.done
+	})
 }
 
 func (p *tradeEventPersistor) run() {
@@ -107,12 +117,23 @@ func (p *tradeEventPersistor) run() {
 
 	for {
 		select {
-		case event, ok := <-p.ch:
-			if !ok {
-				flush()
-				p.emitStats(true, &lastReported, &lastReportedQueue)
-				return
+		case <-p.stop:
+			drain := true
+			for drain {
+				select {
+				case event := <-p.ch:
+					batch = append(batch, event)
+					if len(batch) >= tradeEventPersistBatchSize {
+						flush()
+					}
+				default:
+					drain = false
+				}
 			}
+			flush()
+			p.emitStats(true, &lastReported, &lastReportedQueue)
+			return
+		case event := <-p.ch:
 			batch = append(batch, event)
 			if len(batch) >= tradeEventPersistBatchSize {
 				flush()

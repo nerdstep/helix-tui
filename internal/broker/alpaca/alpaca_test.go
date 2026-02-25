@@ -587,6 +587,47 @@ func TestSettlementDate_UsesCalendarTradingDays(t *testing.T) {
 	}
 }
 
+func TestIsTradingDay_UsesCalendar(t *testing.T) {
+	b := &Broker{
+		tradeClient: &sdkalpaca.Client{},
+		calendarFetch: func(req sdkalpaca.GetCalendarRequest) ([]sdkalpaca.CalendarDay, error) {
+			return []sdkalpaca.CalendarDay{
+				{Date: "2026-02-23"},
+				{Date: "2026-02-24"},
+			}, nil
+		},
+	}
+
+	ok, err := b.IsTradingDay(time.Date(2026, time.February, 23, 15, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("IsTradingDay failed: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected trading day")
+	}
+
+	ok, err = b.IsTradingDay(time.Date(2026, time.February, 25, 15, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("IsTradingDay failed: %v", err)
+	}
+	if ok {
+		t.Fatalf("expected non-trading day")
+	}
+}
+
+func TestIsTradingDay_PropagatesCalendarErrors(t *testing.T) {
+	b := &Broker{
+		tradeClient: &sdkalpaca.Client{},
+		calendarFetch: func(req sdkalpaca.GetCalendarRequest) ([]sdkalpaca.CalendarDay, error) {
+			return nil, fmt.Errorf("calendar down")
+		},
+	}
+
+	if _, err := b.IsTradingDay(time.Date(2026, time.February, 23, 15, 0, 0, 0, time.UTC)); err == nil {
+		t.Fatalf("expected IsTradingDay error")
+	}
+}
+
 func TestSettlementDate_PropagatesCalendarErrors(t *testing.T) {
 	b := &Broker{
 		tradeClient: &sdkalpaca.Client{},

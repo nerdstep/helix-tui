@@ -10,6 +10,8 @@ import (
 	"helix-tui/internal/credentials"
 	"helix-tui/internal/domain"
 	"helix-tui/internal/engine"
+	"helix-tui/internal/eventmeta"
+	"helix-tui/internal/markethours"
 	"helix-tui/internal/storage"
 	"helix-tui/internal/strategy"
 )
@@ -81,6 +83,7 @@ type System struct {
 	PullWatchlist      func() ([]string, error)
 	SyncWatchlist      func([]string) error
 	QuoteStreamer      domain.QuoteStreamer
+	TradingDayChecker  markethours.TradingDayChecker
 	SettlementCalendar engine.ComplianceSettlementCalendar
 	DefaultBrokerLabel string
 }
@@ -162,6 +165,7 @@ func NewSystem(cfg Config) (*System, error) {
 		Engine:             e,
 		Watchlist:          watchlist,
 		QuoteStreamer:      brokerSpec.quoteStreamer,
+		TradingDayChecker:  brokerSpec.tradingDayChecker,
 		SettlementCalendar: brokerSpec.settlementCalendar,
 		DefaultBrokerLabel: brokerSpec.label,
 	}
@@ -173,7 +177,11 @@ func NewSystem(cfg Config) (*System, error) {
 	}
 	if runner != nil {
 		system.Runner = runner
-		e.AddEvent("agent_mode", fmt.Sprintf("mode=%s agent=%s watchlist=%s", mode, agentType, strings.Join(watchlist, ",")))
+		e.AddEvent("agent_mode", eventmeta.EncodeAgentMode(eventmeta.AgentMode{
+			Mode:      string(mode),
+			AgentType: agentType,
+			Watchlist: watchlist,
+		}))
 	}
 	strategyRunner, err := buildStrategyRunner(cfg, e, watchlist)
 	if err != nil {
@@ -181,7 +189,11 @@ func NewSystem(cfg Config) (*System, error) {
 	}
 	if strategyRunner != nil {
 		system.StrategyRunner = strategyRunner
-		e.AddEvent("strategy_mode", fmt.Sprintf("enabled=true interval=%s model=%s", cfg.StrategyInterval, strings.TrimSpace(cfg.StrategyModel)))
+		e.AddEvent("strategy_mode", eventmeta.EncodeStrategyMode(eventmeta.StrategyMode{
+			Enabled:  true,
+			Interval: cfg.StrategyInterval.String(),
+			Model:    strings.TrimSpace(cfg.StrategyModel),
+		}))
 	}
 	strategyCopilot, err := buildStrategyCopilot(cfg)
 	if err != nil {

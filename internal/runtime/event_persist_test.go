@@ -88,6 +88,19 @@ func TestTradeEventPersistorReportsFlushError(t *testing.T) {
 	}
 }
 
+func TestTradeEventPersistorHandleEventAfterCloseIsNoop(t *testing.T) {
+	appender := &fakeTradeEventAppender{}
+	persistor := newTradeEventPersistor(appender, nil)
+	persistor.Close()
+
+	persistor.HandleEvent(domain.Event{Type: "order_placed", Details: "buy AAPL 1.00 (ord-1)"})
+	time.Sleep(20 * time.Millisecond)
+
+	if got := appender.snapshot(); len(got) != 0 {
+		t.Fatalf("expected no persisted events after close, got %#v", got)
+	}
+}
+
 type fakePersistReporter struct {
 	mu     sync.Mutex
 	events []domain.Event

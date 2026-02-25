@@ -15,6 +15,8 @@ import (
 
 	"helix-tui/internal/domain"
 	"helix-tui/internal/engine"
+	"helix-tui/internal/eventmeta"
+	"helix-tui/internal/markethours"
 	"helix-tui/internal/symbols"
 )
 
@@ -42,10 +44,11 @@ type Runner struct {
 	lowPower         lowPowerConfig
 	powerState       powerState
 
-	eventHistory     eventHistoryStore
-	eventHistorySize int
-	strategyPolicy   strategyPolicyProvider
-	nowFn            func() time.Time
+	eventHistory      eventHistoryStore
+	eventHistorySize  int
+	strategyPolicy    strategyPolicyProvider
+	tradingDayChecker markethours.TradingDayChecker
+	nowFn             func() time.Time
 }
 
 type contextLogMode string
@@ -193,6 +196,18 @@ func (r *Runner) SetStrategyPolicyProvider(provider strategyPolicyProvider) {
 	r.mu.Lock()
 	r.strategyPolicy = provider
 	r.mu.Unlock()
+}
+
+func (r *Runner) SetTradingDayChecker(checker markethours.TradingDayChecker) {
+	r.mu.Lock()
+	r.tradingDayChecker = checker
+	r.mu.Unlock()
+}
+
+func (r *Runner) tradingDayCheckerSnapshot() markethours.TradingDayChecker {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.tradingDayChecker
 }
 
 func (r *Runner) Run(ctx context.Context) error {
@@ -890,13 +905,12 @@ func (r *Runner) transitionPowerState(next powerState, reason string) {
 	if next == "" {
 		return
 	}
-	details := fmt.Sprintf(
-		"state=%s prev=%s reason=%s next_interval=%s",
-		next,
-		normalizePowerState(prev),
-		normalizePowerReason(reason),
-		r.intervalForPowerState(next).Round(time.Second),
-	)
+	details := eventmeta.EncodeAgentPowerState(eventmeta.AgentPowerState{
+		State:        string(next),
+		Prev:         string(normalizePowerState(prev)),
+		Reason:       normalizePowerReason(reason),
+		NextInterval: r.intervalForPowerState(next).Round(time.Second).String(),
+	})
 	r.engine.AddEvent("agent_power_state", details)
 }
 
@@ -920,19 +934,20 @@ func (r *Runner) powerStateForTime(now time.Time) (powerState, string) {
 	if !lowPower.Enabled {
 		return powerStateActive, "disabled"
 	}
-	phase := marketPhaseAt(now)
+	checker := r.tradingDayCheckerSnapshot()
+	phase := markethours.PhaseAt(now, checker)
 	switch phase {
-	case marketPhaseRegular:
+	case markethours.PhaseRegular:
 		return powerStateActive, "market_open"
-	case marketPhasePremarket:
+	case markethours.PhasePremarket:
 		if lowPower.AllowAfterHours {
 			return powerStateActive, "after_hours_allowed"
 		}
-		if lowPower.PreOpenWarmup > 0 && inPreOpenWarmup(now, lowPower.PreOpenWarmup) {
+		if lowPower.PreOpenWarmup > 0 && markethours.InPreOpenWarmup(now, lowPower.PreOpenWarmup, checker) {
 			return powerStateWarmup, "pre_open_warmup"
 		}
 		return powerStateIdle, "outside_market_hours"
-	case marketPhaseAfterHours:
+	case markethours.PhaseAfterHours:
 		if lowPower.AllowAfterHours {
 			return powerStateActive, "after_hours_allowed"
 		}
@@ -940,63 +955,6 @@ func (r *Runner) powerStateForTime(now time.Time) (powerState, string) {
 	default:
 		return powerStateIdle, "outside_market_hours"
 	}
-}
-
-type marketPhase string
-
-const (
-	marketPhaseClosed     marketPhase = "closed"
-	marketPhasePremarket  marketPhase = "pre"
-	marketPhaseRegular    marketPhase = "regular"
-	marketPhaseAfterHours marketPhase = "after"
-)
-
-var (
-	newYorkOnce sync.Once
-	newYorkLoc  *time.Location
-)
-
-func marketPhaseAt(now time.Time) marketPhase {
-	ny := now.In(newYorkLocation())
-	if ny.Weekday() == time.Saturday || ny.Weekday() == time.Sunday {
-		return marketPhaseClosed
-	}
-	minuteOfDay := ny.Hour()*60 + ny.Minute()
-	switch {
-	case minuteOfDay >= 9*60+30 && minuteOfDay < 16*60:
-		return marketPhaseRegular
-	case minuteOfDay >= 4*60 && minuteOfDay < 9*60+30:
-		return marketPhasePremarket
-	case minuteOfDay >= 16*60 && minuteOfDay < 20*60:
-		return marketPhaseAfterHours
-	default:
-		return marketPhaseClosed
-	}
-}
-
-func inPreOpenWarmup(now time.Time, warmup time.Duration) bool {
-	if warmup <= 0 {
-		return false
-	}
-	ny := now.In(newYorkLocation())
-	if ny.Weekday() == time.Saturday || ny.Weekday() == time.Sunday {
-		return false
-	}
-	openTime := time.Date(ny.Year(), ny.Month(), ny.Day(), 9, 30, 0, 0, ny.Location())
-	warmupStart := openTime.Add(-warmup)
-	return !ny.Before(warmupStart) && ny.Before(openTime)
-}
-
-func newYorkLocation() *time.Location {
-	newYorkOnce.Do(func() {
-		loc, err := time.LoadLocation("America/New_York")
-		if err != nil {
-			newYorkLoc = time.Local
-			return
-		}
-		newYorkLoc = loc
-	})
-	return newYorkLoc
 }
 
 func heartbeatIntervalForCycle(cycleInterval time.Duration) time.Duration {

@@ -256,6 +256,18 @@ func TestWatchCommands(t *testing.T) {
 		t.Fatalf("unexpected watchlist after remove: %#v", m3.watchlist)
 	}
 
+	m3.input = "buy AAPL 1"
+	model, cmd = m3.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatalf("buy command should schedule execution")
+	}
+	msg := cmd()
+	status, ok := msg.(statusOnlyMsg)
+	if !ok || !status.isErr || !strings.Contains(status.status, "allowlisted") {
+		t.Fatalf("expected allowlist rejection after remove, got %#v", msg)
+	}
+	m3 = model.(Model)
+
 	m3.input = "watch remove aapl"
 	model, _ = m3.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m4 := model.(Model)

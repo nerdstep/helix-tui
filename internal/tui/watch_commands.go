@@ -93,7 +93,7 @@ func (m *Model) handleWatchAdd(symbol string) tea.Cmd {
 	if m.onWatchlistChanged == nil {
 		m.watchlist = next
 		m.pruneWatchlistQuoteState()
-		m.engine.AllowSymbol(symbol)
+		m.engine.SetAllowSymbols(next)
 		m.syncWidgets()
 		m.setStatus(fmt.Sprintf("added %s to watchlist", symbol), false)
 		return m.refreshCmd()
@@ -140,6 +140,7 @@ func (m *Model) handleWatchRemove(symbol string) tea.Cmd {
 		delete(m.quoteSeenAt, symbol)
 		delete(m.prevLast, symbol)
 		delete(m.quoteErr, symbol)
+		m.engine.SetAllowSymbols(next)
 		m.syncWidgets()
 		m.setStatus(fmt.Sprintf("removed %s from watchlist", symbol), false)
 		return nil

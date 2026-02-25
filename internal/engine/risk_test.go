@@ -3,6 +3,7 @@ package engine
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"helix-tui/internal/domain"
 )
@@ -146,5 +147,96 @@ func TestRiskGateAllowSymbol(t *testing.T) {
 		Type:   domain.OrderTypeMarket,
 	}, domain.Quote{Last: 10}); err != nil {
 		t.Fatalf("expected symbol allowed after AllowSymbol, got %v", err)
+	}
+}
+
+func TestRiskGateEvaluate_RejectsWhenAllowlistRequiredButEmpty(t *testing.T) {
+	gate := NewRiskGate(Policy{
+		AllowMarketOrders: true,
+		AllowlistRequired: true,
+	})
+	err := gate.Evaluate(domain.OrderRequest{
+		Symbol: "AAPL",
+		Qty:    1,
+		Type:   domain.OrderTypeMarket,
+	}, domain.Quote{Last: 10})
+	if err == nil || !strings.Contains(err.Error(), "allowlisted") {
+		t.Fatalf("expected allowlist enforcement error, got %v", err)
+	}
+}
+
+func TestRiskGateSetAllowSymbols_ReplacesAllowlist(t *testing.T) {
+	gate := NewRiskGate(Policy{
+		AllowMarketOrders: true,
+		AllowlistRequired: true,
+		AllowSymbols: map[string]struct{}{
+			"AAPL": {},
+		},
+	})
+	if err := gate.Evaluate(domain.OrderRequest{
+		Symbol: "AAPL",
+		Qty:    1,
+		Type:   domain.OrderTypeMarket,
+	}, domain.Quote{Last: 10}); err != nil {
+		t.Fatalf("expected AAPL initially allowlisted, got %v", err)
+	}
+
+	gate.SetAllowSymbols([]string{"msft"})
+	if err := gate.Evaluate(domain.OrderRequest{
+		Symbol: "AAPL",
+		Qty:    1,
+		Type:   domain.OrderTypeMarket,
+	}, domain.Quote{Last: 10}); err == nil || !strings.Contains(err.Error(), "allowlisted") {
+		t.Fatalf("expected AAPL rejected after allowlist replacement, got %v", err)
+	}
+	if err := gate.Evaluate(domain.OrderRequest{
+		Symbol: "MSFT",
+		Qty:    1,
+		Type:   domain.OrderTypeMarket,
+	}, domain.Quote{Last: 10}); err != nil {
+		t.Fatalf("expected MSFT allowlisted after replacement, got %v", err)
+	}
+}
+
+func TestRiskGateRollback_ReclaimsDailyNotional(t *testing.T) {
+	gate := NewRiskGate(Policy{
+		MaxNotionalPerDay: 100,
+		AllowMarketOrders: true,
+	})
+	req := domain.OrderRequest{
+		Symbol: "AAPL",
+		Qty:    1,
+		Type:   domain.OrderTypeMarket,
+	}
+	quote := domain.Quote{Last: 100}
+	if err := gate.Evaluate(req, quote); err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	gate.Rollback(req, quote)
+	if err := gate.Evaluate(req, quote); err != nil {
+		t.Fatalf("expected evaluate to pass after rollback, got %v", err)
+	}
+}
+
+func TestRiskGateEvaluate_AutoResetsDailyAcrossUTCDay(t *testing.T) {
+	gate := NewRiskGate(Policy{
+		MaxNotionalPerDay: 100,
+		AllowMarketOrders: true,
+	})
+	now := time.Date(2026, 2, 24, 23, 0, 0, 0, time.UTC)
+	gate.nowFn = func() time.Time { return now }
+	req := domain.OrderRequest{
+		Symbol: "AAPL",
+		Qty:    1,
+		Type:   domain.OrderTypeMarket,
+	}
+	quote := domain.Quote{Last: 100}
+	if err := gate.Evaluate(req, quote); err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+
+	now = now.Add(2 * time.Hour) // Next UTC day.
+	if err := gate.Evaluate(req, quote); err != nil {
+		t.Fatalf("expected daily notional reset on new UTC day, got %v", err)
 	}
 }

@@ -14,6 +14,8 @@ import (
 	"helix-tui/internal/credentials"
 	"helix-tui/internal/domain"
 	"helix-tui/internal/engine"
+	"helix-tui/internal/eventmeta"
+	"helix-tui/internal/markethours"
 	"helix-tui/internal/strategy"
 	"helix-tui/internal/symbols"
 )
@@ -24,6 +26,7 @@ type brokerSpec struct {
 	broker              domain.Broker
 	quoteStreamer       domain.QuoteStreamer
 	watchlistSyncBroker *alpaca.Broker
+	tradingDayChecker   markethours.TradingDayChecker
 	settlementCalendar  engine.ComplianceSettlementCalendar
 	credentialSource    string
 }
@@ -62,6 +65,7 @@ func buildBroker(cfg Config) (brokerSpec, error) {
 	spec.broker = alpacaBroker
 	spec.quoteStreamer = alpacaBroker
 	spec.watchlistSyncBroker = alpacaBroker
+	spec.tradingDayChecker = alpacaBroker
 	spec.settlementCalendar = alpacaBroker
 	spec.credentialSource = source
 	return spec, nil
@@ -96,6 +100,7 @@ func buildEngine(cfg Config, broker domain.Broker, allowSymbols map[string]struc
 		MaxNotionalPerDay:   cfg.MaxNotionalPerDay,
 		AllowMarketOrders:   true,
 		AllowSymbols:        allowSymbols,
+		AllowlistRequired:   true,
 	})
 
 	e := engine.New(broker, risk)
@@ -145,13 +150,12 @@ func addAlpacaConfigEvent(e *engine.Engine, cfg Config, credentialSource string)
 	}
 	e.AddEvent(
 		"alpaca_config",
-		fmt.Sprintf(
-			"env=%s endpoint=%s feed=%s credentials=%s",
-			env,
-			endpoint,
-			strings.ToLower(strings.TrimSpace(cfg.AlpacaFeed)),
-			credentialSource,
-		),
+		eventmeta.EncodeAlpacaConfig(eventmeta.AlpacaConfig{
+			Env:         env,
+			Endpoint:    endpoint,
+			Feed:        strings.ToLower(strings.TrimSpace(cfg.AlpacaFeed)),
+			Credentials: credentialSource,
+		}),
 	)
 }
 
@@ -170,21 +174,12 @@ func addIdentityConfigEvent(e *engine.Engine, cfg Config) {
 	}
 	e.AddEvent(
 		"identity_config",
-		fmt.Sprintf(
-			"agent=%s human=%s alias=%s",
-			sanitizeEventField(agentName),
-			sanitizeEventField(humanName),
-			sanitizeEventField(humanAlias),
-		),
+		eventmeta.EncodeIdentityConfig(eventmeta.IdentityConfig{
+			Agent: agentName,
+			Human: humanName,
+			Alias: humanAlias,
+		}),
 	)
-}
-
-func sanitizeEventField(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return "n/a"
-	}
-	return strings.ReplaceAll(value, " ", "_")
 }
 
 func buildWatchlistHandlers(watchlistSyncBroker *alpaca.Broker) (func() ([]string, error), func([]string) error) {
@@ -223,6 +218,9 @@ func buildRunner(cfg Config, broker domain.Broker, e *engine.Engine, watchlist [
 		cfg.AgentDryRun,
 		contextLogModeForAgent(cfg, agentType),
 	)
+	if checker, ok := broker.(markethours.TradingDayChecker); ok {
+		runner.SetTradingDayChecker(checker)
+	}
 	runner.SetLowPower(autonomy.LowPowerConfig{
 		Enabled:            cfg.AgentLowPowerEnabled,
 		AllowAfterHours:    cfg.AgentAllowAfterHours,

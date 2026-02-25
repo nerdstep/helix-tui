@@ -13,6 +13,7 @@ import (
 
 	"helix-tui/internal/domain"
 	"helix-tui/internal/engine"
+	"helix-tui/internal/markethours"
 	"helix-tui/internal/symbols"
 )
 
@@ -80,6 +81,7 @@ type quitMsg struct{}
 
 type Model struct {
 	engine               *engine.Engine
+	tradingDayChecker    markethours.TradingDayChecker
 	snapshot             domain.Snapshot
 	watchlist            []string
 	onWatchlistChanged   func([]string) error
@@ -164,6 +166,11 @@ func New(engine *engine.Engine, watchlist ...string) Model {
 
 func (m Model) WithWatchlistChangeHandler(fn func([]string) error) Model {
 	m.onWatchlistChanged = fn
+	return m
+}
+
+func (m Model) WithTradingDayChecker(checker markethours.TradingDayChecker) Model {
+	m.tradingDayChecker = checker
 	return m
 }
 

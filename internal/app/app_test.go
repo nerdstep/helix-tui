@@ -398,6 +398,23 @@ func TestBuildEngineSyncs(t *testing.T) {
 	}
 }
 
+func TestBuildEngine_EmptyAllowlistFailsClosed(t *testing.T) {
+	cfg := DefaultConfig()
+	e, err := buildEngine(cfg, paper.New(100000), map[string]struct{}{})
+	if err != nil {
+		t.Fatalf("buildEngine failed: %v", err)
+	}
+	_, err = e.PlaceOrder(context.Background(), domain.OrderRequest{
+		Symbol: "AAPL",
+		Side:   domain.SideBuy,
+		Qty:    1,
+		Type:   domain.OrderTypeMarket,
+	})
+	if err == nil || !strings.Contains(err.Error(), "allowlisted") {
+		t.Fatalf("expected fail-closed allowlist error, got %v", err)
+	}
+}
+
 func TestAddAlpacaConfigEvent(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Broker = "alpaca"

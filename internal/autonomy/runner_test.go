@@ -615,6 +615,22 @@ func TestRunCycle_LowPowerIdleSkipsAgentInvocation(t *testing.T) {
 	}
 }
 
+func TestPowerStateForTime_HolidayCheckerForcesIdle(t *testing.T) {
+	r, _ := newRunnerTestHarness(domain.ModeAuto, false)
+	r.SetLowPower(LowPowerConfig{
+		Enabled:            true,
+		AllowAfterHours:    false,
+		ClosedPollInterval: 2 * time.Minute,
+		PreOpenWarmup:      15 * time.Minute,
+	})
+	r.SetTradingDayChecker(stubRunnerTradingDayChecker{result: false})
+
+	state, reason := r.powerStateForTime(time.Date(2026, time.February, 23, 15, 0, 0, 0, time.UTC)) // Monday 10:00 ET
+	if state != powerStateIdle || reason != "outside_market_hours" {
+		t.Fatalf("expected holiday checker to force idle, got state=%s reason=%s", state, reason)
+	}
+}
+
 func TestRunCycle_UsesEventHistoryStoreForAgentContext(t *testing.T) {
 	r, _ := newRunnerTestHarness(domain.ModeAuto, false)
 	agent := &fakeAgent{}
@@ -676,6 +692,18 @@ type fakeEventHistoryStore struct {
 type fakeStrategyPolicyProvider struct {
 	policy *ActiveStrategyPolicy
 	err    error
+}
+
+type stubRunnerTradingDayChecker struct {
+	result bool
+	err    error
+}
+
+func (s stubRunnerTradingDayChecker) IsTradingDay(time.Time) (bool, error) {
+	if s.err != nil {
+		return false, s.err
+	}
+	return s.result, nil
 }
 
 func (f *fakeEventHistoryStore) ListRecent(_ int) ([]domain.Event, error) {
